@@ -1,0 +1,115 @@
+name: Publish Container
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-container-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ${{ matrix.operatingSystem }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { operatingSystem: ubuntu-latest, runtimeIdentifier: linux-x64, tagSuffix: linux-x64, isAlpine: false }
+          - { operatingSystem: ubuntu-24.04-arm, runtimeIdentifier: linux-arm64, tagSuffix: linux-arm64, isAlpine: false }
+          - { operatingSystem: ubuntu-24.04-arm, runtimeIdentifier: linux-arm, tagSuffix: linux-arm, isAlpine: false }
+          - { operatingSystem: ubuntu-latest, runtimeIdentifier: linux-musl-x64, tagSuffix: alpine-x64, isAlpine: true }
+          - { operatingSystem: ubuntu-24.04-arm, runtimeIdentifier: linux-musl-arm64, tagSuffix: alpine-arm64, isAlpine: true }
+          - { operatingSystem: windows-latest, runtimeIdentifier: win-x64, tagSuffix: windows, isAlpine: false, baseImage: 'mcr.microsoft.com/dotnet/aspnet:10.0-nanoserver-ltsc2025' }
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Setup .NET
+        if: ${{ !matrix.isAlpine }}
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: latest
+
+      - name: Restore Dependencies
+        if: ${{ !matrix.isAlpine }}
+        run: dotnet restore src/ThermalWatch.Api/ThermalWatch.Api.csproj
+
+      - name: Login to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Publish Container (Host)
+        if: ${{ !matrix.isAlpine }}
+        shell: bash
+        env:
+          ContainerRegistry: ghcr.io
+          ContainerRepository: ${{ github.repository_owner }}/thermalwatch
+          ContainerPort: 8080
+          MSYS_NO_PATHCONV: 1
+          MSYS2_ARG_CONV_EXCL: '*'
+        run: |
+          imageTags="latest-${{ matrix.tagSuffix }}"
+          targetBaseImage="${{ matrix.baseImage }}"
+
+          publishArguments=(
+            "src/ThermalWatch.Api/ThermalWatch.Api.csproj"
+            "-c" "Release"
+            "/t:PublishContainer"
+            "/p:RuntimeIdentifier=${{ matrix.runtimeIdentifier }}"
+            "/p:ContainerImageTags=$imageTags"
+          )
+
+          if [ -n "$targetBaseImage" ]; then
+            publishArguments+=("/p:ContainerBaseImage=$targetBaseImage")
+          fi
+
+          dotnet publish "${publishArguments[@]}"
+
+      - name: Publish Container (Alpine)
+        if: ${{ matrix.isAlpine }}
+        shell: bash
+        env:
+          ContainerRegistry: ghcr.io
+          ContainerRepository: ${{ github.repository_owner }}/thermalwatch
+          ContainerPort: 8080
+        run: |
+          imageTags="latest-${{ matrix.tagSuffix }}"
+
+          docker run --rm \
+            --volume "${{ github.workspace }}:/workspace" \
+            --volume "$HOME/.docker:/root/.docker:ro" \
+            --workdir /workspace \
+            --env ContainerRegistry="$ContainerRegistry" \
+            --env ContainerRepository="$ContainerRepository" \
+            --env ContainerPort="$ContainerPort" \
+            mcr.microsoft.com/dotnet/sdk:10.0-alpine \
+            dotnet publish src/ThermalWatch.Api/ThermalWatch.Api.csproj \
+              -c Release \
+              /t:PublishContainer \
+              /p:RuntimeIdentifier="${{ matrix.runtimeIdentifier }}" \
+              /p:ContainerImageTags="$imageTags"
+
+  create-manifest:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Create and Push Manifest
+        env:
+          targetRepository: ghcr.io/${{ github.repository_owner }}/thermalwatch
+        run: |
+          docker manifest create $targetRepository:latest \
+            $targetRepository:latest-linux-x64 \
+            $targetRepository:latest-linux-arm64 \
+            $targetRepository:latest-linux-arm \
+            $targetRepository:latest-alpine-x64 \
+            $targetRepository:latest-alpine-arm64 \
+            $targetRepository:latest-windows
+
+          docker manifest push $targetRepository:latest

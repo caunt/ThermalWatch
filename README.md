@@ -106,10 +106,10 @@ The final image uses the official .NET 10 ASP.NET runtime, listens on port 8080,
 
 ## GHCR
 
-The GitHub Actions workflow builds pull requests without pushing. Pushes to `main` publish `latest`, branch, and SHA tags; tags such as `v1.2.3` also publish semantic-version tags. Images are named:
+Pull requests run the Release test suite. Pushes to `main` publish self-contained application archives for Windows, macOS, glibc Linux, and musl Linux, and publish a multi-platform `latest` container manifest for Linux, Alpine, and Windows. The image is named:
 
 ```text
-ghcr.io/owner/repository:latest
+ghcr.io/owner/thermalwatch:latest
 ```
 
-Publishing uses the repository `GITHUB_TOKEN` with `packages: write` permission and GitHub Actions build cache.
+Publishing uses the repository `GITHUB_TOKEN` with `packages: write` permission.

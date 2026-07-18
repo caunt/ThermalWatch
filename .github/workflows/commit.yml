@@ -1,0 +1,18 @@
+name: Commit
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-builds:
+    uses: ./.github/workflows/publish-builds.yml
+
+  publish-container:
+    uses: ./.github/workflows/publish-container.yml
+    secrets: inherit

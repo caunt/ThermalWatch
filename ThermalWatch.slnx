@@ -4,4 +4,7 @@
     <Project Path="src/ThermalWatch.Core/ThermalWatch.Core.csproj" />
     <Project Path="src/ThermalWatch.Telegram/ThermalWatch.Telegram.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ThermalWatch.Tests.csproj" />
+  </Folder>
 </Solution>
