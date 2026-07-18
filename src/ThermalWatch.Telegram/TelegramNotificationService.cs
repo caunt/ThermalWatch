@@ -33,8 +33,15 @@ public sealed class TelegramNotificationService(
             if (!snapshot.IsReady)
                 continue;
 
-            TrackNewDetections(snapshot);
-            if (!await SendPendingAsync(validated.Client, validated.ChatId, stoppingToken))
+            var summary = new VisibilityProcessingSummary();
+            TrackNewDetections(snapshot, summary);
+            var continueRunning = await SendPendingAsync(
+                validated.Client,
+                validated.ChatId,
+                summary,
+                stoppingToken);
+            LogVisibilitySummary(summary);
+            if (!continueRunning)
                 return;
         }
     }
@@ -84,7 +91,9 @@ public sealed class TelegramNotificationService(
         }
     }
 
-    private void TrackNewDetections(AnomalySnapshot snapshot)
+    private void TrackNewDetections(
+        AnomalySnapshot snapshot,
+        VisibilityProcessingSummary summary)
     {
         var now = timeProvider.GetUtcNow();
         ExpireSeen(now);
@@ -117,12 +126,27 @@ public sealed class TelegramNotificationService(
             options.ClusterTimeWindow);
 
         foreach (var cluster in clusters)
-            _pending.Add(new(cluster, now));
+        {
+            summary.AddCandidate();
+            var result = TelegramVisibilityFilter.EvaluateMetadata(cluster, options.Visibility);
+            if (result.IsAccepted)
+            {
+                _pending.Add(new(cluster, now));
+                continue;
+            }
+
+            var reason = result.RejectionReason!.Value;
+            summary.Reject(reason);
+            logger.LogDebug(
+                "Visibility filter rejected Telegram cluster {NotificationId}: {RejectionReason}",
+                cluster.Id,
+                reason);
+        }
 
         if (newDetections.Length > 0)
         {
             logger.LogInformation(
-                "Prepared {ZoneCount} Telegram zones from {NewDetectionCount} new detections",
+                "Created {ZoneCount} Telegram zones from {NewDetectionCount} new detections",
                 clusters.Length,
                 newDetections.Length);
         }
@@ -131,6 +155,7 @@ public sealed class TelegramNotificationService(
     private async Task<bool> SendPendingAsync(
         TelegramBotClient client,
         ChatId chatId,
+        VisibilityProcessingSummary summary,
         CancellationToken cancellationToken)
     {
         for (var index = 0; index < _pending.Count;)
@@ -143,7 +168,21 @@ public sealed class TelegramNotificationService(
 
             if (!preview.IsAvailable && !previewExpired)
             {
+                summary.AddPendingPreview();
                 index++;
+                continue;
+            }
+
+            if (!preview.IsAvailable
+                && options.Visibility.Enabled
+                && options.Visibility.RequirePreview)
+            {
+                summary.Reject(VisibilityRejectionReason.PreviewUnavailable);
+                summary.AddPreviewTimeout();
+                logger.LogDebug(
+                    "Visibility filter discarded Telegram cluster {NotificationId}: preview unavailable after retry timeout",
+                    pending.Cluster.Id);
+                _pending.RemoveAt(index);
                 continue;
             }
 
@@ -184,6 +223,7 @@ public sealed class TelegramNotificationService(
                     pending.Cluster.Id,
                     pending.Cluster.Representative.Satellite,
                     pending.Cluster.Representative.AcquiredAtUtc);
+                summary.AddAccepted();
                 _pending.RemoveAt(index);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -192,11 +232,13 @@ public sealed class TelegramNotificationService(
             }
             catch (ApiRequestException exception) when (exception.ErrorCode is 400 or 401 or 403)
             {
+                summary.AddSendFailure();
                 logger.LogError("Telegram notifier disabled after a permanent send failure");
                 return false;
             }
             catch (Exception)
             {
+                summary.AddSendFailure();
                 logger.LogWarning(
                     "Telegram send failed transiently for notification {NotificationId}",
                     pending.Cluster.Id);
@@ -205,6 +247,28 @@ public sealed class TelegramNotificationService(
         }
 
         return true;
+    }
+
+    private void LogVisibilitySummary(VisibilityProcessingSummary summary)
+    {
+        if (!options.Visibility.Enabled || !summary.HasActivity)
+            return;
+
+        logger.LogInformation(
+            "Visibility filter processed {CandidateClusterCount} new Telegram clusters; accepted {AcceptedClusterCount}; rejected {RejectedClusterCount}; pending preview {PendingPreviewCount}; preview timeouts {PreviewTimeoutCount}; send failures {SendFailureCount}. Rejections: nighttime {NighttimeCount}; insufficient detections {InsufficientDetectionsCount}; low confidence {LowConfidenceCount}; low FRP {LowFrpCount}; low thermal contrast {LowThermalContrastCount}; missing required value {MissingRequiredValueCount}; preview unavailable {PreviewUnavailableCount}",
+            summary.CandidateClusterCount,
+            summary.AcceptedClusterCount,
+            summary.RejectedClusterCount,
+            summary.PendingPreviewCount,
+            summary.PreviewTimeoutCount,
+            summary.SendFailureCount,
+            summary.RejectionCount(VisibilityRejectionReason.Nighttime),
+            summary.RejectionCount(VisibilityRejectionReason.InsufficientDetections),
+            summary.RejectionCount(VisibilityRejectionReason.LowConfidence),
+            summary.RejectionCount(VisibilityRejectionReason.LowFrp),
+            summary.RejectionCount(VisibilityRejectionReason.LowThermalContrast),
+            summary.RejectionCount(VisibilityRejectionReason.MissingRequiredValue),
+            summary.RejectionCount(VisibilityRejectionReason.PreviewUnavailable));
     }
 
     private void ExpireSeen(DateTimeOffset now)
@@ -227,4 +291,48 @@ public sealed class TelegramNotificationService(
     private sealed record PendingNotification(NotificationCluster Cluster, DateTimeOffset FirstSeenUtc);
 
     private sealed record ValidatedTelegram(TelegramBotClient Client, ChatId ChatId);
+
+    private sealed class VisibilityProcessingSummary
+    {
+        private readonly Dictionary<VisibilityRejectionReason, int> _rejectionCounts = [];
+
+        public int CandidateClusterCount { get; private set; }
+
+        public int AcceptedClusterCount { get; private set; }
+
+        public int RejectedClusterCount { get; private set; }
+
+        public int PendingPreviewCount { get; private set; }
+
+        public int PreviewTimeoutCount { get; private set; }
+
+        public int SendFailureCount { get; private set; }
+
+        public bool HasActivity =>
+            CandidateClusterCount > 0
+            || AcceptedClusterCount > 0
+            || RejectedClusterCount > 0
+            || PendingPreviewCount > 0
+            || PreviewTimeoutCount > 0
+            || SendFailureCount > 0;
+
+        public void AddCandidate() => CandidateClusterCount++;
+
+        public void AddAccepted() => AcceptedClusterCount++;
+
+        public void AddPendingPreview() => PendingPreviewCount++;
+
+        public void AddPreviewTimeout() => PreviewTimeoutCount++;
+
+        public void AddSendFailure() => SendFailureCount++;
+
+        public void Reject(VisibilityRejectionReason reason)
+        {
+            RejectedClusterCount++;
+            _rejectionCounts[reason] = RejectionCount(reason) + 1;
+        }
+
+        public int RejectionCount(VisibilityRejectionReason reason) =>
+            _rejectionCounts.GetValueOrDefault(reason);
+    }
 }

@@ -29,16 +29,8 @@ public static class TelegramMessageFormatter
         if (FormatConfidence(representative) is { } confidence)
             message.Append("🌡 <b>Confidence:</b> ").AppendLine(WebUtility.HtmlEncode(confidence));
 
-        if (representative.FrpMegawatts is { } frp)
-        {
-            message.Append("⚡ <b>FRP:</b> ")
-                .Append(frp.ToString("0.##", CultureInfo.InvariantCulture))
-                .AppendLine(" MW");
-        }
-
-        message.Append("🔎 <b>Detections:</b> ")
-            .Append(cluster.Members.Length.ToString(CultureInfo.InvariantCulture))
-            .AppendLine()
+        message.Append("👁 <b>Signal:</b> ")
+            .AppendLine(FormatSignal(cluster))
             .Append("📡 <b>Sources:</b> ").AppendLine(WebUtility.HtmlEncode(sources));
 
         if (hasPreview)
@@ -72,6 +64,26 @@ public static class TelegramMessageFormatter
         return anomaly.ConfidencePercent is { } percent
             ? $"{percent.ToString("0.##", CultureInfo.InvariantCulture)}%"
             : null;
+    }
+
+    private static string FormatSignal(NotificationCluster cluster)
+    {
+        var representative = cluster.Representative;
+        var components = new List<string>(3);
+
+        if (representative.FrpMegawatts is { } frp)
+            components.Add($"{frp.ToString("0.00", CultureInfo.InvariantCulture)} MW");
+
+        if (representative.ThermalContrastKelvin is { } thermalContrast)
+        {
+            components.Add(
+                $"{thermalContrast.ToString("+0.00;-0.00;+0.00", CultureInfo.InvariantCulture)} K");
+        }
+
+        components.Add(cluster.Members.Length == 1
+            ? "1 detection"
+            : $"{cluster.Members.Length.ToString(CultureInfo.InvariantCulture)} detections");
+        return string.Join(" · ", components);
     }
 
     private static string JoinUnique(IEnumerable<string> values) => string.Join(

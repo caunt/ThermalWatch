@@ -41,7 +41,13 @@ public sealed record Anomaly(
     double? ConfidencePercent,
     string? ConfidenceCategory,
     string? Version,
-    string GoogleMapsUrl);
+    string GoogleMapsUrl)
+{
+    public double? ThermalContrastKelvin =>
+        BrightnessKelvin is { } brightness && SecondaryBrightnessKelvin is { } secondaryBrightness
+            ? brightness - secondaryBrightness
+            : null;
+}
 
 public sealed record SourceStatus(
     string Country,

@@ -9,7 +9,8 @@ public sealed record TelegramOptions(
     double ClusterRadiusKilometers,
     TimeSpan ClusterTimeWindow,
     TimeSpan SeenRetention,
-    TimeSpan PreviewRetryWindow)
+    TimeSpan PreviewRetryWindow,
+    TelegramVisibilityOptions Visibility)
 {
     public bool IsEnabled => BotToken is not null && ChannelId is not null;
 
@@ -35,7 +36,16 @@ public sealed record TelegramOptions(
             ParseDouble(getEnvironmentVariable, "TELEGRAM_CLUSTER_RADIUS_KM", 5, 0.01, 100),
             ParseTimeSpan(getEnvironmentVariable, "TELEGRAM_CLUSTER_TIME_WINDOW", TimeSpan.FromMinutes(90), TimeSpan.FromMinutes(1), TimeSpan.FromDays(1)),
             ParseTimeSpan(getEnvironmentVariable, "TELEGRAM_SEEN_RETENTION", TimeSpan.FromHours(48), TimeSpan.FromMinutes(1), TimeSpan.FromDays(30)),
-            ParseTimeSpan(getEnvironmentVariable, "TELEGRAM_PREVIEW_RETRY_WINDOW", TimeSpan.FromHours(1), TimeSpan.Zero, TimeSpan.FromDays(1)));
+            ParseTimeSpan(getEnvironmentVariable, "TELEGRAM_PREVIEW_RETRY_WINDOW", TimeSpan.FromHours(1), TimeSpan.Zero, TimeSpan.FromDays(1)),
+            new(
+                ParseBool(getEnvironmentVariable, "TELEGRAM_VISIBILITY_FILTER_ENABLED", true),
+                ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_MIN_FRP_MW", 50),
+                ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_MIN_THERMAL_CONTRAST_K", 20),
+                ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_MIN_CLUSTER_DETECTIONS", 2),
+                ParseDouble(getEnvironmentVariable, "TELEGRAM_MIN_MODIS_CONFIDENCE_PERCENT", 60, 0, 100),
+                ParseViirsConfidence(getEnvironmentVariable),
+                ParseBool(getEnvironmentVariable, "TELEGRAM_REQUIRE_DAYTIME", true),
+                ParseBool(getEnvironmentVariable, "TELEGRAM_REQUIRE_PREVIEW", true)));
     }
 
     private static string? Normalize(string? value) =>
@@ -75,6 +85,50 @@ public sealed record TelegramOptions(
                     $"{name} must be between {minimum} and {maximum}.");
     }
 
+    private static double ParseNonNegativeDouble(
+        Func<string, string?> getEnvironmentVariable,
+        string name,
+        double defaultValue)
+    {
+        var value = Normalize(getEnvironmentVariable(name));
+        if (value is null)
+            return defaultValue;
+
+        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            && double.IsFinite(parsed)
+            && parsed >= 0
+                ? parsed
+                : throw new TelegramConfigurationException(
+                    $"{name} must be a non-negative finite number.");
+    }
+
+    private static int ParsePositiveInt(
+        Func<string, string?> getEnvironmentVariable,
+        string name,
+        int defaultValue)
+    {
+        var value = Normalize(getEnvironmentVariable(name));
+        if (value is null)
+            return defaultValue;
+
+        return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+            && parsed >= 1
+                ? parsed
+                : throw new TelegramConfigurationException(
+                    $"{name} must be an integer greater than or equal to 1.");
+    }
+
+    private static ViirsConfidenceLevel ParseViirsConfidence(
+        Func<string, string?> getEnvironmentVariable) =>
+        Normalize(getEnvironmentVariable("TELEGRAM_MIN_VIIRS_CONFIDENCE"))?.ToLowerInvariant() switch
+        {
+            null or "n" => ViirsConfidenceLevel.Nominal,
+            "l" => ViirsConfidenceLevel.Low,
+            "h" => ViirsConfidenceLevel.High,
+            _ => throw new TelegramConfigurationException(
+                "TELEGRAM_MIN_VIIRS_CONFIDENCE must be l, n, or h.")
+        };
+
     private static TimeSpan ParseTimeSpan(
         Func<string, string?> getEnvironmentVariable,
         string name,
@@ -93,6 +147,23 @@ public sealed record TelegramOptions(
                 : throw new TelegramConfigurationException(
                     $"{name} must be a duration between {minimum} and {maximum}.");
     }
+}
+
+public sealed record TelegramVisibilityOptions(
+    bool Enabled,
+    double MinimumFrpMegawatts,
+    double MinimumThermalContrastKelvin,
+    int MinimumClusterDetections,
+    double MinimumModisConfidencePercent,
+    ViirsConfidenceLevel MinimumViirsConfidence,
+    bool RequireDaytime,
+    bool RequirePreview);
+
+public enum ViirsConfidenceLevel
+{
+    Low,
+    Nominal,
+    High
 }
 
 public sealed class TelegramConfigurationException(string safeMessage) : Exception(safeMessage);

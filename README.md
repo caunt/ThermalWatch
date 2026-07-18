@@ -29,10 +29,26 @@ Optional variables:
 | `TELEGRAM_CLUSTER_RADIUS_KM` | `5` | Maximum Haversine distance within one notification zone. |
 | `TELEGRAM_CLUSTER_TIME_WINDOW` | `01:30:00` | Maximum acquisition-time separation within a zone. |
 | `TELEGRAM_SEEN_RETENTION` | `48:00:00` | In-memory notification deduplication retention; must be at least the FIRMS active window. |
-| `TELEGRAM_PREVIEW_RETRY_WINDOW` | `01:00:00` | Time to await exact-date GIBS imagery before sending text only. |
+| `TELEGRAM_PREVIEW_RETRY_WINDOW` | `01:00:00` | Time to await exact-date GIBS imagery before applying the configured preview fallback. |
+| `TELEGRAM_VISIBILITY_FILTER_ENABLED` | `true` | Require Telegram clusters to pass the likely-visible-in-imagery heuristic. |
+| `TELEGRAM_MIN_FRP_MW` | `50` | Minimum representative fire radiative power in megawatts; `0` disables this requirement. |
+| `TELEGRAM_MIN_THERMAL_CONTRAST_K` | `20` | Minimum representative primary-minus-secondary brightness temperature in kelvin; `0` disables this requirement. |
+| `TELEGRAM_MIN_CLUSTER_DETECTIONS` | `2` | Minimum number of raw detections in a Telegram cluster; minimum configurable value is `1`. |
+| `TELEGRAM_MIN_MODIS_CONFIDENCE_PERCENT` | `60` | Minimum MODIS numeric confidence percentage; `0` disables this requirement. |
+| `TELEGRAM_MIN_VIIRS_CONFIDENCE` | `n` | Minimum VIIRS confidence category: `l`, `n`, or `h`. |
+| `TELEGRAM_REQUIRE_DAYTIME` | `true` | Require a daytime (`D`) representative detection for Telegram notifications. |
+| `TELEGRAM_REQUIRE_PREVIEW` | `true` | Suppress a Telegram candidate if an exact-date sensor-matched preview remains unavailable after the retry window. |
 | `LOGGING_MINIMUM_LEVEL` | `Information` | `Verbose`, `Debug`, `Information`, `Warning`, `Error`, or `Fatal`. |
 
 Telegram is disabled without credentials and does not affect the HTTP API. With both values configured, startup validation calls `GetMe`, resolves the channel, checks the bot's membership, and requires channel administrator permission to post messages. ThermalWatch only sends outbound messages; it uses neither polling nor webhooks.
+
+## Telegram visibility filter
+
+The visibility filter affects Telegram notification candidates only. The HTTP API continues to return every valid recent FIRMS detection. By default, a cluster must have at least two detections and its existing representative detection must be daytime, have at least 50 MW FRP, at least 20 K primary-to-background thermal contrast, and sufficient source-specific confidence. MODIS uses its numeric percentage; VIIRS confidence is ordered low (`l`), nominal (`n`), then high (`h`). An exact-date sensor-matched GIBS preview must also be available before the notification is sent.
+
+This is only a heuristic intended to improve the chance that true-color imagery contains a visible smoke plume, burn area, or other obvious feature. It does not prove that a fire or smoke is visible. Clouds, smoke direction, the difference between image and detection timing, sensor resolution, and the physical size of the source can all limit visibility.
+
+Set `TELEGRAM_VISIBILITY_FILTER_ENABLED=false` to restore the previous notification selection behavior. Set `TELEGRAM_REQUIRE_DAYTIME=false` to permit nighttime candidates using the existing matching nighttime GIBS layers. Set `TELEGRAM_REQUIRE_PREVIEW=false` to restore the text-only fallback when the preview retry window expires.
 
 ## Satellite feeds
 
@@ -83,26 +99,33 @@ curl "http://localhost:8080/api/anomalies?satellite=Terra&since=2026-07-18T06:00
 
 `country` accepts ISO alpha-3 codes, `source` accepts the four feed IDs, `satellite` matches the FIRMS satellite value, `since` must be an ISO-8601 UTC timestamp inside the active window, and `dayNight` accepts `D` or `N`. Partial upstream failures remain HTTP `200` responses with stale source statuses in the body. Each source status also reports `ingestionMode` as `country`, `areaFallback`, or `none`; the last successful mode is retained while a segment is stale.
 
+Each anomaly includes nullable `thermalContrastKelvin`, calculated as its primary brightness temperature minus its secondary or background brightness temperature when both values are available. Telegram filtering does not remove or annotate API items with notification state.
+
 ## GIBS previews
 
 Photo notifications use NASA GIBS to compose matching base imagery and thermal-anomaly layers for the representative detection's sensor and acquisition date. Day observations use true color; night observations use the matching brightness-temperature layer. The requested view is approximately 10 km wide by 15 km tall.
 
 GIBS imagery is date-based and is not claimed to represent the exact FIRMS acquisition minute. ThermalWatch verifies exact layer/date availability with GIBS `DescribeDomains`; it never accepts nearest-date imagery or substitutes another sensor, date, or day/night layer.
 
-## Docker
+## Container
 
 ```bash
-docker build -t thermalwatch .
+ContainerRepository=thermalwatch \
+ContainerPort=8080 \
+dotnet publish src/ThermalWatch.Api/ThermalWatch.Api.csproj \
+  -c Release \
+  /t:PublishContainer \
+  /p:ContainerImageTags=local
 
 docker run --rm -p 8080:8080 \
   -e FIRMS_MAP_KEY=... \
   -e FIRMS_COUNTRIES=UKR,RUS \
   -e TELEGRAM_BOT_TOKEN=... \
   -e TELEGRAM_CHANNEL_ID=@example_channel \
-  thermalwatch
+  thermalwatch:local
 ```
 
-The final image uses the official .NET 10 ASP.NET runtime, listens on port 8080, runs as the image's built-in non-root `app` user, and writes no persistent application data.
+The .NET SDK publishes the image directly through `PublishContainer`; the repository does not use a Dockerfile. The final image uses the official .NET 10 ASP.NET runtime, listens on port 8080, runs as the image's built-in non-root `app` user, and writes no persistent application data.
 
 ## GHCR
 
