@@ -102,6 +102,12 @@ public sealed record NotificationCluster(
     Anomaly Representative,
     ImmutableArray<Anomaly> Members);
 
+public readonly record struct GibsPreviewDimensions(
+    double WidthKilometers,
+    double HeightKilometers,
+    int PixelWidth,
+    int PixelHeight);
+
 public sealed record GibsPreview(byte[]? PngBytes)
 {
     public bool IsAvailable => PngBytes is { Length: > 0 };

@@ -15,17 +15,28 @@ public sealed class GibsClient(
 
     public async Task<GibsPreview> GetPreviewAsync(
         Anomaly anomaly,
+        GibsPreviewDimensions dimensions,
         CancellationToken cancellationToken)
     {
         if (!GibsLayers.TryGet(anomaly, out var layers))
             return GibsPreview.Unavailable;
 
-        var bounds = Geography.CreatePreviewBounds(anomaly.Latitude, anomaly.Longitude);
+        var bounds = Geography.CreatePreviewBounds(
+            anomaly.Latitude,
+            anomaly.Longitude,
+            dimensions.WidthKilometers,
+            dimensions.HeightKilometers);
         if (bounds is null)
             return GibsPreview.Unavailable;
 
         var date = DateOnly.FromDateTime(anomaly.AcquiredAtUtc.UtcDateTime);
-        var previewCacheKey = $"gibs:preview:{anomaly.Id}";
+        var previewCacheKey = (
+            Prefix: "gibs:preview",
+            anomaly.Id,
+            dimensions.WidthKilometers,
+            dimensions.HeightKilometers,
+            dimensions.PixelWidth,
+            dimensions.PixelHeight);
 
         if (cache.TryGetValue<byte[]>(previewCacheKey, out var cachedBytes))
             return new(cachedBytes);
@@ -47,7 +58,7 @@ public sealed class GibsClient(
             if (!baseAvailable.Result || !overlayAvailable.Result)
                 return GibsPreview.Unavailable;
 
-            var requestUri = BuildWmsUri(layers, date, bounds.Value);
+            var requestUri = BuildWmsUri(layers, date, bounds.Value, dimensions);
             using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
             using var response = await httpClient.SendAsync(
                 request,
@@ -184,7 +195,11 @@ public sealed class GibsClient(
             out date);
     }
 
-    private static Uri BuildWmsUri(GibsLayerPair layers, DateOnly date, GeographicBounds bounds)
+    private static Uri BuildWmsUri(
+        GibsLayerPair layers,
+        DateOnly date,
+        GeographicBounds bounds,
+        GibsPreviewDimensions dimensions)
     {
         var parameters = new Dictionary<string, string>
         {
@@ -193,8 +208,8 @@ public sealed class GibsClient(
             ["VERSION"] = "1.1.1",
             ["SRS"] = "EPSG:4326",
             ["FORMAT"] = "image/png",
-            ["WIDTH"] = "600",
-            ["HEIGHT"] = "900",
+            ["WIDTH"] = dimensions.PixelWidth.ToString(CultureInfo.InvariantCulture),
+            ["HEIGHT"] = dimensions.PixelHeight.ToString(CultureInfo.InvariantCulture),
             ["TIME"] = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ["BBOX"] = bounds.ToInvariantString(),
             ["LAYERS"] = $"{layers.BaseLayer},{layers.OverlayLayer}",

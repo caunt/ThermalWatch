@@ -131,7 +131,7 @@ public sealed class TelegramNotificationService(
             var result = TelegramVisibilityFilter.EvaluateMetadata(cluster, options.Visibility);
             if (result.IsAccepted)
             {
-                _pending.Add(new(cluster, now));
+                _pending.Add(new(cluster, now, SelectPreviewDimensions(cluster)));
                 continue;
             }
 
@@ -163,6 +163,7 @@ public sealed class TelegramNotificationService(
             var pending = _pending[index];
             var preview = await gibsClient.GetPreviewAsync(
                 pending.Cluster.Representative,
+                pending.PreviewDimensions,
                 cancellationToken);
             var previewExpired = timeProvider.GetUtcNow() - pending.FirstSeenUtc >= options.PreviewRetryWindow;
 
@@ -249,6 +250,40 @@ public sealed class TelegramNotificationService(
         return true;
     }
 
+    private GibsPreviewDimensions SelectPreviewDimensions(NotificationCluster cluster)
+    {
+        var representative = cluster.Representative;
+        var clusterDiameterKilometers = Geography.ClusterDiameterKilometers(cluster.Members);
+        var previewOptions = options.Preview;
+        var isLargePreview =
+            cluster.Members.Length >= previewOptions.LargeClusterMinimumDetections
+            || representative.FrpMegawatts is { } frp
+                && frp >= previewOptions.LargeClusterMinimumFrpMegawatts
+            || clusterDiameterKilometers >= previewOptions.LargeClusterMinimumDiameterKilometers;
+        var previewSize = isLargePreview
+            ? previewOptions.LargePreviewSize
+            : previewOptions.PreviewSize;
+        var dimensions = new GibsPreviewDimensions(
+            previewSize.WidthKilometers,
+            previewSize.HeightKilometers,
+            previewOptions.PixelWidth,
+            previewOptions.PixelHeight);
+
+        logger.LogDebug(
+            "Selected Telegram preview size for {NotificationId}: {DetectionCount} detections; representative FRP {RepresentativeFrpMegawatts}; diameter {ClusterDiameterKm} km; large {IsLargePreview}; crop {PreviewWidthKm} x {PreviewHeightKm} km; image {PixelWidth} x {PixelHeight}",
+            cluster.Id,
+            cluster.Members.Length,
+            representative.FrpMegawatts,
+            clusterDiameterKilometers,
+            isLargePreview,
+            dimensions.WidthKilometers,
+            dimensions.HeightKilometers,
+            dimensions.PixelWidth,
+            dimensions.PixelHeight);
+
+        return dimensions;
+    }
+
     private void LogVisibilitySummary(VisibilityProcessingSummary summary)
     {
         if (!options.Visibility.Enabled || !summary.HasActivity)
@@ -288,7 +323,10 @@ public sealed class TelegramNotificationService(
             _seen.Remove(id);
     }
 
-    private sealed record PendingNotification(NotificationCluster Cluster, DateTimeOffset FirstSeenUtc);
+    private sealed record PendingNotification(
+        NotificationCluster Cluster,
+        DateTimeOffset FirstSeenUtc,
+        GibsPreviewDimensions PreviewDimensions);
 
     private sealed record ValidatedTelegram(TelegramBotClient Client, ChatId ChatId);
 

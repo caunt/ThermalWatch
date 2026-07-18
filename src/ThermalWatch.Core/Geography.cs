@@ -36,12 +36,32 @@ public static class Geography
         return EarthRadiusKilometers * 2 * Math.Atan2(Math.Sqrt(haversine), Math.Sqrt(1 - haversine));
     }
 
-    public static GeographicBounds? CreatePreviewBounds(double latitude, double longitude)
+    public static double ClusterDiameterKilometers(IReadOnlyList<Anomaly> detections)
     {
-        var (northLatitude, _) = DestinationPoint(latitude, longitude, 7.5, 0);
-        var (southLatitude, _) = DestinationPoint(latitude, longitude, 7.5, 180);
-        var (_, eastLongitude) = DestinationPoint(latitude, longitude, 5, 90);
-        var (_, westLongitude) = DestinationPoint(latitude, longitude, 5, 270);
+        var diameter = 0d;
+        for (var first = 0; first < detections.Count; first++)
+        {
+            for (var second = first + 1; second < detections.Count; second++)
+            {
+                diameter = Math.Max(
+                    diameter,
+                    HaversineKilometers(detections[first], detections[second]));
+            }
+        }
+
+        return diameter;
+    }
+
+    public static GeographicBounds? CreatePreviewBounds(
+        double latitude,
+        double longitude,
+        double widthKilometers,
+        double heightKilometers)
+    {
+        var (northLatitude, _) = DestinationPoint(latitude, longitude, heightKilometers / 2, 0);
+        var (southLatitude, _) = DestinationPoint(latitude, longitude, heightKilometers / 2, 180);
+        var (_, eastLongitude) = DestinationPoint(latitude, longitude, widthKilometers / 2, 90);
+        var (_, westLongitude) = DestinationPoint(latitude, longitude, widthKilometers / 2, 270);
 
         if (westLongitude >= eastLongitude)
             return null;

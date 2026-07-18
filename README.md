@@ -30,6 +30,15 @@ Optional variables:
 | `TELEGRAM_CLUSTER_TIME_WINDOW` | `01:30:00` | Maximum acquisition-time separation within a zone. |
 | `TELEGRAM_SEEN_RETENTION` | `48:00:00` | In-memory notification deduplication retention; must be at least the FIRMS active window. |
 | `TELEGRAM_PREVIEW_RETRY_WINDOW` | `01:00:00` | Time to await exact-date GIBS imagery before applying the configured preview fallback. |
+| `TELEGRAM_PREVIEW_WIDTH_KM` | `20` | Geographic width of a normal Telegram preview crop. |
+| `TELEGRAM_PREVIEW_HEIGHT_KM` | `30` | Geographic height of a normal Telegram preview crop. |
+| `TELEGRAM_LARGE_PREVIEW_WIDTH_KM` | `30` | Geographic width of a large-cluster Telegram preview crop. |
+| `TELEGRAM_LARGE_PREVIEW_HEIGHT_KM` | `45` | Geographic height of a large-cluster Telegram preview crop. |
+| `TELEGRAM_PREVIEW_PIXEL_WIDTH` | `600` | Output image width in pixels for every Telegram preview. |
+| `TELEGRAM_PREVIEW_PIXEL_HEIGHT` | `900` | Output image height in pixels for every Telegram preview. |
+| `TELEGRAM_LARGE_CLUSTER_MIN_DETECTIONS` | `8` | Detection count that selects the large preview crop. |
+| `TELEGRAM_LARGE_CLUSTER_MIN_FRP_MW` | `500` | Representative FRP in megawatts that selects the large preview crop. |
+| `TELEGRAM_LARGE_CLUSTER_MIN_DIAMETER_KM` | `8` | Maximum pairwise cluster distance that selects the large preview crop. |
 | `TELEGRAM_VISIBILITY_FILTER_ENABLED` | `true` | Require Telegram clusters to pass the likely-visible-in-imagery heuristic. |
 | `TELEGRAM_MIN_FRP_MW` | `50` | Minimum representative fire radiative power in megawatts; `0` disables this requirement. |
 | `TELEGRAM_MIN_THERMAL_CONTRAST_K` | `20` | Minimum representative primary-minus-secondary brightness temperature in kelvin; `0` disables this requirement. |
@@ -103,7 +112,9 @@ Each anomaly includes nullable `thermalContrastKelvin`, calculated as its primar
 
 ## GIBS previews
 
-Photo notifications use NASA GIBS to compose matching base imagery and thermal-anomaly layers for the representative detection's sensor and acquisition date. Day observations use true color; night observations use the matching brightness-temperature layer. The requested view is approximately 10 km wide by 15 km tall.
+Photo notifications use NASA GIBS to compose matching base imagery and thermal-anomaly layers for the representative detection's sensor and acquisition date. Day observations use true color; night observations use the matching brightness-temperature layer. Normal alerts use a 20 × 30 km crop, while large clusters use a 30 × 45 km crop. Both produce a Telegram-friendly 600 × 900 portrait image centered on the representative detection.
+
+A cluster uses the large crop when it has at least eight detections, its representative has at least 500 MW FRP, or its greatest pairwise Haversine distance is at least 8 km. All crop dimensions, pixel dimensions, and large-cluster thresholds can be overridden through the environment variables above.
 
 GIBS imagery is date-based and is not claimed to represent the exact FIRMS acquisition minute. ThermalWatch verifies exact layer/date availability with GIBS `DescribeDomains`; it never accepts nearest-date imagery or substitutes another sensor, date, or day/night layer.
 

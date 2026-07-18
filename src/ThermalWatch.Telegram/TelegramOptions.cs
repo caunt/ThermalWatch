@@ -10,6 +10,7 @@ public sealed record TelegramOptions(
     TimeSpan ClusterTimeWindow,
     TimeSpan SeenRetention,
     TimeSpan PreviewRetryWindow,
+    TelegramPreviewOptions Preview,
     TelegramVisibilityOptions Visibility)
 {
     public bool IsEnabled => BotToken is not null && ChannelId is not null;
@@ -37,6 +38,18 @@ public sealed record TelegramOptions(
             ParseTimeSpan(getEnvironmentVariable, "TELEGRAM_CLUSTER_TIME_WINDOW", TimeSpan.FromMinutes(90), TimeSpan.FromMinutes(1), TimeSpan.FromDays(1)),
             ParseTimeSpan(getEnvironmentVariable, "TELEGRAM_SEEN_RETENTION", TimeSpan.FromHours(48), TimeSpan.FromMinutes(1), TimeSpan.FromDays(30)),
             ParseTimeSpan(getEnvironmentVariable, "TELEGRAM_PREVIEW_RETRY_WINDOW", TimeSpan.FromHours(1), TimeSpan.Zero, TimeSpan.FromDays(1)),
+            new(
+                new(
+                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_PREVIEW_WIDTH_KM", 20),
+                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_PREVIEW_HEIGHT_KM", 30)),
+                new(
+                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_LARGE_PREVIEW_WIDTH_KM", 30),
+                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_LARGE_PREVIEW_HEIGHT_KM", 45)),
+                ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_PREVIEW_PIXEL_WIDTH", 600),
+                ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_PREVIEW_PIXEL_HEIGHT", 900),
+                ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_LARGE_CLUSTER_MIN_DETECTIONS", 8),
+                ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_LARGE_CLUSTER_MIN_FRP_MW", 500),
+                ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_LARGE_CLUSTER_MIN_DIAMETER_KM", 8)),
             new(
                 ParseBool(getEnvironmentVariable, "TELEGRAM_VISIBILITY_FILTER_ENABLED", true),
                 ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_MIN_FRP_MW", 50),
@@ -102,6 +115,23 @@ public sealed record TelegramOptions(
                     $"{name} must be a non-negative finite number.");
     }
 
+    private static double ParsePositiveDouble(
+        Func<string, string?> getEnvironmentVariable,
+        string name,
+        double defaultValue)
+    {
+        var value = Normalize(getEnvironmentVariable(name));
+        if (value is null)
+            return defaultValue;
+
+        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            && double.IsFinite(parsed)
+            && parsed > 0
+                ? parsed
+                : throw new TelegramConfigurationException(
+                    $"{name} must be a positive finite number.");
+    }
+
     private static int ParsePositiveInt(
         Func<string, string?> getEnvironmentVariable,
         string name,
@@ -148,6 +178,19 @@ public sealed record TelegramOptions(
                     $"{name} must be a duration between {minimum} and {maximum}.");
     }
 }
+
+public sealed record TelegramPreviewOptions(
+    TelegramPreviewSize PreviewSize,
+    TelegramPreviewSize LargePreviewSize,
+    int PixelWidth,
+    int PixelHeight,
+    int LargeClusterMinimumDetections,
+    double LargeClusterMinimumFrpMegawatts,
+    double LargeClusterMinimumDiameterKilometers);
+
+public readonly record struct TelegramPreviewSize(
+    double WidthKilometers,
+    double HeightKilometers);
 
 public sealed record TelegramVisibilityOptions(
     bool Enabled,
