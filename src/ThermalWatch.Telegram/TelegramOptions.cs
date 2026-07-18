@@ -40,13 +40,13 @@ public sealed record TelegramOptions(
             ParseTimeSpan(getEnvironmentVariable, "TELEGRAM_PREVIEW_RETRY_WINDOW", TimeSpan.FromHours(1), TimeSpan.Zero, TimeSpan.FromDays(1)),
             new(
                 new(
-                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_PREVIEW_WIDTH_KM", 20),
-                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_PREVIEW_HEIGHT_KM", 30)),
+                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_PREVIEW_WIDTH_KM", 30),
+                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_PREVIEW_HEIGHT_KM", 20)),
                 new(
-                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_LARGE_PREVIEW_WIDTH_KM", 30),
-                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_LARGE_PREVIEW_HEIGHT_KM", 45)),
-                ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_PREVIEW_PIXEL_WIDTH", 600),
-                ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_PREVIEW_PIXEL_HEIGHT", 900),
+                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_LARGE_PREVIEW_WIDTH_KM", 45),
+                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_LARGE_PREVIEW_HEIGHT_KM", 30)),
+                ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_PREVIEW_PIXEL_WIDTH", 900),
+                ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_PREVIEW_PIXEL_HEIGHT", 600),
                 ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_LARGE_CLUSTER_MIN_DETECTIONS", 8),
                 ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_LARGE_CLUSTER_MIN_FRP_MW", 500),
                 ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_LARGE_CLUSTER_MIN_DIAMETER_KM", 8)),
