@@ -1,0 +1,9 @@
+Natural Earth vector data version 5.1.2
+Admin 0 - Countries, 1:50m cultural vectors
+https://www.naturalearthdata.com/downloads/50m-cultural-vectors/50m-admin-0-countries-2/
+
+All versions of Natural Earth raster and vector map data are in the public domain.
+They may be used in any manner, including modification and electronic dissemination.
+No permission or attribution is required.
+
+Terms of use: https://www.naturalearthdata.com/about/terms-of-use/

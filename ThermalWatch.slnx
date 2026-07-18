@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ThermalWatch.Api/ThermalWatch.Api.csproj" />
+    <Project Path="src/ThermalWatch.Core/ThermalWatch.Core.csproj" />
+    <Project Path="src/ThermalWatch.Telegram/ThermalWatch.Telegram.csproj" />
+  </Folder>
+</Solution>
