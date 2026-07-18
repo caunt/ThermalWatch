@@ -1,6 +1,6 @@
 # ThermalWatch
 
-ThermalWatch is a deliberately small .NET 10 service that polls NASA FIRMS near-real-time thermal anomalies for multiple countries. It keeps an immutable in-memory snapshot, exposes the raw observations through one unauthenticated endpoint, and can send newly observed anomaly zones to one Telegram channel.
+ThermalWatch is a deliberately small .NET 10 service that polls NASA FIRMS near-real-time thermal anomalies for multiple countries. It keeps an immutable in-memory snapshot, exposes the raw observations through an unauthenticated endpoint, and can send anomaly zones to one Telegram channel.
 
 A thermal anomaly is not necessarily a wildfire. Detections may represent industrial heat, gas flares, agricultural burning, explosions, or other hot surfaces. A recent detection does not prove that its heat source is still active. FIRMS is near-real-time satellite reporting, not continuous live monitoring.
 
@@ -54,7 +54,7 @@ Optional variables:
 | `TELEGRAM_REQUIRE_PREVIEW` | `true` | Suppress a Telegram candidate if an exact-date sensor-matched preview remains unavailable after the retry window. |
 | `LOGGING_MINIMUM_LEVEL` | `Information` | `Verbose`, `Debug`, `Information`, `Warning`, `Error`, or `Fatal`. |
 
-Telegram is disabled without credentials and does not affect the HTTP API. With both values configured, startup validation calls `GetMe`, resolves the channel, checks the bot's membership, and requires channel administrator permission to post messages. ThermalWatch only sends outbound messages; it uses neither polling nor webhooks.
+Telegram is disabled without credentials and does not affect the anomaly HTTP API. With both values configured, startup validation calls `GetMe`, resolves the channel, checks the bot's membership, and requires channel administrator permission to post messages. ThermalWatch only sends outbound messages; it uses neither polling nor webhooks. The manual Telegram endpoint returns HTTP `409` while Telegram is disabled or has not validated successfully.
 
 ## Telegram visibility filter
 
@@ -103,7 +103,7 @@ The service listens on port `8080`.
 
 ## HTTP API
 
-The only application endpoint is:
+The anomaly endpoint is:
 
 ```text
 GET http://localhost:8080/api/anomalies
@@ -122,6 +122,18 @@ curl "http://localhost:8080/api/anomalies?satellite=Terra&since=2026-07-18T06:00
 `country` accepts ISO alpha-3 codes, `source` accepts the four feed IDs, `satellite` matches the FIRMS satellite value, `since` must be an ISO-8601 UTC timestamp inside the active window, and `dayNight` accepts `D` or `N`. Partial upstream failures remain HTTP `200` responses with stale source statuses in the body. Each source status also reports `ingestionMode` as `country`, `areaFallback`, or `none`; the last successful mode is retained while a segment is stale.
 
 Each anomaly includes nullable `thermalContrastKelvin`, calculated as its primary brightness temperature minus its secondary or background brightness temperature when both values are available. Telegram filtering does not remove or annotate API items with notification state.
+
+### Manual Telegram send
+
+```text
+POST http://localhost:8080/api/telegram/send-top?count=5
+```
+
+This endpoint reads the current in-memory FIRMS snapshot and sends the highest-ranked clusters that pass every configured Telegram visibility, NASA land-cover, and exact-date GIBS preview requirement. It does not refresh FIRMS. `count` defaults to `5`, must be an integer from `1` through `50`, and limits the number of anomaly posts rather than the number evaluated.
+
+Manual sends treat all current detections as newly observed for that operation. They bypass normal seen-ID checks without changing seen IDs, pending previews, or future automatic deduplication. One manual execution can run at a time; overlapping calls return HTTP `409`. Individual anomaly-send failures do not stop later selected clusters and are reported by cluster ID in the JSON response.
+
+The endpoint is unauthenticated and causes Telegram side effects. It is intended only for deployments where network access to the service is appropriately restricted. The existing CORS policy remains `GET`-only, but CORS is not authentication and does not replace that network restriction.
 
 ## GIBS previews
 

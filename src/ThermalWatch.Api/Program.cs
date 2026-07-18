@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Http.Resilience;
 using Polly;
@@ -88,9 +89,11 @@ try
             1));
 
     builder.Services.AddHostedService<FirmsPollingService>();
+    builder.Services.AddSingleton<TelegramNotificationService>();
     if (configuration.Telegram.IsEnabled)
     {
-        builder.Services.AddHostedService<TelegramNotificationService>();
+        builder.Services.AddHostedService(serviceProvider =>
+            serviceProvider.GetRequiredService<TelegramNotificationService>());
     }
     else if (configuration.Telegram.IsPartiallyConfigured)
     {
@@ -121,6 +124,38 @@ try
         return Results.Ok(snapshot with { Count = items.Length, Items = items });
     });
 
+    app.MapPost("/api/telegram/send-top", async (
+        HttpRequest request,
+        TelegramNotificationService telegram,
+        CancellationToken cancellationToken) =>
+    {
+        if (!TryParseManualSendCount(request.Query, out var count))
+        {
+            return Results.BadRequest(new
+            {
+                error = "count must be one integer between 1 and 50."
+            });
+        }
+
+        var result = await telegram.SendTopAsync(count, cancellationToken);
+        return result.Status switch
+        {
+            ManualTelegramSendStatus.Completed => Results.Ok(result.Response),
+            ManualTelegramSendStatus.TelegramUnavailable => Results.Conflict(new
+            {
+                error = "Telegram is disabled or not validated."
+            }),
+            ManualTelegramSendStatus.AlreadyRunning => Results.Conflict(new
+            {
+                error = "A manual Telegram send is already running."
+            }),
+            ManualTelegramSendStatus.StatusMessageFailed => Results.Json(
+                new { error = "The Telegram status message could not be sent." },
+                statusCode: StatusCodes.Status502BadGateway),
+            _ => Results.StatusCode(StatusCodes.Status500InternalServerError)
+        };
+    });
+
     await app.RunAsync();
     return 0;
 }
@@ -145,4 +180,20 @@ static void ConfigureResilience(
     options.Retry.BackoffType = DelayBackoffType.Exponential;
     options.Retry.UseJitter = true;
     options.Retry.ShouldRetryAfterHeader = true;
+}
+
+static bool TryParseManualSendCount(IQueryCollection query, out int count)
+{
+    count = 5;
+    if (!query.TryGetValue("count", out var values))
+        return true;
+
+    return values.Count == 1
+        && values[0] is { } value
+        && int.TryParse(
+            value,
+            NumberStyles.None,
+            CultureInfo.InvariantCulture,
+            out count)
+        && count is >= 1 and <= 50;
 }
