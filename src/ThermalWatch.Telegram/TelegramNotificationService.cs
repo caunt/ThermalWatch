@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
@@ -120,10 +121,12 @@ public sealed class TelegramNotificationService(
             _seen[detection.Id] = now;
 
         TrimSeen();
-        var clusters = NotificationClustering.Create(
+        var clusters = TelegramNotificationClustering.Create(
+            snapshot.Items,
             newDetections,
             options.ClusterRadiusKilometers,
-            options.ClusterTimeWindow);
+            options.ClusterTimeWindow,
+            options.Visibility.Enabled && options.Visibility.MinimumClusterDetections > 1);
 
         foreach (var cluster in clusters)
         {
@@ -373,4 +376,52 @@ public sealed class TelegramNotificationService(
         public int RejectionCount(VisibilityRejectionReason reason) =>
             _rejectionCounts.GetValueOrDefault(reason);
     }
+}
+
+internal static class TelegramNotificationClustering
+{
+    public static ImmutableArray<NotificationCluster> Create(
+        IReadOnlyList<Anomaly> activeDetections,
+        IReadOnlyList<Anomaly> newDetections,
+        double radiusKilometers,
+        TimeSpan timeWindow,
+        bool includeActiveContext)
+    {
+        if (newDetections.Count == 0)
+            return [];
+
+        var newIds = newDetections
+            .Select(detection => detection.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var clusteringDetections = includeActiveContext
+            ? activeDetections
+                .Where(detection => newIds.Contains(detection.Id)
+                    || newDetections.Any(newDetection => AreRelated(
+                        detection,
+                        newDetection,
+                        radiusKilometers,
+                        timeWindow)))
+                .DistinctBy(detection => detection.Id)
+                .ToArray()
+            : newDetections
+                .DistinctBy(detection => detection.Id)
+                .ToArray();
+
+        return
+        [
+            .. NotificationClustering.Create(
+                    clusteringDetections,
+                    radiusKilometers,
+                    timeWindow)
+                .Where(cluster => cluster.Members.Any(member => newIds.Contains(member.Id)))
+        ];
+    }
+
+    private static bool AreRelated(
+        Anomaly first,
+        Anomaly second,
+        double radiusKilometers,
+        TimeSpan timeWindow) =>
+        (first.AcquiredAtUtc - second.AcquiredAtUtc).Duration() <= timeWindow
+        && Geography.HaversineKilometers(first, second) <= radiusKilometers;
 }
