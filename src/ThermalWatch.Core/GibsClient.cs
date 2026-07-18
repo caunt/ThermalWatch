@@ -154,10 +154,9 @@ public sealed class GibsClient(
 
         try
         {
-            var detectionPixels = detections
+            var requiredPixels = detections
                 .Select(detection => ToLandCoverPixel(detection.Latitude, detection.Longitude))
-                .ToImmutableArray();
-            var requiredPixels = detectionPixels.ToHashSet();
+                .ToHashSet();
 
             foreach (var detection in detections)
             {
@@ -201,35 +200,23 @@ public sealed class GibsClient(
                 return GibsLandCoverResult.Unavailable(year);
 
             var tiles = tileResults.ToDictionary(item => item.Tile, item => item.Result.Classes!);
-            var detectionClasses = ImmutableArray.CreateBuilder<byte>(detectionPixels.Length);
-            foreach (var pixel in detectionPixels)
+            var sampledClasses = ImmutableArray.CreateBuilder<byte>(requiredPixels.Count);
+            var hasBuiltUpWithinProximity = false;
+            foreach (var pixel in requiredPixels)
             {
                 var landCoverClass = GetLandCoverClass(tiles, pixel);
                 if (IsUnavailableClass(landCoverClass))
                     return GibsLandCoverResult.Unavailable(year);
 
-                detectionClasses.Add(landCoverClass);
+                sampledClasses.Add(landCoverClass);
+                hasBuiltUpWithinProximity |= landCoverClass == 13;
             }
 
-            var hasUnavailableProximityPixel = false;
-            foreach (var pixel in requiredPixels)
-            {
-                var landCoverClass = GetLandCoverClass(tiles, pixel);
-                if (landCoverClass == 13)
-                {
-                    return new(
-                        true,
-                        year,
-                        detectionClasses.MoveToImmutable(),
-                        true);
-                }
-
-                hasUnavailableProximityPixel |= IsUnavailableClass(landCoverClass);
-            }
-
-            return hasUnavailableProximityPixel
-                ? GibsLandCoverResult.Unavailable(year)
-                : new(true, year, detectionClasses.MoveToImmutable(), false);
+            return new(
+                true,
+                year,
+                sampledClasses.MoveToImmutable(),
+                hasBuiltUpWithinProximity);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

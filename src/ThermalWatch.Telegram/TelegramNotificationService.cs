@@ -409,19 +409,16 @@ public sealed class TelegramNotificationService(
         if (landCoverResult.Decision == LandCoverFilterDecision.Unavailable)
         {
             logger.LogWarning(
-                "NASA land-cover data unavailable for Telegram cluster {NotificationId}; retaining notification candidate",
-                cluster.Id);
+                "NASA land-cover filter retained Telegram cluster {NotificationId}: {LandCoverReason}",
+                cluster.Id,
+                landCoverResult.Reason);
         }
         else if (landCoverResult.Decision == LandCoverFilterDecision.Suppressed)
         {
             logger.LogDebug(
-                "NASA land-cover filter suppressed Telegram cluster {NotificationId}: vegetation {VegetationPercent}% is at least {VegetationPercentThreshold}%; no class 13 pixel is within {BuiltUpProximityKm} km; representative FRP {RepresentativeFrpMegawatts} MW is below {VegetationMaximumFrpMegawatts} MW; multi-satellite retention did not apply",
+                "NASA land-cover filter suppressed Telegram cluster {NotificationId}: {LandCoverReason}",
                 cluster.Id,
-                landCoverResult.VegetationPercent,
-                options.LandCover.VegetationPercentThreshold,
-                options.LandCover.BuiltUpProximityKilometers,
-                landCoverResult.RepresentativeFrpMegawatts,
-                options.LandCover.VegetationMaximumFrpMegawatts);
+                landCoverResult.Reason);
         }
 
         return new(
@@ -514,12 +511,7 @@ public sealed class TelegramNotificationService(
         string? landCoverSummary,
         CancellationToken cancellationToken)
     {
-        var keyboard = new InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton.WithUrl(
-                "🗺 Open in Google Maps",
-                cluster.Representative.GoogleMapsUrl)]
-        ]);
+        var keyboard = CreateLocationKeyboard(cluster);
         var message = TelegramMessageFormatter.Format(
             cluster,
             preview.IsAvailable,
@@ -549,6 +541,14 @@ public sealed class TelegramNotificationService(
                 cancellationToken: cancellationToken);
         }
     }
+
+    internal static InlineKeyboardMarkup CreateLocationKeyboard(NotificationCluster cluster) =>
+        new(
+        [
+            [InlineKeyboardButton.WithUrl(
+                "🗺 Open in Google Maps",
+                cluster.Representative.GoogleMapsUrl)]
+        ]);
 
     private void DisableValidatedTelegram(ValidatedTelegram validated) =>
         Interlocked.CompareExchange(ref _validated, null, validated);

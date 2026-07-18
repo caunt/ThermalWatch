@@ -118,7 +118,7 @@ public sealed record GibsPreview(byte[]? PngBytes)
 public sealed record GibsLandCoverResult(
     bool IsAvailable,
     int? Year,
-    ImmutableArray<byte> DetectionClasses,
+    ImmutableArray<byte> SampledClasses,
     bool HasBuiltUpWithinProximity)
 {
     public static GibsLandCoverResult Unavailable(int? year = null) =>

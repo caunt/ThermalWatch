@@ -86,7 +86,7 @@ public static class TelegramMessageFormatter
             sections.Add(string.Join('\n', preview));
         }
 
-        sections.Add(FormatLocation(data, "Open in Google Maps"));
+        sections.Add(FormatLocation(data));
         sections.Add("⚠️ <i>Satellite-detected thermal anomaly; not a confirmed fire.</i>");
         return string.Join("\n\n", sections);
     }
@@ -128,7 +128,7 @@ public static class TelegramMessageFormatter
             sections.Add(string.Join('\n', preview));
         }
 
-        sections.Add(FormatLocation(data, "View location"));
+        sections.Add(FormatLocation(data));
         sections.Add("⚠️ <i>Automated satellite detection; event type is not confirmed.</i>");
         return string.Join("\n\n", sections);
     }
@@ -150,7 +150,7 @@ public static class TelegramMessageFormatter
                 $"📍 <b>{Html(FormatInlineList(data.Countries, 2))}</b>",
                 $"🕓 <b>{timeLabel}:</b> {Html(FormatDateTime(observedAt))} UTC",
                 $"🔎 <b>Detections:</b> {Html(data.Cluster.Members.Length.ToString(CultureInfo.InvariantCulture))}"),
-            FormatLocation(data, multiSatellite ? "View location" : "Open in Google Maps"),
+            FormatLocation(data),
             multiSatellite
                 ? "⚠️ <i>Automated satellite detection; event type is not confirmed.</i>"
                 : "⚠️ <i>Satellite-detected thermal anomaly; not a confirmed fire.</i>");
@@ -176,14 +176,12 @@ public static class TelegramMessageFormatter
             clusterDiameterKilometers,
             landCoverSummary);
 
-    private static string FormatLocation(TemplateData data, string linkText)
+    private static string FormatLocation(TemplateData data)
     {
         var representative = data.Cluster.Representative;
         var latitude = representative.Latitude.ToString("0.000000", CultureInfo.InvariantCulture);
         var longitude = representative.Longitude.ToString("0.000000", CultureInfo.InvariantCulture);
-        return string.Join('\n',
-            $"📌 <code>{Html(latitude)}, {Html(longitude)}</code>",
-            $"🗺 <a href=\"{Html(representative.GoogleMapsUrl)}\">{linkText}</a>");
+        return $"📌 <code>{Html(latitude)}, {Html(longitude)}</code>";
     }
 
     private static string FormatSatelliteBullets(string[] satellites, int compactLevel)
