@@ -11,6 +11,7 @@ public sealed record TelegramOptions(
     TimeSpan SeenRetention,
     TimeSpan PreviewRetryWindow,
     TelegramPreviewOptions Preview,
+    TelegramLandCoverOptions LandCover,
     TelegramVisibilityOptions Visibility)
 {
     public bool IsEnabled => BotToken is not null && ChannelId is not null;
@@ -50,6 +51,12 @@ public sealed record TelegramOptions(
                 ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_LARGE_CLUSTER_MIN_DETECTIONS", 8),
                 ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_LARGE_CLUSTER_MIN_FRP_MW", 500),
                 ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_LARGE_CLUSTER_MIN_DIAMETER_KM", 8)),
+            new(
+                ParseBool(getEnvironmentVariable, "TELEGRAM_LAND_COVER_FILTER_ENABLED", true),
+                ParseDouble(getEnvironmentVariable, "TELEGRAM_VEGETATION_PERCENT_THRESHOLD", 70, 0, 100),
+                ParseDouble(getEnvironmentVariable, "TELEGRAM_BUILT_UP_PROXIMITY_KM", 2, 0, 100),
+                ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_VEGETATION_MAX_FRP_MW", 300),
+                ParseBool(getEnvironmentVariable, "TELEGRAM_KEEP_MULTI_SATELLITE_CLUSTERS", true)),
             new(
                 ParseBool(getEnvironmentVariable, "TELEGRAM_VISIBILITY_FILTER_ENABLED", true),
                 ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_MIN_FRP_MW", 50),
@@ -191,6 +198,13 @@ public sealed record TelegramPreviewOptions(
 public readonly record struct TelegramPreviewSize(
     double WidthKilometers,
     double HeightKilometers);
+
+public sealed record TelegramLandCoverOptions(
+    bool Enabled,
+    double VegetationPercentThreshold,
+    double BuiltUpProximityKilometers,
+    double VegetationMaximumFrpMegawatts,
+    bool KeepMultiSatelliteClusters);
 
 public sealed record TelegramVisibilityOptions(
     bool Enabled,

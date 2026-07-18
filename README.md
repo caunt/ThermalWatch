@@ -39,6 +39,11 @@ Optional variables:
 | `TELEGRAM_LARGE_CLUSTER_MIN_DETECTIONS` | `8` | Detection count that selects the large preview crop. |
 | `TELEGRAM_LARGE_CLUSTER_MIN_FRP_MW` | `500` | Representative FRP in megawatts that selects the large preview crop. |
 | `TELEGRAM_LARGE_CLUSTER_MIN_DIAMETER_KM` | `8` | Maximum pairwise cluster distance that selects the large preview crop. |
+| `TELEGRAM_LAND_COVER_FILTER_ENABLED` | `true` | Suppress probable vegetation-fire clusters from Telegram using NASA MODIS land cover. |
+| `TELEGRAM_VEGETATION_PERCENT_THRESHOLD` | `70` | Minimum percentage of cluster detections on vegetation classes for land-cover suppression. |
+| `TELEGRAM_BUILT_UP_PROXIMITY_KM` | `2` | Retain a cluster when an urban/built-up land-cover pixel is within this distance of any detection. |
+| `TELEGRAM_VEGETATION_MAX_FRP_MW` | `300` | Retain a cluster when representative FRP is at least this many megawatts. |
+| `TELEGRAM_KEEP_MULTI_SATELLITE_CLUSTERS` | `true` | Retain clusters confirmed by more than one satellite. |
 | `TELEGRAM_VISIBILITY_FILTER_ENABLED` | `true` | Require Telegram clusters to pass the likely-visible-in-imagery heuristic. |
 | `TELEGRAM_MIN_FRP_MW` | `50` | Minimum representative fire radiative power in megawatts; `0` disables this requirement. |
 | `TELEGRAM_MIN_THERMAL_CONTRAST_K` | `20` | Minimum representative primary-minus-secondary brightness temperature in kelvin; `0` disables this requirement. |
@@ -58,6 +63,14 @@ The visibility filter affects Telegram notification candidates only. The HTTP AP
 This is only a heuristic intended to improve the chance that true-color imagery contains a visible smoke plume, burn area, or other obvious feature. It does not prove that a fire or smoke is visible. Clouds, smoke direction, the difference between image and detection timing, sensor resolution, and the physical size of the source can all limit visibility.
 
 Set `TELEGRAM_VISIBILITY_FILTER_ENABLED=false` to restore the previous notification selection behavior. Set `TELEGRAM_REQUIRE_DAYTIME=false` to permit nighttime candidates using the existing matching nighttime GIBS layers. Set `TELEGRAM_REQUIRE_PREVIEW=false` to restore the text-only fallback when the preview retry window expires.
+
+## Telegram land-cover filter
+
+The land-cover filter affects Telegram notification clusters only. It does not remove or annotate FIRMS detections returned by `/api/anomalies`. It heuristically suppresses a probable vegetation fire when at least 70% of the cluster's detections are on vegetation land-cover classes, no urban/built-up pixel is within 2 km of any detection, representative FRP is below 300 MW, and the cluster is not protected as a multi-satellite event. Forests, shrublands, savannas, grassland, permanent wetland, cropland, and the cropland/natural vegetation mosaic are treated as vegetation.
+
+Classification uses NASA GIBS [`MODIS_Combined_L3_IGBP_Land_Cover_Type_Annual`](https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/1.0.0/WMTSCapabilities.xml), the annual combined Aqua/Terra MODIS IGBP land-cover product. ThermalWatch selects the most recent year GIBS advertises for every required tile and records it in debug logs. NASA currently advertises 2001–2024, so 2024 is the selected year where current data is available. Categorical classes are decoded from the rendered indexed tiles with NASA's official [`MODIS_IGBP_Land_Cover_Type` colormap](https://gibs.earthdata.nasa.gov/colormaps/v1.3/MODIS_IGBP_Land_Cover_Type.xml), rather than inferred from image appearance.
+
+Strong events at or above the FRP threshold, events with urban land cover nearby, and multi-satellite events are retained by default. Missing FRP, unavailable NASA land-cover data, and unrecognized pixels also retain the notification candidate. Land-cover classification and these thresholds are imperfect heuristics; they do not prove whether an event is a vegetation fire or any other event type. Set `TELEGRAM_LAND_COVER_FILTER_ENABLED=false` to disable this filter and restore the existing Telegram behavior.
 
 ## Satellite feeds
 

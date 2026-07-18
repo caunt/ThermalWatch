@@ -114,3 +114,13 @@ public sealed record GibsPreview(byte[]? PngBytes)
 
     public static GibsPreview Unavailable { get; } = new((byte[]?)null);
 }
+
+public sealed record GibsLandCoverResult(
+    bool IsAvailable,
+    int? Year,
+    ImmutableArray<byte> DetectionClasses,
+    bool HasBuiltUpWithinProximity)
+{
+    public static GibsLandCoverResult Unavailable(int? year = null) =>
+        new(false, year, [], false);
+}

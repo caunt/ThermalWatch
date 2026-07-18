@@ -35,13 +35,19 @@ public sealed class TelegramNotificationService(
                 continue;
 
             var summary = new VisibilityProcessingSummary();
-            TrackNewDetections(snapshot, summary);
+            var landCoverSummary = new LandCoverProcessingSummary();
+            await TrackNewDetectionsAsync(
+                snapshot,
+                summary,
+                landCoverSummary,
+                stoppingToken);
             var continueRunning = await SendPendingAsync(
                 validated.Client,
                 validated.ChatId,
                 summary,
                 stoppingToken);
             LogVisibilitySummary(summary);
+            LogLandCoverSummary(landCoverSummary);
             if (!continueRunning)
                 return;
         }
@@ -92,9 +98,11 @@ public sealed class TelegramNotificationService(
         }
     }
 
-    private void TrackNewDetections(
+    private async Task TrackNewDetectionsAsync(
         AnomalySnapshot snapshot,
-        VisibilityProcessingSummary summary)
+        VisibilityProcessingSummary summary,
+        LandCoverProcessingSummary landCoverSummary,
+        CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
         ExpireSeen(now);
@@ -134,6 +142,45 @@ public sealed class TelegramNotificationService(
             var result = TelegramVisibilityFilter.EvaluateMetadata(cluster, options.Visibility);
             if (result.IsAccepted)
             {
+                if (options.LandCover.Enabled)
+                {
+                    landCoverSummary.AddCandidate();
+                    var landCoverResult = await TelegramLandCoverFilter.EvaluateAsync(
+                        cluster,
+                        options.LandCover,
+                        gibsClient,
+                        cancellationToken);
+                    if (landCoverResult.LandCoverYear is { } landCoverYear)
+                    {
+                        landCoverSummary.RecordYear(landCoverYear);
+                        logger.LogDebug(
+                            "Selected NASA land-cover year {LandCoverYear} for Telegram cluster {NotificationId}",
+                            landCoverYear,
+                            cluster.Id);
+                    }
+
+                    if (landCoverResult.Decision == LandCoverFilterDecision.Unavailable)
+                    {
+                        landCoverSummary.AddUnavailable();
+                        logger.LogWarning(
+                            "NASA land-cover data unavailable for Telegram cluster {NotificationId}; retaining notification candidate",
+                            cluster.Id);
+                    }
+                    else if (landCoverResult.Decision == LandCoverFilterDecision.Suppressed)
+                    {
+                        landCoverSummary.AddSuppressed();
+                        logger.LogDebug(
+                            "NASA land-cover filter suppressed Telegram cluster {NotificationId}: vegetation {VegetationPercent}% is at least {VegetationPercentThreshold}%; no class 13 pixel is within {BuiltUpProximityKm} km; representative FRP {RepresentativeFrpMegawatts} MW is below {VegetationMaximumFrpMegawatts} MW; multi-satellite retention did not apply",
+                            cluster.Id,
+                            landCoverResult.VegetationPercent,
+                            options.LandCover.VegetationPercentThreshold,
+                            options.LandCover.BuiltUpProximityKilometers,
+                            landCoverResult.RepresentativeFrpMegawatts,
+                            options.LandCover.VegetationMaximumFrpMegawatts);
+                        continue;
+                    }
+                }
+
                 _pending.Add(new(cluster, now, SelectPreviewDimensions(cluster)));
                 continue;
             }
@@ -309,6 +356,19 @@ public sealed class TelegramNotificationService(
             summary.RejectionCount(VisibilityRejectionReason.PreviewUnavailable));
     }
 
+    private void LogLandCoverSummary(LandCoverProcessingSummary summary)
+    {
+        if (!options.LandCover.Enabled || !summary.HasActivity)
+            return;
+
+        logger.LogInformation(
+            "NASA land-cover filter processed {CandidateClusterCount} Telegram clusters; suppressed {VegetationSuppressedCount}; unavailable {LandCoverUnavailableCount}; selected year {LandCoverYear}",
+            summary.CandidateClusterCount,
+            summary.VegetationSuppressedCount,
+            summary.LandCoverUnavailableCount,
+            summary.LandCoverYear);
+    }
+
     private void ExpireSeen(DateTimeOffset now)
     {
         var cutoff = now - options.SeenRetention;
@@ -375,6 +435,28 @@ public sealed class TelegramNotificationService(
 
         public int RejectionCount(VisibilityRejectionReason reason) =>
             _rejectionCounts.GetValueOrDefault(reason);
+    }
+
+    private sealed class LandCoverProcessingSummary
+    {
+        public int CandidateClusterCount { get; private set; }
+
+        public int VegetationSuppressedCount { get; private set; }
+
+        public int LandCoverUnavailableCount { get; private set; }
+
+        public int? LandCoverYear { get; private set; }
+
+        public bool HasActivity => CandidateClusterCount > 0;
+
+        public void AddCandidate() => CandidateClusterCount++;
+
+        public void AddSuppressed() => VegetationSuppressedCount++;
+
+        public void AddUnavailable() => LandCoverUnavailableCount++;
+
+        public void RecordYear(int year) =>
+            LandCoverYear = LandCoverYear is { } current ? Math.Max(current, year) : year;
     }
 }
 
