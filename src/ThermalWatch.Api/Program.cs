@@ -124,7 +124,7 @@ try
         return Results.Ok(snapshot with { Count = items.Length, Items = items });
     });
 
-    app.MapPost("/api/telegram/send-top", async (
+    app.MapGet("/api/telegram/send-top", async (
         HttpRequest request,
         TelegramNotificationService telegram,
         CancellationToken cancellationToken) =>

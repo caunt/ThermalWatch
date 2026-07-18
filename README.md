@@ -126,14 +126,14 @@ Each anomaly includes nullable `thermalContrastKelvin`, calculated as its primar
 ### Manual Telegram send
 
 ```text
-POST http://localhost:8080/api/telegram/send-top?count=5
+GET http://localhost:8080/api/telegram/send-top?count=5
 ```
 
 This endpoint reads the current in-memory FIRMS snapshot and sends the highest-ranked clusters that pass every configured Telegram visibility, NASA land-cover, and exact-date GIBS preview requirement. It does not refresh FIRMS. `count` defaults to `5`, must be an integer from `1` through `50`, and limits the number of anomaly posts rather than the number evaluated.
 
 Manual sends treat all current detections as newly observed for that operation. They bypass normal seen-ID checks without changing seen IDs, pending previews, or future automatic deduplication. One manual execution can run at a time; overlapping calls return HTTP `409`. Individual anomaly-send failures do not stop later selected clusters and are reported by cluster ID in the JSON response.
 
-The endpoint is unauthenticated and causes Telegram side effects. It is intended only for deployments where network access to the service is appropriately restricted. The existing CORS policy remains `GET`-only, but CORS is not authentication and does not replace that network restriction.
+The endpoint is unauthenticated, causes Telegram side effects, and is covered by the permissive cross-origin `GET` policy. It is intended only for deployments where network access to the service is appropriately restricted.
 
 ## GIBS previews
 
