@@ -109,7 +109,11 @@ try
     app.UseSerilogRequestLogging();
     app.UseCors();
     app.UseDefaultFiles();
-    app.UseStaticFiles();
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        OnPrepareResponse = context =>
+            context.Context.Response.Headers.CacheControl = "no-cache, must-revalidate"
+    });
 
     app.MapGet("/api/viewer/config", (ViewerOptions viewerOptions) => Results.Ok(new
     {

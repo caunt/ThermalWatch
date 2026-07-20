@@ -2,7 +2,7 @@
 
 > **Purpose:** Provide verified setup, build, test, formatting, debugging, and validation workflows.
 > **Scope:** Local development and pull-request validation for server, tests, documentation, and static viewer assets.
-> **Sources of truth:** [Temporary environment helper](../.env), [build properties](../Directory.Build.props), [solution](../ThermalWatch.slnx), [test project](../tests/ThermalWatch.Tests.csproj), and [PR workflow](../.github/workflows/pr.yml).
+> **Sources of truth:** [Build properties](../Directory.Build.props), [solution](../ThermalWatch.slnx), [test project](../tests/ThermalWatch.Tests.csproj), and [PR workflow](../.github/workflows/pr.yml).
 > **Update when:** SDK requirements, commands, project layout, tests, formatting, static assets, or CI validation changes.
 
 ## Prerequisites
@@ -12,7 +12,7 @@
 - Node.js 22 only when changing the plain JavaScript viewer and running its syntax checks and dependency-free unit tests.
 - Docker is optional and can supply the official .NET SDK when it is not installed locally.
 
-Do not store credentials in files, shell history, plans, logs, or documentation. Export them through the local environment or deployment secret mechanism.
+Do not store credentials in shell history, tracked files, plans, logs, or documentation. A user-authorized, ignored repository-root `.env` is the only local file exception for live development credentials.
 
 ## Restore, build, test, and format
 
@@ -62,11 +62,12 @@ The check deliberately does not validate external URLs, anchors, or semantic agr
 
 ## Run locally
 
-Export a real key outside the repository, then start the host:
+Export a real key or source an existing ignored local `.env`, then start the host:
 
 ```bash
-export FIRMS_MAP_KEY
-FIRMS_COUNTRIES=UKR,RUS dotnet run --project src/ThermalWatch.Api/ThermalWatch.Api.csproj
+source ./.env
+env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHANNEL_ID \
+  dotnet run --project src/ThermalWatch.Api/ThermalWatch.Api.csproj
 ```
 
 The service listens on `http://localhost:8080`. Telegram is disabled when its credentials are absent. See [operations](operations.md) for all options and startup constraints.
@@ -75,20 +76,22 @@ Startup immediately calls FIRMS. Prefer the unit tests for repeatable developmen
 
 ### Temporary credentials for live validation
 
-Whenever verification or tests require live-provider access, an agent may source the tracked repository-root [`.env` helper](../.env) in the same Bash session that will run the check:
+Whenever verification requires live-provider access, an agent may source an existing ignored repository-root `.env` in the same Bash session that runs the check:
 
 ```bash
 source ./.env
 ```
 
-The user provides freshly rotated, temporary, single-use testing API keys, tokens, and any other task-required values through its prompts. The helper does not echo key/token values, applies them only to that shell and its child processes, and writes nothing. Agents must never print, log, persist, commit, or reuse supplied credentials. After the agents complete their work, the user removes and rotates every supplied key or token and never uses it again. Do not use the helper for end-user setup, deployment, or long-lived credentials.
+The file contains quoted Bash `export` assignments supplied or authorized by the user. It must stay ignored, use owner-only permissions, and never be printed, logged, included in a diff, or committed. Preserve the file whenever it exists; do not delete it during cleanup. The user rotates its values after live testing. Do not use it for deployment or long-lived credentials.
+
+Sourcing all variables can enable Telegram's hosted service. Viewer and read-only provider checks must remove `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHANNEL_ID` from the server child process as shown above. Never call `/api/telegram/send-top` during viewer validation.
 
 ## Change-specific checks
 
 | Change | Additional validation |
 | --- | --- |
-| Temporary environment helper | `bash -n .env`, plus an isolated source test with dummy values; never print supplied credentials. |
-| Viewer JavaScript | Run both `node --check` commands and `node --test tests/viewer-map-support.test.js`, then browser-check loading, empty, error, marker-selection, and provider states as applicable. |
+| Ignored temporary environment file | `bash -n .env`, mode/ignore checks, and silent assertions that required variables are nonempty; never print supplied credentials. |
+| Viewer JavaScript | Run both `node --check` commands and `node --test tests/viewer-map-support.test.js`, then complete the screenshot and vision workflow below. |
 | Static assets or hosting | Run the static-asset publish and Kestrel smoke check below. |
 | Environment parsing | Add option tests and verify missing, valid, boundary, and invalid values without printing secrets. |
 | FIRMS, GIBS, or Telegram logic | Add focused unit tests with fake HTTP handlers or model fixtures; do not make tests call live services. |
@@ -119,11 +122,33 @@ curl --fail --silent --show-error --output /dev/null http://localhost:8080/
 
 Starting the host calls live FIRMS immediately. Skip the Kestrel portion when a real key or bounded network access is unavailable; the publish-file assertion remains deterministic.
 
+## Live viewer screenshot verification
+
+Every task that changes or diagnoses the web viewer requires browser screenshots and image/vision inspection. Successful HTTP requests, map tiles, console checks, DOM assertions, or marker counts do not prove that the rendered viewer is usable.
+
+Use a clean disposable browser profile against the real local application. For provider work, wait until the live FIRMS snapshot is ready and capture at least:
+
+- NASA and Google at a 1440×900 desktop viewport.
+- NASA and Google at a 390×844 narrow viewport.
+- The initial provider again after switching to the other provider and back.
+
+Open every captured image rather than merely checking that the file exists. Verify current imagery has no opaque no-data swaths, controls and markers are visible, marker selection works, every desktop workspace reaches the same content-sized footer with height differences explained only by visible notice rows, and the narrow layout has no horizontal overflow. Inspect any task-specific loading, empty, warning, or failure states too. Save transient screenshots outside the repository, report their paths and visual findings, and do not save HAR files or browser logs that expose a Google key.
+
+For a viewer-only run, source `.env` but suppress Telegram in the application process:
+
+```bash
+source ./.env
+env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHANNEL_ID \
+  dotnet src/ThermalWatch.Api/bin/Release/net10.0/publish/ThermalWatch.Api.dll
+```
+
+Stop the browser and server normally after inspection. Preserve `.env`.
+
 ## Safe debugging workflow
 
 1. Check `git status --short` and preserve unrelated worktree changes.
 2. Read the routed component and domain documents, then inspect the source and tests they cite.
-3. Keep external calls bounded and use non-production Telegram channels if delivery must be tested.
+3. Keep external calls bounded. Viewer checks must disable Telegram regardless of the configured channel.
 4. Remember that `GET /api/telegram/send-top` sends messages and that viewer Refresh only rereads the in-memory snapshot.
 5. Run `git diff --check`, the change-specific checks, and the complete solution validation before completion.
 

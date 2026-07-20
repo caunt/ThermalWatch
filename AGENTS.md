@@ -12,7 +12,7 @@ ThermalWatch is a deliberately small .NET 10 service that polls NASA FIRMS near-
 - `.agent/PLANS.md` — ExecPlan requirements and format.
 - `.agents/skills/` — reusable repository-local Codex procedures.
 - `.github/workflows/` — PR validation, publishing, container creation, and Renovate automation.
-- `.env` — source-only development helper for temporary, user-authorized live-service credentials; it must never persist or contain values.
+- `.env` — optional ignored, sourceable local exports for temporary, user-authorized live-service credentials; preserve it when it exists and never commit it.
 
 ## Commands
 
@@ -48,7 +48,7 @@ See [development guidance](docs/development.md) for prerequisites, safe local se
 ## Engineering constraints
 
 - Application-specific configuration uses exact uppercase environment names; do not add `appsettings` or commit credentials.
-- When verification or tests need live-provider access, agents may source the repository-root `.env`. The user supplies freshly rotated, temporary, single-use testing API keys, tokens, and any other task-required values; never echo, log, persist, commit, or reuse them. After the work, the user removes and rotates every supplied credential and never uses it again.
+- When verification or tests need live-provider access, agents may source the ignored repository-root `.env`. The user supplies temporary testing credentials; never echo, log, commit, or reuse them outside the authorized task. Preserve an existing `.env` before, during, and after the task. The user rotates its values when testing ends.
 - State is intentionally in memory. A restart rebuilds the FIRMS snapshot and resets Telegram deduplication, pending previews, and caches.
 - `/api/anomalies` exposes all valid active FIRMS observations. Telegram filters must never remove or annotate API items.
 - FIRMS segments are isolated by country and source. A failed refresh retains the previous complete segment and marks it stale.
@@ -92,7 +92,8 @@ After the change:
 
 1. Update affected documentation in the same task and update `docs/README.md` when routing changes.
 2. Run the documented validation commands appropriate to the change.
-3. Report which documentation was consulted and which was updated, created, removed, or intentionally left unchanged.
+3. For any web-viewer task, capture desktop and narrow screenshots of every affected provider/state, open them with image/vision inspection, and treat visible defects as failures. DOM and network assertions alone are insufficient.
+4. Report which documentation was consulted and which was updated, created, removed, or intentionally left unchanged.
 
 ## Documentation boundaries
 

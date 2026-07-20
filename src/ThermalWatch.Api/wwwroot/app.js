@@ -41,7 +41,7 @@
   const providerDefinitions = new Map([
     ["gibs", {
       create: () => new GibsMapProvider(),
-      caption: () => "NASA GIBS latest corrected reflectance · Terra with Aqua/VIIRS tile fallback"
+      caption: () => "NASA GIBS latest corrected reflectance · Terra supplemented by Aqua/VIIRS"
     }],
     ["google", {
       create: () => new GoogleMapProvider(),
@@ -666,23 +666,19 @@
         noWrap: false
       });
       this.imageryLayer.createTile = (coordinates, done) => {
-        const tile = document.createElement("img");
-        tile.alt = "";
-        tile.crossOrigin = "anonymous";
-        tile.decoding = "async";
+        const tile = document.createElement("canvas");
         tile.setAttribute("role", "presentation");
-        mapSupport.loadGibsTile(tile, coordinates, {
+        tile.setAttribute("aria-hidden", "true");
+        tile.cancelGibsLoad = mapSupport.loadGibsTile(tile, coordinates, {
           onComplete: result => {
             reportImageryResult(result);
-            done(
-              result.available
-                ? null
-                : new Error("No latest NASA GIBS imagery is available for this tile."),
-              tile);
+            delete tile.cancelGibsLoad;
+            done(null, tile);
           }
         });
         return tile;
       };
+      this.imageryLayer.on("tileunload", event => event.tile.cancelGibsLoad?.());
       this.imageryLayer.addTo(this.map);
 
       this.markerLayer = window.L.layerGroup().addTo(this.map);
@@ -832,8 +828,9 @@
     }
 
     destroy() {
-      if (window.google?.maps)
-        this.clearMarkers();
+      if (window.google?.maps && this.map)
+        window.google.maps.event.clearInstanceListeners(this.map);
+      this.markers.clear();
       this.unsubscribeAuthFailure?.();
       this.unsubscribeAuthFailure = null;
       this.map = null;

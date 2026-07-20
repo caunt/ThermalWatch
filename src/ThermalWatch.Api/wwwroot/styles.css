@@ -40,11 +40,18 @@ select {
 
 .app-shell {
   display: grid;
+  grid-template-areas:
+    "toolbar"
+    "notice"
+    "snapshot"
+    "workspace"
+    "footer";
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   height: 100%;
 }
 
 .toolbar {
+  grid-area: toolbar;
   z-index: 20;
   display: flex;
   gap: 1rem;
@@ -145,6 +152,7 @@ select:disabled,
 }
 
 .notice {
+  grid-area: notice;
   z-index: 15;
   padding: 0.58rem 1rem;
   border-bottom: 1px solid var(--border);
@@ -170,6 +178,7 @@ select:disabled,
 }
 
 .snapshot-bar {
+  grid-area: snapshot;
   z-index: 10;
   display: flex;
   flex-wrap: wrap;
@@ -198,6 +207,7 @@ select:disabled,
 
 .workspace {
   display: grid;
+  grid-area: workspace;
   grid-template-columns: minmax(0, 1fr) minmax(19rem, 25rem);
   min-height: 0;
 }
@@ -376,6 +386,7 @@ select:disabled,
 }
 
 footer {
+  grid-area: footer;
   padding: 0.42rem 1rem;
   border-top: 1px solid var(--border);
   background: var(--background);

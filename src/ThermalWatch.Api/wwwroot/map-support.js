@@ -37,8 +37,8 @@
     })
   ]);
 
-  const blankTileSource =
-    "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=";
+  const gibsTileSize = 256;
+  const gibsNoDataMaximum = 12;
 
   function gibsTileUrl(product, coordinates) {
     if (!product?.layer)
@@ -52,47 +52,154 @@
 
     return "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/"
       + `${encodeURIComponent(product.layer)}/default/default/`
-      + `GoogleMapsCompatible_Level9/${coordinates.z}/${coordinates.y}/${coordinates.x}.jpg`;
+      + `GoogleMapsCompatible_Level9/${coordinates.z}/${coordinates.y}/${coordinates.x}.jpeg`;
   }
 
-  function loadGibsTile(image, coordinates, options = {}) {
-    if (!image)
-      throw new Error("An image element is required to load a NASA GIBS tile.");
+  function isGibsNoDataPixel(pixels, offset, maximum = gibsNoDataMaximum) {
+    return pixels[offset + 3] === 0
+      || (pixels[offset] <= maximum
+        && pixels[offset + 1] <= maximum
+        && pixels[offset + 2] <= maximum);
+  }
+
+  function mergeGibsPixels(destination, source, maximum = gibsNoDataMaximum) {
+    if (!destination
+        || !source
+        || destination.length !== source.length
+        || destination.length % 4 !== 0) {
+      throw new Error("Equal RGBA pixel buffers are required for NASA GIBS compositing.");
+    }
+
+    let filledPixels = 0;
+    for (let offset = 0; offset < destination.length; offset += 4) {
+      if (destination[offset + 3] !== 0 || isGibsNoDataPixel(source, offset, maximum))
+        continue;
+
+      destination[offset] = source[offset];
+      destination[offset + 1] = source[offset + 1];
+      destination[offset + 2] = source[offset + 2];
+      destination[offset + 3] = source[offset + 3];
+      filledPixels += 1;
+    }
+
+    return filledPixels;
+  }
+
+  function readGibsImagePixels(image, canvas) {
+    canvas.width = gibsTileSize;
+    canvas.height = gibsTileSize;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context)
+      throw new Error("A 2D canvas context is required for NASA GIBS compositing.");
+
+    context.clearRect(0, 0, gibsTileSize, gibsTileSize);
+    context.drawImage(image, 0, 0, gibsTileSize, gibsTileSize);
+    return context.getImageData(0, 0, gibsTileSize, gibsTileSize).data;
+  }
+
+  function writeGibsPixels(canvas, pixels) {
+    const context = canvas.getContext("2d");
+    if (!context)
+      throw new Error("A 2D canvas context is required for NASA GIBS compositing.");
+
+    const imageData = context.createImageData(gibsTileSize, gibsTileSize);
+    imageData.data.set(pixels);
+    context.putImageData(imageData, 0, 0);
+  }
+
+  function loadGibsTile(canvas, coordinates, options = {}) {
+    if (!canvas)
+      throw new Error("A canvas element is required to load a NASA GIBS tile.");
 
     const products = options.products ?? gibsProducts;
     const buildUrl = options.buildUrl ?? gibsTileUrl;
+    const createImage = options.createImage ?? (() => new globalThis.Image());
+    const createCanvas = options.createCanvas
+      ?? (() => globalThis.document.createElement("canvas"));
+    let scratchCanvas = null;
+    const readPixels = options.readPixels ?? (image => {
+      scratchCanvas ??= createCanvas();
+      return readGibsImagePixels(image, scratchCanvas);
+    });
+    const writePixels = options.writePixels ?? writeGibsPixels;
     const onComplete = options.onComplete ?? (() => {});
+    const totalPixels = gibsTileSize * gibsTileSize;
+    const output = new Uint8ClampedArray(totalPixels * 4);
+    const usedProducts = [];
+    let remainingPixels = totalPixels;
     let productIndex = 0;
     let active = true;
+    let image = null;
 
-    const complete = result => {
+    canvas.width = gibsTileSize;
+    canvas.height = gibsTileSize;
+
+    const clearImageHandlers = () => {
+      if (!image)
+        return;
+
+      image.onload = null;
+      image.onerror = null;
+    };
+
+    const complete = () => {
       if (!active)
         return;
 
       active = false;
-      image.onload = null;
-      image.onerror = null;
-      onComplete(result);
+      clearImageHandlers();
+      writePixels(canvas, output);
+      onComplete({
+        available: remainingPixels < totalPixels,
+        complete: remainingPixels === 0,
+        unresolvedPixels: remainingPixels,
+        usedProducts: [...usedProducts]
+      });
     };
 
     const attempt = () => {
       const product = products[productIndex];
       if (!product) {
-        image.onload = null;
-        image.onerror = null;
-        image.src = blankTileSource;
-        complete({ available: false, product: null, productIndex: -1 });
+        complete();
         return;
       }
 
-      image.onload = () => complete({
-        available: true,
-        product,
-        productIndex
-      });
+      image = createImage();
+      image.crossOrigin = "anonymous";
+      image.decoding = "async";
+      image.onload = () => {
+        if (!active)
+          return;
+
+        clearImageHandlers();
+        let source;
+        try {
+          source = readPixels(image);
+        } catch {
+          productIndex += 1;
+          attempt();
+          return;
+        }
+
+        const filledPixels = mergeGibsPixels(output, source);
+        if (filledPixels > 0) {
+          usedProducts.push({ product, productIndex, filledPixels });
+          remainingPixels -= filledPixels;
+        }
+
+        if (remainingPixels === 0) {
+          complete();
+          return;
+        }
+
+        productIndex += 1;
+        attempt();
+      };
       image.onerror = () => {
         if (!active)
           return;
+
+        clearImageHandlers();
         productIndex += 1;
         attempt();
       };
@@ -106,33 +213,22 @@
       }
 
       active = false;
-      image.onload = null;
-      image.onerror = null;
+      clearImageHandlers();
+      image?.removeAttribute?.("src");
     };
   }
 
   function createGibsWarningReporter(onWarning) {
-    let reportedFallback = false;
-    let reportedExhaustion = false;
+    let reportedUnresolvedCoverage = false;
 
     return result => {
-      if (!result.available) {
-        if (reportedExhaustion)
-          return;
-
-        reportedExhaustion = true;
-        onWarning(
-          "Some latest NASA GIBS tiles are unavailable from every configured satellite; "
-          + "those areas are left blank rather than showing historical imagery.");
+      if (result.complete || reportedUnresolvedCoverage)
         return;
-      }
 
-      if (result.productIndex > 0 && !reportedFallback && !reportedExhaustion) {
-        reportedFallback = true;
-        onWarning(
-          "Some MODIS Terra tiles are unavailable; latest Aqua or VIIRS "
-          + "corrected-reflectance imagery is shown where available.");
-      }
+      reportedUnresolvedCoverage = true;
+      onWarning(
+        "Some areas have no current corrected-reflectance coverage from Terra, Aqua, "
+        + "or VIIRS; unresolved pixels use the neutral map background.");
     };
   }
 
@@ -270,7 +366,11 @@
 
   return Object.freeze({
     gibsProducts,
+    gibsTileSize,
+    gibsNoDataMaximum,
     gibsTileUrl,
+    isGibsNoDataPixel,
+    mergeGibsPixels,
     loadGibsTile,
     createGibsWarningReporter,
     createGoogleMapsLoader
