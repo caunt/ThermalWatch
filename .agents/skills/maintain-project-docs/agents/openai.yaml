@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain Project Docs"
+  short_description: "Keep repository documentation aligned"
+  default_prompt: "Use $maintain-project-docs to review this change and update the affected repository documentation."

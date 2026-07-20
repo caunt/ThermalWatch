@@ -1,0 +1,72 @@
+# FIRMS ingestion
+
+> **Purpose:** Explain how ThermalWatch obtains, validates, falls back, and publishes FIRMS observations.
+> **Scope:** Poll scheduling, country/source segments, country capability, area fallback, CSV parsing, boundaries, and snapshot staleness.
+> **Sources of truth:** [Poller](../../src/ThermalWatch.Api/FirmsPollingService.cs), [FIRMS client](../../src/ThermalWatch.Core/FirmsClient.cs), [boundary catalog](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs), and [snapshot store](../../src/ThermalWatch.Core/AnomalySnapshotStore.cs).
+> **Update when:** Polling, concurrency, FIRMS routes, fallback detection, boundary tiling, CSV parsing, or segment publication changes.
+
+## Segment model and polling
+
+Each configured country is crossed with the four source IDs in `FirmsSources.All`: MODIS NRT and Suomi-NPP, NOAA-20, and NOAA-21 VIIRS NRT. Sources remain separate through ingestion and the API.
+
+The background poller refreshes once immediately. After a complete cycle it waits one configured interval, so cycles do not overlap. The first segment is refreshed before the remaining parallel work; this lets the process-wide country-API capability be established before concurrent requests. Remaining work honors `FIRMS_MAX_CONCURRENCY`.
+
+Every result is a complete segment success or failure. The store atomically publishes one immutable snapshot only after the cycle finishes.
+
+## Country-first acquisition
+
+The preferred request is FIRMS country CSV for the configured country, source, and one-day range. The active window cannot exceed that one-day upstream request.
+
+Country-API capability is process-wide:
+
+- Unknown capability is serialized behind a gate while one request determines it.
+- A successful country request marks the capability available.
+- An explicit country-feature outage response enables area fallback.
+- The client's recognized ambiguous HTTP `400` outage response enables fallback only when the FIRMS MAP_KEY status endpoint confirms a usable, non-exhausted key.
+- Authentication, rate limit, network, ordinary server, request-validation, and dataset failures do not independently enable fallback.
+- While fallback is active, the client probes the country API after one hour. A successful probe restores country mode; an ordinary failed probe schedules the next probe and continues fallback.
+
+The matching and key-status rules in [FirmsClient.cs](../../src/ThermalWatch.Core/FirmsClient.cs) are authoritative. External error wording is not a durable contract.
+
+## Area fallback and boundaries
+
+[CountryBoundaryCatalog.cs](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs) loads only requested countries from the embedded compressed Natural Earth Admin 0 data. It joins multiple parts, repairs invalid geometry where possible, prepares it for point tests, and fails startup when a requested country has no usable polygon or multipolygon.
+
+Boundaries whose envelope exceeds 10 degrees are divided into non-overlapping 10-degree grid cells that intersect the geometry. Every required area tile must succeed. A single failed tile fails the segment rather than publishing a partial rectangle result.
+
+Tile results are merged, clipped locally with polygon coverage checks, and deduplicated by anomaly ID. Country and area responses are never merged for one segment refresh. Natural Earth geometry is generalized cartographic data; see its [embedded license](../../src/ThermalWatch.Core/Data/NaturalEarth.LICENSE.txt).
+
+## Response validation and parsing
+
+The client bounds response size, rejects incompatible content types and upstream status categories, and requires common plus source-specific CSV headers. It parses values with invariant culture and validates:
+
+- Finite latitude and longitude inside geographic ranges.
+- Nonempty satellite, instrument, and required fields.
+- `D` or `N` pass classification.
+- UTC acquisition date and four-digit time.
+- Finite numeric optional values when present.
+- MODIS numeric confidence versus normalized VIIRS confidence category.
+
+Malformed data rows are skipped and logged safely. A nonempty response where every row is unusable fails the segment; an empty valid dataset succeeds with no detections. Duplicate IDs inside a response are removed.
+
+## Snapshot publication and staleness
+
+A successful result replaces its segment detections, timestamps, error state, and ingestion mode. A failed result:
+
+- Retains the previous complete detections.
+- Retains the last successful ingestion mode.
+- Updates the attempt time, marks the segment stale, and records a safe error.
+
+Snapshot construction removes observations outside `now - active window` through `now`, deduplicates by ID across all segments, and sorts newest first then by ID. `IsReady` becomes true after any segment succeeds. Once ready, any stale configured segment makes the snapshot partially stale.
+
+The current snapshot is swapped atomically. A bounded one-item, drop-oldest channel notifies the single Telegram consumer; HTTP reads do not consume that channel.
+
+## Failure boundaries
+
+- Invalid startup configuration or unusable requested boundary data terminates the process.
+- A segment failure does not block successful countries or sources.
+- Unexpected client exceptions become a generic safe segment error.
+- API clients receive the retained snapshot and source diagnostics with HTTP `200`; they do not trigger recovery.
+- Later polling cycles retry failed FIRMS work automatically.
+
+There are currently no direct live-service or full FIRMS-client integration tests. Changes should use fake `HttpMessageHandler` responses and focused boundary/model fixtures rather than NASA network calls.
