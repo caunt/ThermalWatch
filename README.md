@@ -16,15 +16,14 @@ All runtime state is in memory. Restarting clears the current snapshot, imagery 
 
 ## Quickstart
 
-Install the .NET 10 SDK and obtain a free 32-character NASA FIRMS MAP_KEY from the [FIRMS API page](https://firms.modaps.eosdis.nasa.gov/api/map_key/). Replace the key placeholder, then run from the repository root:
+Install the .NET 10 SDK and obtain a free 32-character NASA FIRMS MAP_KEY from the [FIRMS API page](https://firms.modaps.eosdis.nasa.gov/api/map_key/). From the repository root, source the setup script so its prompts can configure the current shell and future sessions, then run the service:
 
 ```bash
-FIRMS_MAP_KEY='<32-character MAP_KEY>' \
-FIRMS_COUNTRIES='UKR,RUS' \
+source ./.env
 dotnet run --project src/ThermalWatch.Api/ThermalWatch.Api.csproj
 ```
 
-ThermalWatch settings use exact uppercase environment-variable names; there is no `appsettings` equivalent for them. The service listens on [http://localhost:8080](http://localhost:8080). Telegram remains disabled when its credentials are absent. See [operations](docs/operations.md) for every variable and its validation contract.
+The tracked [environment setup script](.env) requires the FIRMS key, defaults `FIRMS_COUNTRIES` to `UKR,RUS` and `TELEGRAM_CHANNEL_ID` to `@cso_ukr`, and allows the Telegram and Google keys to remain empty. It stores the values outside the repository in a user-only file; `.env` itself is a shell script, not a dotenv data file. ThermalWatch settings use exact uppercase environment-variable names; there is no `appsettings` equivalent for them. The service listens on [http://localhost:8080](http://localhost:8080). See [operations](docs/operations.md) for persistence details, every variable, and its validation contract.
 
 ## Viewer
 
