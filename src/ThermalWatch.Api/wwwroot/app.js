@@ -1,6 +1,15 @@
 (() => {
   "use strict";
 
+  const mapSupport = window.ThermalWatchMapSupport;
+  if (!mapSupport)
+    throw new Error("The ThermalWatch map support module could not be loaded.");
+
+  const googleMapsLoader = mapSupport.createGoogleMapsLoader({
+    windowObject: window,
+    documentObject: document
+  });
+
   const elements = {
     providerSelect: document.querySelector("#provider-select"),
     googleOption: document.querySelector('#provider-select option[value="google"]'),
@@ -32,7 +41,7 @@
   const providerDefinitions = new Map([
     ["gibs", {
       create: () => new GibsMapProvider(),
-      caption: date => `NASA GIBS VIIRS true-color · ${date} UTC · Blue Marble fallback`
+      caption: () => "NASA GIBS latest corrected reflectance · Terra with Aqua/VIIRS tile fallback"
     }],
     ["google", {
       create: () => new GoogleMapProvider(),
@@ -307,9 +316,7 @@
 
     const definition = providerDefinitions.get(name);
     const provider = definition.create();
-    const imageryDate = newestAcquisitionDate(state.points);
     const context = {
-      imageryDate,
       googleApiKey: state.config?.googleApiKey,
       onSelect: selectPoint,
       onWarning: message => {
@@ -333,7 +340,7 @@
       provider.setSelected(state.selectedKey);
       provider.fitToAnomalies(state.points);
       state.provider = provider;
-      elements.providerCaption.textContent = definition.caption(imageryDate);
+      elements.providerCaption.textContent = definition.caption();
       setMapLoading(false);
     } catch (error) {
       provider.destroy();
@@ -589,14 +596,6 @@
     elements.map.replaceChildren(wrapper);
   }
 
-  function newestAcquisitionDate(points) {
-    const latest = points.reduce((current, point) => {
-      const timestamp = Date.parse(point.anomaly.acquiredAtUtc);
-      return Number.isFinite(timestamp) && timestamp > current ? timestamp : current;
-    }, 0) || Date.now();
-    return new Date(latest).toISOString().slice(0, 10);
-  }
-
   function formatDateTime(value) {
     const date = new Date(value);
     if (!Number.isFinite(date.getTime()))
@@ -643,8 +642,7 @@
       this.markers = new Map();
       this.markerLayer = null;
       this.onSelect = null;
-      this.datedLayer = null;
-      this.reportedTileError = false;
+      this.imageryLayer = null;
     }
 
     async mount(container, context) {
@@ -659,37 +657,33 @@
         worldCopyJump: true
       }).setView([20, 0], 2);
 
-      const commonOptions = {
+      const reportImageryResult = mapSupport.createGibsWarningReporter(context.onWarning);
+      this.imageryLayer = window.L.gridLayer({
         attribution: '&copy; <a href="https://earthdata.nasa.gov/gibs">NASA GIBS</a>',
         bounds: [[-85.0511, -180], [85.0511, 180]],
-        crossOrigin: true,
+        maxNativeZoom: 9,
+        maxZoom: 14,
         noWrap: false
-      };
-      window.L.tileLayer(
-        "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_NextGeneration/default/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg",
-        {
-          ...commonOptions,
-          maxNativeZoom: 8,
-          maxZoom: 14,
-          zIndex: 1
-        }).addTo(this.map);
-
-      this.datedLayer = window.L.tileLayer(
-        `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/${encodeURIComponent(context.imageryDate)}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`,
-        {
-          ...commonOptions,
-          maxNativeZoom: 9,
-          maxZoom: 14,
-          opacity: 1,
-          zIndex: 2
-        }).addTo(this.map);
-      this.datedLayer.on("tileerror", () => {
-        if (this.reportedTileError)
-          return;
-        this.reportedTileError = true;
-        context.onWarning(
-          "Some dated NASA GIBS tiles are unavailable; Blue Marble imagery is showing underneath.");
       });
+      this.imageryLayer.createTile = (coordinates, done) => {
+        const tile = document.createElement("img");
+        tile.alt = "";
+        tile.crossOrigin = "anonymous";
+        tile.decoding = "async";
+        tile.setAttribute("role", "presentation");
+        mapSupport.loadGibsTile(tile, coordinates, {
+          onComplete: result => {
+            reportImageryResult(result);
+            done(
+              result.available
+                ? null
+                : new Error("No latest NASA GIBS imagery is available for this tile."),
+              tile);
+          }
+        });
+        return tile;
+      };
+      this.imageryLayer.addTo(this.map);
 
       this.markerLayer = window.L.layerGroup().addTo(this.map);
     }
@@ -748,7 +742,7 @@
         this.map.remove();
       this.map = null;
       this.markerLayer = null;
-      this.datedLayer = null;
+      this.imageryLayer = null;
       this.markers.clear();
     }
   }
@@ -767,12 +761,12 @@
         throw new Error("GOOGLE_MAPS_API_KEY is not configured.");
 
       this.onSelect = context.onSelect;
-      this.unsubscribeAuthFailure = subscribeToGoogleAuthFailure(() => {
+      this.unsubscribeAuthFailure = googleMapsLoader.subscribeToAuthenticationFailure(() => {
         this.authFailure = new Error("Google Maps rejected the configured API key.");
         context.onError(
           "Google Maps rejected GOOGLE_MAPS_API_KEY. Check API enablement, billing, and referrer restrictions.");
       });
-      await loadGoogleMaps(context.googleApiKey);
+      await googleMapsLoader.load(context.googleApiKey);
       if (this.authFailure)
         throw this.authFailure;
 
@@ -859,63 +853,4 @@
     };
   }
 
-  let googleMapsPromise = null;
-  const googleAuthFailureHandlers = new Set();
-  let googleAuthFailureHookInstalled = false;
-
-  function subscribeToGoogleAuthFailure(handler) {
-    installGoogleAuthFailureHook();
-    googleAuthFailureHandlers.add(handler);
-    return () => googleAuthFailureHandlers.delete(handler);
-  }
-
-  function installGoogleAuthFailureHook() {
-    if (googleAuthFailureHookInstalled)
-      return;
-
-    googleAuthFailureHookInstalled = true;
-    const previousHandler = window.gm_authFailure;
-    window.gm_authFailure = () => {
-      if (typeof previousHandler === "function")
-        previousHandler();
-      googleAuthFailureHandlers.forEach(handler => handler());
-    };
-  }
-
-  function loadGoogleMaps(apiKey) {
-    if (window.google?.maps)
-      return Promise.resolve();
-    if (googleMapsPromise)
-      return googleMapsPromise;
-
-    installGoogleAuthFailureHook();
-    const callbackName = "__thermalWatchGoogleMapsReady";
-    const attempt = new Promise((resolve, reject) => {
-      window[callbackName] = () => {
-        delete window[callbackName];
-        if (window.google?.maps)
-          resolve();
-        else
-          reject(new Error("Google Maps loaded without exposing its map API."));
-      };
-
-      const script = document.createElement("script");
-      script.id = "thermalwatch-google-maps";
-      script.async = true;
-      script.referrerPolicy = "strict-origin-when-cross-origin";
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async&callback=${callbackName}`;
-      script.addEventListener("error", () => {
-        delete window[callbackName];
-        script.remove();
-        reject(new Error("The Google Maps JavaScript API could not be downloaded."));
-      }, { once: true });
-      document.head.append(script);
-    });
-
-    googleMapsPromise = attempt.catch(error => {
-      googleMapsPromise = null;
-      throw error;
-    });
-    return googleMapsPromise;
-  }
 })();

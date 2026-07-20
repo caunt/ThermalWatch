@@ -16,4 +16,10 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: latest
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+      - run: node --check src/ThermalWatch.Api/wwwroot/map-support.js
+      - run: node --check src/ThermalWatch.Api/wwwroot/app.js
+      - run: node --test tests/viewer-map-support.test.js
       - run: dotnet test ThermalWatch.slnx -c Release --nologo

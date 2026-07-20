@@ -35,10 +35,12 @@ Documentation-only validation:
 dotnet test tests/ThermalWatch.Tests.csproj -c Release --nologo --filter FullyQualifiedName~DocumentationValidationTests
 ```
 
-Viewer JavaScript syntax validation:
+Viewer JavaScript validation:
 
 ```bash
+node --check src/ThermalWatch.Api/wwwroot/map-support.js
 node --check src/ThermalWatch.Api/wwwroot/app.js
+node --test tests/viewer-map-support.test.js
 ```
 
 See [development guidance](docs/development.md) for prerequisites, safe local setup, container fallback, debugging, and change-specific checks.

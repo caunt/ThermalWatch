@@ -9,7 +9,7 @@
 
 - .NET 10 SDK. The repository has no `global.json`; the target framework and C# version are set in [Directory.Build.props](../Directory.Build.props).
 - A valid NASA FIRMS MAP_KEY and internet access to run the service against FIRMS.
-- Node.js only when changing the plain JavaScript viewer and running its syntax check.
+- Node.js 22 only when changing the plain JavaScript viewer and running its syntax checks and dependency-free unit tests.
 - Docker is optional and can supply the official .NET SDK when it is not installed locally.
 
 Do not store credentials in files, shell history, plans, logs, or documentation. Export them through the local environment or deployment secret mechanism.
@@ -27,9 +27,12 @@ dotnet format ThermalWatch.slnx --verify-no-changes --no-restore
 
 Builds are deterministic, nullable-enabled, and treat warnings as errors. `dotnet format` uses the SDK defaults because the repository has no separate formatter configuration.
 
-The pull-request workflow runs this independently restorable command:
+The pull-request workflow configures Node.js 22, validates the viewer, and then runs the independently restorable .NET test command:
 
 ```bash
+node --check src/ThermalWatch.Api/wwwroot/map-support.js
+node --check src/ThermalWatch.Api/wwwroot/app.js
+node --test tests/viewer-map-support.test.js
 dotnet test ThermalWatch.slnx -c Release --nologo
 ```
 
@@ -85,7 +88,7 @@ The user provides freshly rotated, temporary, single-use testing API keys, token
 | Change | Additional validation |
 | --- | --- |
 | Temporary environment helper | `bash -n .env`, plus an isolated source test with dummy values; never print supplied credentials. |
-| Viewer JavaScript | `node --check src/ThermalWatch.Api/wwwroot/app.js`, then browser-check loading, empty, error, marker-selection, and provider states as applicable. |
+| Viewer JavaScript | Run both `node --check` commands and `node --test tests/viewer-map-support.test.js`, then browser-check loading, empty, error, marker-selection, and provider states as applicable. |
 | Static assets or hosting | Run the static-asset publish and Kestrel smoke check below. |
 | Environment parsing | Add option tests and verify missing, valid, boundary, and invalid values without printing secrets. |
 | FIRMS, GIBS, or Telegram logic | Add focused unit tests with fake HTTP handlers or model fixtures; do not make tests call live services. |
