@@ -2,7 +2,7 @@
 
 > **Purpose:** Define ThermalWatch runtime configuration, deployment, security, observability, failure, and recovery behavior.
 > **Scope:** Process startup, environment variables, external services, SDK publishing, CI artifacts, containers, and operational limitations.
-> **Sources of truth:** [Environment setup](../.env), [application configuration](../src/ThermalWatch.Api/EnvironmentConfiguration.cs), [Telegram options](../src/ThermalWatch.Telegram/TelegramOptions.cs), [composition root](../src/ThermalWatch.Api/Program.cs), and [publish workflows](../.github/workflows/).
+> **Sources of truth:** [Application configuration](../src/ThermalWatch.Api/EnvironmentConfiguration.cs), [Telegram options](../src/ThermalWatch.Telegram/TelegramOptions.cs), [composition root](../src/ThermalWatch.Api/Program.cs), and [publish workflows](../.github/workflows/).
 > **Update when:** A variable, startup rule, external dependency, security boundary, log, deployment workflow, failure mode, or recovery procedure changes.
 
 ## Runtime model
@@ -16,10 +16,6 @@ The application-specific options below use exact uppercase environment names. Fr
 ## Environment variables
 
 Do not place real values in documentation, tracked files, images, plans, or logs. The parsing code linked in the header is authoritative for normalization and validation.
-
-For interactive Bash setup, run `source ./.env` from the repository root. The tracked [`.env` file](../.env) is a shell script, not a dotenv data file. It prompts without echoing the FIRMS, Telegram, or Google keys; exports all five prompted variables into the current shell; writes them to `${XDG_CONFIG_HOME:-$HOME/.config}/thermalwatch/.env` with mode `600`; and adds one idempotent loader line to the Bash or Zsh startup profile selected by the login shell. Re-running it replaces the dedicated environment file and blank optional-key answers clear earlier values.
-
-This is user-shell persistence, not system-service, container, CI, or secret-manager configuration. The file contains credentials in plain text protected only by its user-only permissions. Use the deployment platform's secret mechanism outside local development, and remove both the generated file and its marked profile line to undo the setup.
 
 ### FIRMS, viewer, and logging
 

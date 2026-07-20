@@ -2,7 +2,7 @@
 
 > **Purpose:** Provide verified setup, build, test, formatting, debugging, and validation workflows.
 > **Scope:** Local development and pull-request validation for server, tests, documentation, and static viewer assets.
-> **Sources of truth:** [Environment setup](../.env), [build properties](../Directory.Build.props), [solution](../ThermalWatch.slnx), [test project](../tests/ThermalWatch.Tests.csproj), and [PR workflow](../.github/workflows/pr.yml).
+> **Sources of truth:** [Temporary environment helper](../.env), [build properties](../Directory.Build.props), [solution](../ThermalWatch.slnx), [test project](../tests/ThermalWatch.Tests.csproj), and [PR workflow](../.github/workflows/pr.yml).
 > **Update when:** SDK requirements, commands, project layout, tests, formatting, static assets, or CI validation changes.
 
 ## Prerequisites
@@ -59,22 +59,32 @@ The check deliberately does not validate external URLs, anchors, or semantic agr
 
 ## Run locally
 
-Obtain a real FIRMS key, then use the interactive setup to persist it outside the repository and apply all five prompted variables to the current shell:
+Export a real key outside the repository, then start the host:
+
+```bash
+export FIRMS_MAP_KEY
+FIRMS_COUNTRIES=UKR,RUS dotnet run --project src/ThermalWatch.Api/ThermalWatch.Api.csproj
+```
+
+The service listens on `http://localhost:8080`. Telegram is disabled when its credentials are absent. See [operations](operations.md) for all options and startup constraints.
+
+Startup immediately calls FIRMS. Prefer the unit tests for repeatable development; there is no fake FIRMS server, API integration-test fixture, or offline application mode in the repository.
+
+### Temporary credentials for live validation
+
+Whenever verification or tests require live-provider access, an agent may source the tracked repository-root [`.env` helper](../.env) in the same Bash session that will run the check:
 
 ```bash
 source ./.env
-dotnet run --project src/ThermalWatch.Api/ThermalWatch.Api.csproj
 ```
 
-The tracked [`.env` setup script](../.env) must be sourced, not executed, because a child process cannot modify its parent shell. It is a shell script rather than a dotenv data file. It validates the FIRMS key, hides key/token input, supplies the documented country and channel defaults, and lets both optional keys remain empty. The service listens on `http://localhost:8080`. Telegram is disabled when its credentials are absent. See [operations](operations.md) for persistence, all options, and startup constraints.
-
-Startup immediately calls FIRMS. Prefer the unit tests for repeatable development; there is no fake FIRMS server, API integration-test fixture, or offline application mode in the repository.
+The user provides freshly rotated, temporary, single-use testing API keys, tokens, and any other task-required values through its prompts. The helper does not echo key/token values, applies them only to that shell and its child processes, and writes nothing. Agents must never print, log, persist, commit, or reuse supplied credentials. After the agents complete their work, the user removes and rotates every supplied key or token and never uses it again. Do not use the helper for end-user setup, deployment, or long-lived credentials.
 
 ## Change-specific checks
 
 | Change | Additional validation |
 | --- | --- |
-| Shell environment setup | `bash -n .env`, plus a source test using temporary `THERMALWATCH_ENV_FILE` and `THERMALWATCH_PROFILE_FILE` paths; never use real credentials in tests. |
+| Temporary environment helper | `bash -n .env`, plus an isolated source test with dummy values; never print supplied credentials. |
 | Viewer JavaScript | `node --check src/ThermalWatch.Api/wwwroot/app.js`, then browser-check loading, empty, error, marker-selection, and provider states as applicable. |
 | Static assets or hosting | Run the static-asset publish and Kestrel smoke check below. |
 | Environment parsing | Add option tests and verify missing, valid, boundary, and invalid values without printing secrets. |

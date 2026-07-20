@@ -12,6 +12,7 @@ ThermalWatch is a deliberately small .NET 10 service that polls NASA FIRMS near-
 - `.agent/PLANS.md` — ExecPlan requirements and format.
 - `.agents/skills/` — reusable repository-local Codex procedures.
 - `.github/workflows/` — PR validation, publishing, container creation, and Renovate automation.
+- `.env` — source-only development helper for temporary, user-authorized live-service credentials; it must never persist or contain values.
 
 ## Commands
 
@@ -45,6 +46,7 @@ See [development guidance](docs/development.md) for prerequisites, safe local se
 ## Engineering constraints
 
 - Application-specific configuration uses exact uppercase environment names; do not add `appsettings` or commit credentials.
+- When verification or tests need live-provider access, agents may source the repository-root `.env`. The user supplies freshly rotated, temporary, single-use testing API keys, tokens, and any other task-required values; never echo, log, persist, commit, or reuse them. After the work, the user removes and rotates every supplied credential and never uses it again.
 - State is intentionally in memory. A restart rebuilds the FIRMS snapshot and resets Telegram deduplication, pending previews, and caches.
 - `/api/anomalies` exposes all valid active FIRMS observations. Telegram filters must never remove or annotate API items.
 - FIRMS segments are isolated by country and source. A failed refresh retains the previous complete segment and marks it stale.
