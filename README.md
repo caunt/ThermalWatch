@@ -23,6 +23,7 @@ Optional variables:
 | `FIRMS_ACTIVE_WINDOW` | `24:00:00` | Rolling window defining current detections; maximum 24 hours. |
 | `FIRMS_REQUEST_TIMEOUT` | `00:00:45` | Overall timeout for one resilient FIRMS request. |
 | `FIRMS_MAX_CONCURRENCY` | `4` | Maximum simultaneous country/source requests. |
+| `GOOGLE_MAPS_API_KEY` | unset | Browser key for the optional Google Maps Satellite viewer provider. NASA GIBS remains available without it. |
 | `TELEGRAM_BOT_TOKEN` | unset | Telegram bot token. Notifications require this and `TELEGRAM_CHANNEL_ID`. |
 | `TELEGRAM_CHANNEL_ID` | unset | One numeric channel ID or `@channel_username` for every country. |
 | `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` | `false` | Send detections already present on the first successful refresh. |
@@ -101,6 +102,14 @@ dotnet run --project src/ThermalWatch.Api
 ```
 
 The service listens on port `8080`.
+
+## Web viewer
+
+Open [`http://localhost:8080/`](http://localhost:8080/) to view all current API anomalies on an interactive map. NASA GIBS is the default provider and requires no additional key. Its dated VIIRS true-color layer follows the newest displayed observation's UTC date, with NASA Blue Marble imagery underneath when dated tiles are unavailable.
+
+Set `GOOGLE_MAPS_API_KEY` to enable the Google Maps Satellite option. This is a browser API key and is necessarily returned to the viewer through `GET /api/viewer/config`; restrict it in Google Cloud to the Maps JavaScript API and the deployment's HTTP referrers. A missing Google key does not affect startup, the anomaly API, or the NASA map.
+
+The viewer uses plain HTML, CSS, and JavaScript served by the API application. It reads anomaly and source diagnostics exclusively from `/api/anomalies`; it does not apply separate detection or filtering logic.
 
 ## HTTP API
 

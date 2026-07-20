@@ -44,6 +44,7 @@ try
 
     builder.Services.AddSingleton(configuration.Firms);
     builder.Services.AddSingleton(configuration.Telegram);
+    builder.Services.AddSingleton(configuration.Viewer);
     builder.Services.AddSingleton(countryBoundaries);
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddSingleton<AnomalySnapshotStore>();
@@ -107,6 +108,17 @@ try
     var app = builder.Build();
     app.UseSerilogRequestLogging();
     app.UseCors();
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+
+    app.MapGet("/api/viewer/config", (ViewerOptions viewerOptions) => Results.Ok(new
+    {
+        googleMaps = new
+        {
+            available = viewerOptions.GoogleMapsApiKey is not null,
+            apiKey = viewerOptions.GoogleMapsApiKey
+        }
+    }));
 
     app.MapGet("/api/anomalies", (HttpRequest request, AnomalySnapshotStore store, FirmsOptions firmsOptions) =>
     {

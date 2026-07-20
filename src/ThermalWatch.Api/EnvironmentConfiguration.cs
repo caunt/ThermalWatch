@@ -9,6 +9,7 @@ namespace ThermalWatch.Api;
 public sealed record ApplicationConfiguration(
     FirmsOptions Firms,
     TelegramOptions Telegram,
+    ViewerOptions Viewer,
     LogEventLevel MinimumLogLevel)
 {
     public static ApplicationConfiguration FromEnvironment()
@@ -30,6 +31,7 @@ public sealed record ApplicationConfiguration(
             ParseTimeSpan(get, "FIRMS_REQUEST_TIMEOUT", TimeSpan.FromSeconds(45), TimeSpan.FromSeconds(5), TimeSpan.FromMinutes(5)),
             ParseInt(get, "FIRMS_MAX_CONCURRENCY", 4, 1, 32));
         var telegram = TelegramOptions.FromEnvironment(get);
+        var viewer = ViewerOptions.FromEnvironment(get);
 
         if (telegram.SeenRetention < firms.ActiveWindow)
         {
@@ -37,7 +39,7 @@ public sealed record ApplicationConfiguration(
                 "TELEGRAM_SEEN_RETENTION must be at least FIRMS_ACTIVE_WINDOW.");
         }
 
-        return new(firms, telegram, ParseLogLevel(get));
+        return new(firms, telegram, viewer, ParseLogLevel(get));
     }
 
     private static ImmutableArray<string> ParseCountries(string value)
@@ -116,6 +118,15 @@ public sealed record ApplicationConfiguration(
             : throw new ApplicationConfigurationException(
                 "LOGGING_MINIMUM_LEVEL must be Verbose, Debug, Information, Warning, Error, or Fatal.");
     }
+
+    private static string? Normalize(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}
+
+public sealed record ViewerOptions(string? GoogleMapsApiKey)
+{
+    public static ViewerOptions FromEnvironment(Func<string, string?> getEnvironmentVariable) =>
+        new(Normalize(getEnvironmentVariable("GOOGLE_MAPS_API_KEY")));
 
     private static string? Normalize(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

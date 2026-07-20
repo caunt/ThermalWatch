@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>ThermalWatch</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin="anonymous">
+  <link rel="stylesheet" href="/styles.css">
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin="anonymous"
+    defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="toolbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>ThermalWatch</h1>
+          <p>Current FIRMS heat anomalies</p>
+        </div>
+      </div>
+
+      <div class="toolbar-controls">
+        <label class="provider-control" for="provider-select">
+          <span>Map imagery</span>
+          <select id="provider-select" disabled>
+            <option value="gibs">NASA GIBS</option>
+            <option value="google">Google Satellite</option>
+          </select>
+        </label>
+        <button id="refresh-button" class="secondary-button" type="button" disabled>
+          Refresh data
+        </button>
+      </div>
+    </header>
+
+    <section id="notice" class="notice" aria-live="polite" hidden></section>
+
+    <section class="snapshot-bar" aria-live="polite">
+      <span id="count-summary">Loading anomalies…</span>
+      <span id="health-summary"></span>
+      <span id="generated-summary"></span>
+    </section>
+
+    <section class="workspace">
+      <div class="map-panel">
+        <div id="map" aria-label="Interactive anomaly map"></div>
+        <div id="map-loading" class="map-loading" role="status">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="map-loading-text">Loading map…</span>
+        </div>
+        <div id="provider-caption" class="provider-caption"></div>
+      </div>
+
+      <aside id="details-panel" class="details-panel" aria-live="polite">
+        <div class="details-empty">
+          <p class="eyebrow">Anomaly details</p>
+          <h2>Loading observations…</h2>
+          <p>Select a marker to inspect its complete FIRMS record and source diagnostics.</p>
+        </div>
+      </aside>
+    </section>
+
+    <footer>
+      Thermal anomalies can represent fires, industrial heat, gas flares, or other hot surfaces.
+      Imagery is contextual and may not match the exact detection time.
+    </footer>
+  </main>
+
+  <noscript>This viewer requires JavaScript to load anomalies and map imagery.</noscript>
+</body>
+</html>
