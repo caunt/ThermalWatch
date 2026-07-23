@@ -8,7 +8,10 @@ const {
   imageryCoverageHeader,
   gibsTileApiUrl,
   yandexMapsUrl,
+  parseCoordinateInput,
+  nearestCoordinatePoint,
   notificationMarkerStyle,
+  coordinateSearchMarkerStyle,
   clusterPointKeys,
   createMapResizeScheduler,
   loadGibsTile,
@@ -155,6 +158,12 @@ test("notification cluster markers distinguish selected, clustered, and unrelate
   });
 });
 
+test("coordinate search markers use one provider-neutral style", () => {
+  assert.deepEqual(coordinateSearchMarkerStyle(), {
+    fill: "#c084fc", stroke: "#ffffff", size: 12, weight: 3
+  });
+});
+
 test("notification cluster member IDs map to provider-neutral point keys", () => {
   const points = [
     { key: "first", anomaly: { id: "a" } },
@@ -201,6 +210,125 @@ test("Yandex Maps URLs reject malformed and out-of-range coordinates", () => {
   assert.throws(() => yandexMapsUrl(Number.NaN, 30), /Valid map coordinates/);
   assert.throws(() => yandexMapsUrl(91, 30), /Valid map coordinates/);
   assert.throws(() => yandexMapsUrl(50, -181), /Valid map coordinates/);
+});
+
+test("coordinate search accepts decimal pairs and defaults ambiguous pairs to latitude first", () => {
+  const expected = { latitude: 57.94608, longitude: 60.06142 };
+
+  assert.deepEqual(parseCoordinateInput("57.946080, 60.061420"), expected);
+  assert.deepEqual(parseCoordinateInput("57.946080 60.061420"), expected);
+  assert.deepEqual(parseCoordinateInput("(57.946080; 60.061420)"), expected);
+  assert.deepEqual(parseCoordinateInput("[57.946080 / 60.061420]"), expected);
+  assert.deepEqual(parseCoordinateInput("57,946080 60,061420"), expected);
+  assert.deepEqual(parseCoordinateInput("57,946080, 60,061420"), expected);
+  assert.deepEqual(parseCoordinateInput("120 57"), { latitude: 57, longitude: 120 });
+  assert.deepEqual(parseCoordinateInput("60 57"), { latitude: 60, longitude: 57 });
+});
+
+test("coordinate search accepts labels, cardinal directions, and common angle notations", () => {
+  const expected = { latitude: 57.94608, longitude: 60.06142 };
+  const approximateExpected = coordinate => {
+    assert.ok(Math.abs(coordinate.latitude - expected.latitude) < 1e-10);
+    assert.ok(Math.abs(coordinate.longitude - expected.longitude) < 1e-10);
+  };
+
+  assert.deepEqual(parseCoordinateInput("lat: 57.946080 lon: 60.061420"), expected);
+  assert.deepEqual(parseCoordinateInput("60.061420 E, 57.946080 N"), expected);
+  assert.deepEqual(parseCoordinateInput("N 57.946080 E 60.061420"), expected);
+  assert.deepEqual(parseCoordinateInput("57.946080 degrees North, 60.061420 degrees East"), expected);
+  approximateExpected(parseCoordinateInput("57°56′45.888″N 60°03′41.112″E"));
+  approximateExpected(parseCoordinateInput("57° 56.7648' N, 60° 3.6852' E"));
+  approximateExpected(parseCoordinateInput("57d56m45.888s, 60d3m41.112s"));
+  approximateExpected(parseCoordinateInput("N 57 56 45.888 E 60 03 41.112"));
+  approximateExpected(parseCoordinateInput("57:56:45.888 N, 60:03:41.112 E"));
+});
+
+test("coordinate search accepts geographic machine-readable formats", () => {
+  const expected = { latitude: 57.94608, longitude: 60.06142 };
+
+  assert.deepEqual(parseCoordinateInput("geo:57.946080,60.061420;u=10"), expected);
+  assert.deepEqual(parseCoordinateInput("POINT (60.061420 57.946080)"), expected);
+  assert.deepEqual(
+    parseCoordinateInput('{"type":"Point","coordinates":[60.06142,57.94608]}'),
+    expected);
+  assert.deepEqual(
+    parseCoordinateInput('{"type":"Feature","geometry":{"type":"Point","coordinates":[60.06142,57.94608]}}'),
+    expected);
+});
+
+test("coordinate search extracts embedded Google Maps and Google Earth coordinates", () => {
+  const expected = { latitude: 57.94608, longitude: 60.06142 };
+
+  assert.deepEqual(
+    parseCoordinateInput("https://www.google.com/maps/@57.946080,60.061420,12z"),
+    expected);
+  assert.deepEqual(
+    parseCoordinateInput("www.google.co.uk/maps/search/?api=1&query=57.946080%2C60.061420"),
+    expected);
+  assert.deepEqual(
+    parseCoordinateInput("https://earth.google.com/web/@57.946080,60.061420,1000a"),
+    expected);
+  assert.deepEqual(
+    parseCoordinateInput(
+      "https://www.google.com/maps/place/example/@1,2,3z/data=!4m6!3m5!8m2!3d57.946080!4d60.061420"),
+    expected);
+  assert.deepEqual(
+    parseCoordinateInput(
+      "https://www.google.com/maps/@1,2,3z?query=57.946080%2C60.061420"),
+    expected);
+});
+
+test("coordinate search extracts embedded OpenStreetMap, Bing, and Yandex coordinates", () => {
+  const expected = { latitude: 57.94608, longitude: 60.06142 };
+
+  assert.deepEqual(
+    parseCoordinateInput("https://www.openstreetmap.org/?mlat=57.946080&mlon=60.061420#map=12/1/2"),
+    expected);
+  assert.deepEqual(
+    parseCoordinateInput("https://www.openstreetmap.org/#map=12/57.946080/60.061420&layers=N"),
+    expected);
+  assert.deepEqual(
+    parseCoordinateInput("https://www.bing.com/maps?cp=57.946080~60.061420"),
+    expected);
+  assert.deepEqual(
+    parseCoordinateInput("https://www.bing.com/maps?sp=point.57.946080_60.061420_example"),
+    expected);
+  assert.deepEqual(
+    parseCoordinateInput("https://yandex.com/maps/?ll=60.061420%2C57.946080"),
+    expected);
+});
+
+test("coordinate search rejects ambiguous, contradictory, unsupported, and out-of-range input", () => {
+  assert.throws(() => parseCoordinateInput(""), /Enter a latitude/);
+  assert.throws(() => parseCoordinateInput("57 60 10"), /not recognized/);
+  assert.throws(() => parseCoordinateInput("181, 60"), /not recognized/);
+  assert.throws(() => parseCoordinateInput("57°60'N 60°0'E"), /not recognized/);
+  assert.throws(() => parseCoordinateInput("lat: 57 E, lon: 60 N"), /not recognized/);
+  assert.throws(() => parseCoordinateInput("-57 N, 60 E"), /not recognized/);
+  assert.throws(() => parseCoordinateInput("https://maps.app.goo.gl/example"), /Short Google Maps links/);
+  assert.throws(() => parseCoordinateInput("https://www.google.com/maps/place/example"), /does not contain/);
+  assert.throws(() => parseCoordinateInput("https://example.com/maps/@57,60"), /not supported/);
+  assert.throws(() => parseCoordinateInput('{"type":"LineString","coordinates":[]}'), /GeoJSON Point/);
+});
+
+test("nearest coordinate search uses great-circle distance and deterministic input order", () => {
+  const first = { key: "first", latitude: 57.94608, longitude: 60.06142 };
+  const tied = { key: "tied", latitude: 57.94608, longitude: 60.06142 };
+  const distant = { key: "distant", latitude: 0, longitude: 0 };
+  const nearest = nearestCoordinatePoint(
+    [distant, first, tied],
+    { latitude: 57.94608, longitude: 60.06142 });
+
+  assert.equal(nearest.point, first);
+  assert.equal(nearest.distanceKilometers, 0);
+  assert.equal(nearestCoordinatePoint([], { latitude: 0, longitude: 0 }), null);
+  assert.equal(
+    nearestCoordinatePoint(
+      [{ key: "east", latitude: 0, longitude: 179.9 }, { key: "west", latitude: 0, longitude: -170 }],
+      { latitude: 0, longitude: -179.9 }).point.key,
+    "east");
+  assert.throws(() => nearestCoordinatePoint(null, { latitude: 0, longitude: 0 }), /must be an array/);
+  assert.throws(() => nearestCoordinatePoint([], { latitude: 91, longitude: 0 }), /Latitude/);
 });
 
 test("GIBS tiles load API PNGs and expose complete coverage", async () => {

@@ -11,6 +11,10 @@
   });
 
   const elements = {
+    coordinateSearchForm: document.querySelector("#coordinate-search"),
+    coordinateSearchInput: document.querySelector("#coordinate-search-input"),
+    coordinateSearchButton: document.querySelector("#coordinate-search-button"),
+    coordinateSearchFeedback: document.querySelector("#coordinate-search-feedback"),
     providerSelect: document.querySelector("#provider-select"),
     googleOption: document.querySelector('#provider-select option[value="google"]'),
     refreshButton: document.querySelector("#refresh-button"),
@@ -38,6 +42,7 @@
     diagnosticVersion: 0,
     diagnosticAbortController: null,
     clusterKeys: new Set(),
+    searchCoordinate: null,
     providerName: "gibs",
     provider: null,
     notices: new Map(),
@@ -93,6 +98,14 @@
 
   elements.providerSelect.addEventListener("change", () => {
     void activateProvider(elements.providerSelect.value);
+  });
+  elements.coordinateSearchForm.addEventListener("submit", event => {
+    event.preventDefault();
+    searchCoordinates();
+  });
+  elements.coordinateSearchInput.addEventListener("input", () => {
+    if (elements.coordinateSearchInput.getAttribute("aria-invalid") === "true")
+      setCoordinateSearchFeedback(null, "");
   });
   elements.refreshButton.addEventListener("click", () => {
     void loadViewer();
@@ -167,27 +180,28 @@
     updateSnapshotNotices();
     renderSnapshotSummary();
 
-    if (state.selectedKey && !state.points.some(point => point.key === state.selectedKey)) {
-      resetDiagnostic();
-      state.selectedKey = null;
-    }
-
-    if (state.selectedKey) {
-      const selectedPoint = state.points.find(point => point.key === state.selectedKey);
-      resetDiagnostic();
-      state.diagnosticStatus = "loading";
-      renderDetails(selectedPoint);
-      void loadNotificationDiagnostic(selectedPoint);
+    if (state.searchCoordinate) {
+      selectNearestSearchResult();
     } else if (state.points.length === 0) {
-      renderEmptyDetails(
-        state.snapshot.items.length === 0 ? "No current anomalies" : "No mappable anomalies",
-        state.snapshot.items.length === 0
-          ? "The current API snapshot contains no heat anomalies."
-          : "Every returned observation has malformed coordinates and was omitted from the map.");
+      clearSelection();
+      renderNoAnomalies();
     } else {
-      renderEmptyDetails(
-        "Select an anomaly",
-        "Choose any marker to inspect its complete FIRMS record and source diagnostics.");
+      if (state.selectedKey && !state.points.some(point => point.key === state.selectedKey)) {
+        resetDiagnostic();
+        state.selectedKey = null;
+      }
+
+      if (state.selectedKey) {
+        const selectedPoint = state.points.find(point => point.key === state.selectedKey);
+        resetDiagnostic();
+        state.diagnosticStatus = "loading";
+        renderDetails(selectedPoint);
+        void loadNotificationDiagnostic(selectedPoint);
+      } else {
+        renderEmptyDetails(
+          "Select an anomaly",
+          "Choose any marker to inspect its complete FIRMS record and source diagnostics.");
+      }
     }
 
     await activateProvider(state.providerName, true);
@@ -214,6 +228,55 @@
     }
 
     return body;
+  }
+
+  function searchCoordinates() {
+    let coordinate;
+    try {
+      coordinate = mapSupport.parseCoordinateInput(elements.coordinateSearchInput.value);
+    } catch (error) {
+      setCoordinateSearchFeedback("error", errorMessage(error));
+      return;
+    }
+
+    state.searchCoordinate = coordinate;
+    selectNearestSearchResult();
+    state.provider?.setSearchLocation(coordinate);
+    state.provider?.focusCoordinate(coordinate);
+  }
+
+  function selectNearestSearchResult() {
+    const coordinate = state.searchCoordinate;
+    if (!coordinate)
+      return;
+
+    const nearest = mapSupport.nearestCoordinatePoint(state.points, coordinate);
+    if (!nearest) {
+      clearSelection();
+      renderNoAnomalies();
+      setCoordinateSearchFeedback(
+        "success",
+        `Centered on ${formatSearchCoordinate(coordinate)} · no current anomaly is available to select.`);
+      return;
+    }
+
+    setCoordinateSearchFeedback(
+      "success",
+      `Centered on ${formatSearchCoordinate(coordinate)} · nearest anomaly selected (${nearest.distanceKilometers.toFixed(1)} km away).`);
+    selectPoint(nearest.point.key, true);
+  }
+
+  function setCoordinateSearchFeedback(kind, message) {
+    elements.coordinateSearchInput.setAttribute("aria-invalid", kind === "error" ? "true" : "false");
+    if (kind)
+      elements.coordinateSearchFeedback.dataset.kind = kind;
+    else
+      delete elements.coordinateSearchFeedback.dataset.kind;
+    elements.coordinateSearchFeedback.textContent = message;
+  }
+
+  function formatSearchCoordinate(coordinate) {
+    return `${coordinate.latitude.toFixed(6)}, ${coordinate.longitude.toFixed(6)}`;
   }
 
   function configureGoogle(config) {
@@ -355,7 +418,11 @@
 
       provider.renderAnomalies(state.points);
       provider.setSelection(state.selectedKey, state.clusterKeys);
-      provider.fitToAnomalies(state.points);
+      provider.setSearchLocation(state.searchCoordinate);
+      if (state.searchCoordinate)
+        provider.focusCoordinate(state.searchCoordinate);
+      else
+        provider.fitToAnomalies(state.points);
       state.provider = provider;
       elements.providerCaption.textContent = definition.caption();
       setMapLoading(false);
@@ -376,10 +443,16 @@
     }
   }
 
-  function selectPoint(key) {
+  function selectPoint(key, fromCoordinateSearch = false) {
     const point = state.points.find(candidate => candidate.key === key);
     if (!point)
       return;
+
+    if (state.searchCoordinate && !fromCoordinateSearch) {
+      setCoordinateSearchFeedback(
+        "success",
+        `Search target remains at ${formatSearchCoordinate(state.searchCoordinate)} · selected a map anomaly.`);
+    }
 
     state.selectedKey = key;
     resetDiagnostic();
@@ -387,6 +460,28 @@
     state.provider?.setSelection(key, state.clusterKeys);
     renderDetails(point);
     void loadNotificationDiagnostic(point);
+  }
+
+  function clearSelection() {
+    resetDiagnostic();
+    state.selectedKey = null;
+    state.provider?.setSelection(null, state.clusterKeys);
+  }
+
+  function renderNoAnomalies() {
+    if (!state.snapshot) {
+      renderEmptyDetails(
+        "Anomalies unavailable",
+        "The searched location is shown, but anomaly data is not currently available.");
+      return;
+    }
+
+    const returnedItems = Array.isArray(state.snapshot?.items) ? state.snapshot.items : [];
+    renderEmptyDetails(
+      returnedItems.length === 0 ? "No current anomalies" : "No mappable anomalies",
+      returnedItems.length === 0
+        ? "The current API snapshot contains no heat anomalies."
+        : "Every returned observation has malformed coordinates and was omitted from the map.");
   }
 
   async function loadNotificationDiagnostic(point) {
@@ -811,6 +906,8 @@
   }
 
   function setBusy(busy, message) {
+    elements.coordinateSearchInput.disabled = busy;
+    elements.coordinateSearchButton.disabled = busy;
     elements.refreshButton.disabled = busy;
     elements.refreshButtonLabel.textContent = busy ? "Loading…" : "Refresh data";
     elements.providerSelect.disabled = busy;
@@ -863,6 +960,10 @@
     return mapSupport.notificationMarkerStyle(selected, clustered);
   }
 
+  function searchMarkerStyle() {
+    return mapSupport.coordinateSearchMarkerStyle();
+  }
+
   function errorMessage(error) {
     if (error instanceof Error && error.message)
       return error.message;
@@ -880,6 +981,7 @@
       this.markerLayer = null;
       this.onSelect = null;
       this.imageryLayer = null;
+      this.searchMarker = null;
     }
 
     async mount(container, context) {
@@ -964,6 +1066,36 @@
       });
     }
 
+    setSearchLocation(coordinate) {
+      if (this.searchMarker) {
+        this.searchMarker.remove();
+        this.searchMarker = null;
+      }
+      if (!coordinate || !this.map)
+        return;
+
+      const visual = searchMarkerStyle();
+      this.searchMarker = window.L.circleMarker([coordinate.latitude, coordinate.longitude], {
+        radius: visual.size,
+        color: visual.stroke,
+        weight: visual.weight,
+        fillColor: visual.fill,
+        fillOpacity: 0.18,
+        opacity: 1,
+        bubblingMouseEvents: false
+      });
+      const tooltip = document.createElement("span");
+      tooltip.textContent = `Searched coordinates · ${formatSearchCoordinate(coordinate)}`;
+      this.searchMarker.bindTooltip(tooltip, { direction: "top", offset: [0, -6] });
+      this.searchMarker.addTo(this.map);
+      this.searchMarker.bringToBack();
+    }
+
+    focusCoordinate(coordinate) {
+      this.map?.stop();
+      this.map?.setView([coordinate.latitude, coordinate.longitude], 12, { animate: false });
+    }
+
     fitToAnomalies(points) {
       if (points.length === 0) {
         this.map.setView([20, 0], 2);
@@ -972,7 +1104,7 @@
       } else {
         const bounds = window.L.latLngBounds(
           points.map(point => [point.latitude, point.longitude]));
-        this.map.fitBounds(bounds, { padding: [42, 42], maxZoom: 10 });
+        this.map.fitBounds(bounds, { animate: false, padding: [42, 42], maxZoom: 10 });
       }
     }
 
@@ -986,6 +1118,7 @@
       this.map = null;
       this.markerLayer = null;
       this.imageryLayer = null;
+      this.searchMarker = null;
       this.markers.clear();
     }
   }
@@ -997,6 +1130,7 @@
       this.onSelect = null;
       this.unsubscribeAuthFailure = null;
       this.authFailure = null;
+      this.searchMarker = null;
     }
 
     async mount(container, context) {
@@ -1049,6 +1183,42 @@
       });
     }
 
+    setSearchLocation(coordinate) {
+      if (this.searchMarker) {
+        window.google.maps.event.clearInstanceListeners(this.searchMarker);
+        this.searchMarker.setMap(null);
+        this.searchMarker = null;
+      }
+      if (!coordinate || !this.map)
+        return;
+
+      const visual = searchMarkerStyle();
+      this.searchMarker = new window.google.maps.Marker({
+        map: this.map,
+        position: { lat: coordinate.latitude, lng: coordinate.longitude },
+        title: `Searched coordinates · ${formatSearchCoordinate(coordinate)}`,
+        clickable: false,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          fillColor: visual.fill,
+          fillOpacity: 0.18,
+          scale: visual.size,
+          strokeColor: visual.stroke,
+          strokeOpacity: 1,
+          strokeWeight: visual.weight
+        },
+        zIndex: 250
+      });
+    }
+
+    focusCoordinate(coordinate) {
+      if (!this.map)
+        return;
+
+      this.map.setCenter({ lat: coordinate.latitude, lng: coordinate.longitude });
+      this.map.setZoom(12);
+    }
+
     fitToAnomalies(points) {
       if (points.length === 0) {
         this.map.setCenter({ lat: 20, lng: 0 });
@@ -1086,6 +1256,10 @@
     }
 
     destroy() {
+      if (window.google?.maps && this.searchMarker)
+        window.google.maps.event.clearInstanceListeners(this.searchMarker);
+      this.searchMarker?.setMap(null);
+      this.searchMarker = null;
       if (window.google?.maps && this.map)
         window.google.maps.event.clearInstanceListeners(this.map);
       this.markers.clear();

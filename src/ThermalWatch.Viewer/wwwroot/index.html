@@ -37,6 +37,23 @@
       </div>
 
       <div class="toolbar-controls" aria-label="Viewer controls">
+        <form id="coordinate-search" class="coordinate-search" novalidate>
+          <label for="coordinate-search-input">Find coordinates</label>
+          <div class="coordinate-search-row">
+            <input
+              id="coordinate-search-input"
+              type="search"
+              inputmode="text"
+              maxlength="4096"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="57.946080, 60.061420 or map link"
+              aria-describedby="coordinate-search-feedback"
+              disabled>
+            <button id="coordinate-search-button" class="secondary-button" type="submit" disabled>Find</button>
+          </div>
+          <span id="coordinate-search-feedback" class="coordinate-search-feedback" role="status"></span>
+        </form>
         <label class="provider-control" for="provider-select">
           <span>Map imagery</span>
           <select id="provider-select" disabled>

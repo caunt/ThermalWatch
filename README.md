@@ -31,6 +31,8 @@ ThermalWatch settings use exact uppercase environment-variable names; there is n
 
 Open [http://localhost:8080/](http://localhost:8080/) to inspect the current snapshot, source freshness, and every mappable anomaly. Selecting a marker highlights its complete notification cluster and evaluates the same Core criteria used to prepare outbound notifications. NASA GIBS is the default imagery provider and needs no extra key. Core retrieves and composes its tiles, so the browser receives NASA imagery only from ThermalWatch. Setting `GOOGLE_MAPS_API_KEY` enables Google Satellite; that browser key is returned by `/api/viewer/config` and must be restricted to the Maps JavaScript API and the deployment's HTTP referrers.
 
+The coordinate search accepts common decimal, labeled, degrees/minutes, and degrees/minutes/seconds forms, plus coordinate-bearing Google Maps and other major map links. A successful search marks and centers the exact location and selects the nearest current anomaly for inspection.
+
 The viewer reads the current APIs only. Its Refresh action does not trigger a FIRMS poll, and its map imagery is contextual rather than proof of what caused a detection.
 
 ## HTTP endpoints
