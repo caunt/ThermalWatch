@@ -68,6 +68,7 @@ Read [docs/README.md](docs/README.md) before substantial work, then read only th
 - Configuration, deployment, security, incidents, or recovery: [operations](docs/operations.md).
 - Notification meaning and selection policy: [domain policy](docs/domain/notification-policy.md).
 - FIRMS, Telegram, or viewer internals: the relevant document under `docs/components/`.
+- Any Telegram selection, filtering, imagery, formatting, retry, state, or delivery change must review and update the [Telegram notification flow](docs/components/telegram-notification-flow.md).
 - Durable architectural choice: [ADR policy](docs/decisions/README.md).
 - Complex feature, significant refactor, migration, risky change, or multi-component work: read `.agent/PLANS.md` and maintain an ExecPlan.
 
