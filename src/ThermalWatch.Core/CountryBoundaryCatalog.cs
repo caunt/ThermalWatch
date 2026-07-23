@@ -1,5 +1,4 @@
 using System.Collections.Frozen;
-using System.Collections.Immutable;
 using System.IO.Compression;
 using System.Reflection;
 using System.Text.Json;
@@ -15,7 +14,6 @@ public sealed class CountryBoundaryCatalog
 {
     private const string ResourceName =
         "ThermalWatch.Core.Data.ne_50m_admin_0_countries.geojson.gz";
-    private const double MaximumTileSpanDegrees = 10;
     private static readonly string[] s_countryCodePropertyNames = ["ISO_A3", "ADM0_A3"];
     private readonly FrozenDictionary<string, CountryBoundary> _boundaries;
 
@@ -45,14 +43,19 @@ public sealed class CountryBoundaryCatalog
 
             geometry.SRID = 4326;
             IPreparedGeometry prepared = PreparedGeometryFactory.Prepare(geometry);
-            ImmutableArray<GeographicBounds> tiles = CreateTiles(geometry, prepared);
-            if (tiles.Length == 0)
+            GeographicBounds areaBounds = ToBounds(geometry.EnvelopeInternal);
+            if (areaBounds.West < -180
+                || areaBounds.South < -90
+                || areaBounds.East > 180
+                || areaBounds.North > 90
+                || areaBounds.West >= areaBounds.East
+                || areaBounds.South >= areaBounds.North)
             {
                 throw new CountryBoundaryException(
-                    safeMessage: $"Embedded country boundary for '{countryCode}' cannot be tiled.");
+                    safeMessage: $"Embedded country boundary for '{countryCode}' has invalid area bounds.");
             }
 
-            boundaries.Add(countryCode, new(geometry, prepared, tiles));
+            boundaries.Add(countryCode, new(geometry, prepared, areaBounds));
         }
 
         _boundaries = boundaries.ToFrozenDictionary(StringComparer.Ordinal);
@@ -108,62 +111,6 @@ public sealed class CountryBoundaryCatalog
             throw new CountryBoundaryException(safeMessage: "Embedded country boundary data is invalid.");
         }
     }
-
-    private static ImmutableArray<GeographicBounds> CreateTiles(
-        Geometry geometry,
-        IPreparedGeometry prepared)
-    {
-        Envelope envelope = geometry.EnvelopeInternal;
-        if (envelope.Width <= MaximumTileSpanDegrees
-            && envelope.Height <= MaximumTileSpanDegrees)
-        {
-            return [ToBounds(envelope)];
-        }
-
-        GeometryFactory factory = geometry.Factory;
-        var tiles = new HashSet<GeographicBounds>();
-
-        foreach (Polygon polygon in GetPolygons(geometry))
-        {
-            Envelope componentEnvelope = polygon.EnvelopeInternal;
-            int firstColumn = GridIndex(componentEnvelope.MinX, -180, count: 36);
-            int lastColumn = GridIndex(Math.BitDecrement(componentEnvelope.MaxX), -180, count: 36);
-            int firstRow = GridIndex(componentEnvelope.MinY, -90, count: 18);
-            int lastRow = GridIndex(Math.BitDecrement(componentEnvelope.MaxY), -90, count: 18);
-
-            for (int column = firstColumn; column <= lastColumn; column++)
-            {
-                for (int row = firstRow; row <= lastRow; row++)
-                {
-                    var tileEnvelope = new Envelope(
-                        -180 + column * MaximumTileSpanDegrees,
-                        -180 + (column + 1) * MaximumTileSpanDegrees,
-                        -90 + row * MaximumTileSpanDegrees,
-                        -90 + (row + 1) * MaximumTileSpanDegrees);
-                    if (prepared.Intersects(factory.ToGeometry(tileEnvelope)))
-                        tiles.Add(ToBounds(tileEnvelope));
-                }
-            }
-        }
-
-        return
-        [
-            .. tiles
-                .OrderBy(tile => tile.West)
-                .ThenBy(tile => tile.South)
-        ];
-    }
-
-    private static IEnumerable<Polygon> GetPolygons(Geometry geometry) => geometry switch
-    {
-        Polygon polygon => [polygon],
-        MultiPolygon multiPolygon => Enumerable.Range(start: 0, multiPolygon.NumGeometries)
-            .Select(index => (Polygon)multiPolygon.GetGeometryN(index)),
-        _ => []
-    };
-
-    private static int GridIndex(double coordinate, double minimum, int count) =>
-        Math.Clamp((int)Math.Floor((coordinate - minimum) / MaximumTileSpanDegrees), min: 0, count - 1);
 
     private static GeographicBounds ToBounds(Envelope envelope) =>
         new(envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY);

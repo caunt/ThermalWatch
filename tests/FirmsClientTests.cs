@@ -15,6 +15,18 @@ public sealed class FirmsClientTests
         49,30,330,1,1,2026-07-23,0731,T,MODIS,80,6.1NRT,300,100,D
         """;
 
+    private const string FallbackCsv = """
+        latitude,longitude,brightness,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_t31,frp,daynight
+        49,30,330,1,1,2026-07-23,0731,T,MODIS,80,6.1NRT,300,100,D
+        49,30,330,1,1,2026-07-23,0731,T,MODIS,80,6.1NRT,300,100,D
+        0,0,330,1,1,2026-07-23,0731,T,MODIS,80,6.1NRT,300,100,D
+        """;
+
+    private const string RussiaCsv = """
+        latitude,longitude,brightness,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_t31,frp,daynight
+        60,100,330,1,1,2026-07-23,0731,T,MODIS,80,6.1NRT,300,100,D
+        """;
+
     [Fact]
     public async Task GetSegmentAsyncUsesOneCountryRequestWhenCountryApiIsAvailable()
     {
@@ -33,79 +45,78 @@ public sealed class FirmsClientTests
     }
 
     [Fact]
-    public async Task GetSegmentAsyncBoundsFallbackConcurrencyAndPublishesOnlyClippedDistinctData()
+    public async Task GetSegmentAsyncUsesOneFallbackEnvelopeAndPublishesOnlyClippedDistinctData()
     {
-        var twoAreaRequestsStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var releaseAreaRequests = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        int areaRequestCount = 0;
-        var handler = new RecordingHandler(async (request, cancellationToken) =>
+        var handler = new RecordingHandler((request, _) =>
         {
             string path = request.RequestUri!.AbsolutePath;
             if (IsCountryRequest(path))
-                return CountryUnavailableResponse();
+                return Task.FromResult(CountryUnavailableResponse());
             if (IsMapKeyStatusRequest(path))
-                return MapKeyStatusResponse();
+                return Task.FromResult(MapKeyStatusResponse());
 
-            int count = Interlocked.Increment(ref areaRequestCount);
-            if (count == 2)
-                twoAreaRequestsStarted.SetResult();
-
-            await releaseAreaRequests.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-            return CsvResponse();
+            Assert.True(path.Contains(value: "/api/area/csv/", StringComparison.Ordinal));
+            return Task.FromResult(CsvResponse(FallbackCsv));
         });
         using FirmsClient client = CreateClient(handler, countryCode: "UKR", maxConcurrency: 2);
 
-        Task<FirmsSegmentResult> loading = client.GetSegmentAsync(
+        FirmsSegmentResult result = await client.GetSegmentAsync(
             countryCode: "UKR",
             source: "MODIS_NRT",
             TestContext.Current.CancellationToken);
-        await twoAreaRequestsStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, Volatile.Read(ref areaRequestCount));
-        Assert.Equal(2, handler.MaximumConcurrency);
-        releaseAreaRequests.SetResult();
-
-        FirmsSegmentResult result = await loading;
         Assert.Equal(IngestionModes.AreaFallback, result.IngestionMode);
         Assert.Single(result.Detections);
-        Assert.Equal(5, handler.AreaRequestCount);
-        Assert.Equal(2, handler.MaximumConcurrency);
+        Assert.Equal(1, handler.AreaRequestCount);
+        Assert.Equal(3, handler.RequestCount);
+        Assert.Equal(1, handler.MaximumConcurrency);
     }
 
     [Fact]
-    public async Task GetSegmentAsyncCancelsSiblingTilesAfterFirstFallbackFailure()
+    public async Task GetSegmentAsyncUsesOneWorldSpanningEnvelopeForRussia()
     {
-        var fourAreaRequestsStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        int areaRequestCount = 0;
-        int canceledRequestCount = 0;
-        var handler = new RecordingHandler(async (request, cancellationToken) =>
+        string? areaBounds = null;
+        var handler = new RecordingHandler((request, _) =>
         {
             string path = request.RequestUri!.AbsolutePath;
             if (IsCountryRequest(path))
-                return CountryUnavailableResponse();
+                return Task.FromResult(CountryUnavailableResponse());
             if (IsMapKeyStatusRequest(path))
-                return MapKeyStatusResponse();
+                return Task.FromResult(MapKeyStatusResponse());
 
-            int requestNumber = Interlocked.Increment(ref areaRequestCount);
-            if (requestNumber == 4)
-                fourAreaRequestsStarted.SetResult();
-
-            await fourAreaRequestsStarted.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-            if (requestNumber == 1)
-                return new(HttpStatusCode.ServiceUnavailable);
-
-            try
-            {
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
-                throw new UnreachableException();
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                Interlocked.Increment(ref canceledRequestCount);
-                throw;
-            }
+            string[] segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            areaBounds = segments[5];
+            return Task.FromResult(CsvResponse(RussiaCsv));
         });
-        using FirmsClient client = CreateClient(handler, countryCode: "UKR", maxConcurrency: 4);
+        using FirmsClient client = CreateClient(handler, countryCode: "RUS");
+
+        FirmsSegmentResult result = await client.GetSegmentAsync(
+            countryCode: "RUS",
+            source: "MODIS_NRT",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IngestionModes.AreaFallback, result.IngestionMode);
+        Assert.Single(result.Detections);
+        Assert.Equal(1, handler.AreaRequestCount);
+        Assert.NotNull(areaBounds);
+        string[] coordinates = areaBounds.Split(',');
+        Assert.Equal("-180", coordinates[0]);
+        Assert.Equal("180", coordinates[2]);
+    }
+
+    [Fact]
+    public async Task GetSegmentAsyncFailsWhenFallbackEnvelopeRequestFails()
+    {
+        var handler = new RecordingHandler((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            return Task.FromResult(IsCountryRequest(path)
+                ? CountryUnavailableResponse()
+                : IsMapKeyStatusRequest(path)
+                    ? MapKeyStatusResponse()
+                    : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        });
+        using FirmsClient client = CreateClient(handler, countryCode: "UKR");
 
         FirmsRequestException exception = await Assert.ThrowsAsync<FirmsRequestException>(() => client.GetSegmentAsync(
             countryCode: "UKR",
@@ -113,11 +124,9 @@ public sealed class FirmsClientTests
             TestContext.Current.CancellationToken));
 
         Assert.Equal(
-            "FIRMS area fallback tile failed: FIRMS returned an upstream error.",
+            "FIRMS area fallback request failed: FIRMS returned an upstream error.",
             exception.SafeMessage);
-        Assert.Equal(4, Volatile.Read(ref areaRequestCount));
-        Assert.Equal(3, Volatile.Read(ref canceledRequestCount));
-        Assert.Equal(4, handler.AreaRequestCount);
+        Assert.Equal(1, handler.AreaRequestCount);
     }
 
     [Fact]
@@ -153,6 +162,49 @@ public sealed class FirmsClientTests
         Assert.Equal(IngestionModes.Country, recovered.IngestionMode);
         Assert.Single(recovered.Detections);
         Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task GetSegmentAsyncTimesOutBlockedFallbackContentAndReleasesRequestGate()
+    {
+        int areaRequestCount = 0;
+        var handler = new RecordingHandler((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (IsCountryRequest(path))
+                return Task.FromResult(CountryUnavailableResponse());
+            if (IsMapKeyStatusRequest(path))
+                return Task.FromResult(MapKeyStatusResponse());
+
+            return Task.FromResult(Interlocked.Increment(ref areaRequestCount) == 1
+                ? BlockingCsvResponse(new BlockingReadStream())
+                : CsvResponse());
+        });
+        using FirmsClient client = CreateClient(
+            handler,
+            countryCode: "UKR",
+            requestTimeout: TimeSpan.FromMilliseconds(milliseconds: 100),
+            maxConcurrency: 1);
+
+        FirmsRequestException exception = await Assert.ThrowsAsync<FirmsRequestException>(async () =>
+            await client.GetSegmentAsync(
+                countryCode: "UKR",
+                source: "MODIS_NRT",
+                TestContext.Current.CancellationToken).WaitAsync(
+                    TimeSpan.FromSeconds(seconds: 2),
+                    TestContext.Current.CancellationToken).ConfigureAwait(true));
+        Assert.Equal(
+            "FIRMS area fallback request failed: FIRMS request timed out.",
+            exception.SafeMessage);
+
+        FirmsSegmentResult recovered = await client.GetSegmentAsync(
+            countryCode: "UKR",
+            source: "MODIS_NRT",
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        Assert.Equal(IngestionModes.AreaFallback, recovered.IngestionMode);
+        Assert.Single(recovered.Detections);
+        Assert.Equal(2, handler.AreaRequestCount);
+        Assert.Equal(1, handler.MaximumConcurrency);
     }
 
     [Fact]
@@ -223,10 +275,10 @@ public sealed class FirmsClientTests
                 mediaType: "application/json")
         };
 
-    private static HttpResponseMessage CsvResponse() =>
+    private static HttpResponseMessage CsvResponse(string content = ModisCsv) =>
         new(HttpStatusCode.OK)
         {
-            Content = new StringContent(ModisCsv, Encoding.UTF8, mediaType: "text/csv")
+            Content = new StringContent(content, Encoding.UTF8, mediaType: "text/csv")
         };
 
     private static HttpResponseMessage BlockingCsvResponse(Stream stream)

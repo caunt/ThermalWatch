@@ -3,7 +3,7 @@
 > **Purpose:** Explain how ThermalWatch obtains, validates, falls back, and publishes FIRMS observations.
 > **Scope:** Poll scheduling, country/source segments, country capability, area fallback, CSV parsing, boundaries, and snapshot staleness.
 > **Sources of truth:** [Poller](../../src/ThermalWatch.Api/FirmsPollingService.cs), [FIRMS client](../../src/ThermalWatch.Core/FirmsClient.cs), [boundary catalog](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs), and [snapshot store](../../src/ThermalWatch.Core/AnomalySnapshotStore.cs).
-> **Update when:** Polling, concurrency, FIRMS routes, fallback detection, boundary tiling, CSV parsing, or segment publication changes.
+> **Update when:** Polling, concurrency, FIRMS routes, fallback detection, boundary envelopes, CSV parsing, or segment publication changes.
 
 ## Segment model and polling
 
@@ -32,11 +32,11 @@ The matching and key-status rules in [FirmsClient.cs](../../src/ThermalWatch.Cor
 
 ## Area fallback and boundaries
 
-[CountryBoundaryCatalog.cs](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs) loads only requested countries from the embedded compressed Natural Earth Admin 0 data. It joins multiple parts, repairs invalid geometry where possible, prepares it for point tests, and fails startup when a requested country has no usable polygon or multipolygon.
+[CountryBoundaryCatalog.cs](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs) loads only requested countries from the embedded compressed Natural Earth Admin 0 data. It joins multiple parts, repairs invalid geometry where possible, prepares it for point tests, derives the complete WGS84 geometry envelope, and fails startup when a requested country has no usable polygon or multipolygon.
 
-Boundaries whose envelope exceeds 10 degrees are divided into non-overlapping 10-degree grid cells that intersect the geometry. Tiles are enumerated lazily by bounded workers. Every required tile must succeed; the first failure cancels queued and in-flight sibling work and fails the segment rather than publishing a partial rectangle result.
+FIRMS area acquisition supports bounds up to the entire world, so fallback sends exactly one complete envelope request for each country/source segment. An antimeridian-spanning country can therefore use a world-width numeric envelope. The enclosing rectangle may return observations outside the country, but the client applies its existing response-size limit and checks every parsed observation against the prepared country geometry.
 
-Tile results are merged, clipped locally with polygon coverage checks, and deduplicated by anomaly ID. Country and area responses are never merged for one segment refresh. Natural Earth geometry is generalized cartographic data; see its [embedded license](../../src/ThermalWatch.Core/Data/NaturalEarth.LICENSE.txt).
+The complete response is clipped locally with polygon coverage checks and deduplicated by anomaly ID. A failed or invalid envelope response fails the segment atomically; no partial rectangle result is published. Country and area responses are never merged for one segment refresh. Natural Earth geometry is generalized cartographic data; see its [embedded license](../../src/ThermalWatch.Core/Data/NaturalEarth.LICENSE.txt).
 
 ## Response validation and parsing
 
