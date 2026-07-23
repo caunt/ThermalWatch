@@ -5,7 +5,7 @@
 > **Sources of truth:** [Notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [Telegram options](../../src/ThermalWatch.Telegram/TelegramOptions.cs), [message formatter](../../src/ThermalWatch.Telegram/TelegramMessageFormatter.cs), and [Core candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs).
 > **Update when:** Telegram startup, formatting, sending, concurrency, acknowledgement, or transport error handling changes.
 
-Read the [notification policy](../domain/notification-policy.md) for clustering, eligibility, land cover, previews, deduplication, diagnostics, and manual ranking. Those responsibilities belong to Core; this document focuses on the Telegram adapter.
+Read the [notification policy](../domain/notification-policy.md) for clustering, eligibility, land cover, previews, nearby mapped context, deduplication, diagnostics, and manual ranking. Those responsibilities belong to Core; this document focuses on the Telegram adapter.
 
 ## Boundary and enablement
 
@@ -17,7 +17,7 @@ The validated bot client and channel ID form the adapter's availability state. B
 
 ## Automatic delivery
 
-The service is the single reader of the snapshot store's bounded update channel. For each update it calls the Core candidate engine and supplies a delivery callback. Core owns ready-snapshot handling, new-observation selection, clustering, metadata and land-cover policy, seen/delivered/pending state, preview retries, and delivery acknowledgement.
+The service is the single reader of the snapshot store's bounded update channel. For each update it calls the Core candidate engine and supplies a delivery callback. Core owns ready-snapshot handling, new-observation selection, clustering, metadata and land-cover policy, nearby-feature enrichment, seen/delivered/pending state, preview retries, and delivery acknowledgement.
 
 For each prepared candidate passed to the callback, Telegram:
 
@@ -31,11 +31,13 @@ Core records delivered-episode history only after `Delivered`. A transient trans
 
 Messages use Telegram HTML and paired inline Google and Yandex Maps buttons; the Yandex action opens the representative coordinates in satellite view. The formatter selects a single- or multi-satellite template and progressively compacts it to Telegram's photo-caption limit. It HTML-encodes dynamic values.
 
-A preview caption names its contextual base and representative thermal overlay rather than claiming sensor-matched imagery when Core used a fallback base. The candidate's detection count, satellites, representative metadata, cluster diameter, land-cover summary, preview dimensions, and GIBS attribution arrive as prepared Core data; Telegram does not recalculate eligibility.
+A preview caption names its contextual base and representative thermal overlay rather than claiming sensor-matched imagery when Core used a fallback base. The candidate's detection count, satellites, representative metadata, cluster diameter, land-cover summary, preview dimensions, GIBS attribution, and distance-ordered nearby features arrive as prepared Core data; Telegram does not recalculate eligibility or call Overpass.
+
+When Core supplies one or more nearby features, every result appears under “Possible nearby sources” with its distance, OpenStreetMap contributor attribution, and an explicit warning that mapped proximity does not establish cause. Empty or unavailable lookups add no section. Progressive compaction shortens names and less important message detail while retaining all five bounded results within the photo-caption limit.
 
 ## Manual send path
 
-`SendTopAsync` requires a validated client and uses a nonblocking semaphore so only one manual operation runs at a time. It asks Core to prepare and rank the requested candidates from `snapshotStore.Current`; it does not wait for or request a FIRMS refresh.
+`SendTopAsync` requires a validated client and uses a nonblocking semaphore so only one manual operation runs at a time. It asks Core to prepare and rank the requested candidates from `snapshotStore.Current`; it does not wait for or request a FIRMS refresh. Core enriches only the selected representatives after ranking.
 
 Telegram sends an introductory status message and then sends the selected prepared candidates individually. A status-message failure ends the operation with a distinct result. Individual candidate failures are collected by cluster ID without stopping later sends. Core's manual preparation does not inspect or mutate automatic seen IDs, delivered episodes, or pending previews.
 
@@ -43,6 +45,6 @@ The endpoint status mapping and input validation remain in [Program.cs](../../sr
 
 ## Tests and diagnostics
 
-Core tests cover clustering, policy, candidate lifecycle, land cover, preview handling, manual ranking, and read-only Viewer diagnostics. Telegram tests cover options, formatter output, location buttons, and adapter-visible response contracts. Tests use fake HTTP handlers and never call Telegram or NASA live.
+Core tests cover clustering, policy, candidate lifecycle, land cover, preview handling, nearby-feature enrichment, manual ranking, and read-only Viewer diagnostics. Telegram tests cover options, formatter output and bounds, nearby-context wording, location buttons, and adapter-visible response contracts. Tests use fake HTTP handlers and never call Telegram, NASA, or Overpass live.
 
 Operational signals are console logs and manual endpoint results. There is no Telegram health endpoint, webhook, inbound update loop, durable outbox, persisted state, or independent retry timer.

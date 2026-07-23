@@ -8,6 +8,7 @@ const {
   imageryCoverageHeader,
   gibsTileApiUrl,
   yandexMapsUrl,
+  validateNearbyFeatures,
   parseCoordinateInput,
   nearestCoordinatePoint,
   notificationMarkerStyle,
@@ -210,6 +211,36 @@ test("Yandex Maps URLs reject malformed and out-of-range coordinates", () => {
   assert.throws(() => yandexMapsUrl(Number.NaN, 30), /Valid map coordinates/);
   assert.throws(() => yandexMapsUrl(91, 30), /Valid map coordinates/);
   assert.throws(() => yandexMapsUrl(50, -181), /Valid map coordinates/);
+});
+
+test("nearby feature diagnostics accept only bounded canonical OpenStreetMap results", () => {
+  const feature = {
+    osmType: "way",
+    osmId: 123,
+    name: "Factory & Sons",
+    latitude: 50.1,
+    longitude: 30.2,
+    distanceKilometers: 1.25,
+    openStreetMapUrl: "https://www.openstreetmap.org/way/123"
+  };
+
+  assert.deepEqual(validateNearbyFeatures([feature]), [feature]);
+  assert.throws(() => validateNearbyFeatures(null), /must be an array/);
+  assert.throws(
+    () => validateNearbyFeatures([{ ...feature, distanceKilometers: 2.1 }]),
+    /nearby feature is invalid/);
+  assert.throws(
+    () => validateNearbyFeatures([{
+      ...feature,
+      openStreetMapUrl: "https://example.test/way/123"
+    }]),
+    /nearby feature is invalid/);
+  assert.throws(
+    () => validateNearbyFeatures([{
+      ...feature,
+      openStreetMapUrl: "https://www.openstreetmap.org/way/123?redirect=example.test"
+    }]),
+    /nearby feature is invalid/);
 });
 
 test("coordinate search accepts decimal pairs and defaults ambiguous pairs to latitude first", () => {

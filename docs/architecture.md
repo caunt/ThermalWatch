@@ -9,7 +9,7 @@
 
 | Boundary | Responsibility | Depends on |
 | --- | --- | --- |
-| `ThermalWatch.Core` | FIRMS ingestion, GIBS access, immutable models and snapshots, geography, country boundaries, anomaly identity, and the complete anomaly-to-notification-candidate policy and lifecycle. | External data libraries and abstractions only. |
+| `ThermalWatch.Core` | FIRMS ingestion, GIBS and Overpass access, immutable models and snapshots, geography, country boundaries, anomaly identity, nearby mapped context, and the complete anomaly-to-notification-candidate policy and lifecycle. | External data libraries and abstractions only. |
 | `ThermalWatch.Telegram` | Telegram transport validation, message construction, and delivery of prepared Core candidates. | Core. |
 | `ThermalWatch.Viewer` | Viewer configuration and routes, notification diagnostics, same-origin imagery delivery, root-mounted static assets, and provider-neutral browser presentation. | Core. |
 | `ThermalWatch.Api` | Sole executable, process startup, environment configuration, resilient HTTP clients, polling, public anomaly/Telegram routes, and static-file hosting. | Viewer, Core, and Telegram. |
@@ -27,15 +27,16 @@ NASA FIRMS -> FirmsClient -> FirmsPollingService -> AnomalySnapshotStore
                                                    |             +-> Core diagnostic evaluator ---------------------------> browser viewer
                                                    +-> anomaly API -----------------------------------------------> browser viewer
 NASA GIBS -> Core map-tile client -> viewer imagery API -----------------------> browser viewer
+OpenStreetMap Overpass -> Core nearby-feature client -> candidate/diagnostic ----> Telegram or browser viewer
 Google Maps ------------------------------------------------------------------> browser viewer
 ```
 
 1. Startup parses application-specific environment variables and loads embedded Natural Earth boundaries for every configured country. Invalid application configuration or unusable requested boundaries are fatal.
 2. The poller refreshes immediately, then starts non-overlapping cycles after the configured interval. Each country/source combination is an independent segment.
 3. Successful segments replace their prior data. Failed segments retain their last complete data and become stale.
-4. The store atomically publishes an immutable, active-window snapshot and offers a single-consumer update stream. The Telegram hosted service passes each update to the Core candidate engine and supplies only the message-delivery callback.
+4. The store atomically publishes an immutable, active-window snapshot and offers a single-consumer update stream. The Telegram hosted service passes each update to the Core candidate engine and supplies only the message-delivery callback. Core looks up nearby mapped context around the representative only after an automatic candidate is ready to deliver or a manual candidate has been ranked and selected.
 5. Anomaly API requests read the current snapshot only and never trigger NASA requests. Viewer imagery API requests may retrieve and compose GIBS tiles in Core; complete results use the bounded in-memory cache.
-6. The framework-free viewer consumes same-origin configuration, anomaly, notification-diagnostic, and NASA imagery contracts. Selecting an anomaly asks Core to cluster the current snapshot and exhaustively explain the same policy rules; this read-only evaluation does not mutate automatic notification state.
+6. The framework-free viewer consumes same-origin configuration, anomaly, notification-diagnostic, and NASA imagery contracts. Selecting an anomaly asks Core to cluster the current snapshot, exhaustively explain the same policy rules, and look up nearby mapped context around that selected observation; this read-only evaluation does not mutate automatic notification state.
 
 ## HTTP surface
 
@@ -44,7 +45,7 @@ The route definitions and status mappings in [Program.cs](../src/ThermalWatch.Ap
 - `GET /` serves the interactive viewer.
 - `GET /api/viewer/config` exposes optional browser map configuration, including the browser-visible Google key when configured.
 - `GET /api/viewer/imagery/gibs/{z}/{x}/{y}.png` validates Web Mercator coordinates and returns a composed PNG plus coverage and cache headers.
-- `GET /api/viewer/notification-diagnostics/{anomalyId}` returns the selected anomaly's active-snapshot cluster and current criterion outcomes, or `404` when the anomaly is no longer present. Enabled land-cover and exact-preview criteria can cause bounded, cached GIBS requests.
+- `GET /api/viewer/notification-diagnostics/{anomalyId}` returns the selected anomaly's active-snapshot cluster, current criterion outcomes, and up to five nearby named OSM features, or `404` when the anomaly is no longer present. Enabled land-cover and exact-preview criteria can cause bounded, cached GIBS requests; every valid selection can cause a bounded, cached Overpass request.
 - `GET /api/anomalies` returns the current snapshot with optional local filters. Partial upstream failures remain successful responses with source-level stale diagnostics.
 - `GET /api/telegram/send-top` is an unauthenticated, side-effecting manual Telegram operation. See [operations](operations.md) before exposing it beyond a trusted network boundary.
 
@@ -52,7 +53,7 @@ All API routes use camel-case JSON. The host currently permits cross-origin `GET
 
 ## State and invariants
 
-- Anomaly segments, current snapshot, GIBS preview/land-cover/viewer-tile cache entries, notification seen IDs, delivered-episode history, and pending previews exist only in process memory. Restart is the only persistence boundary.
+- Anomaly segments, current snapshot, GIBS preview/land-cover/viewer-tile cache entries, Overpass lookup cache entries, notification seen IDs, delivered-episode history, and pending previews exist only in process memory. Restart is the only persistence boundary.
 - The anomaly API exposes every valid active FIRMS observation. Notification filters do not delete or annotate API items.
 - MODIS and the three VIIRS feeds remain distinct observations because their sensors and acquisition characteristics differ.
 - Anomaly and cluster IDs are deterministic hashes of stable observation inputs; see [AnomalyId.cs](../src/ThermalWatch.Core/AnomalyId.cs).
@@ -63,9 +64,10 @@ All API routes use camel-case JSON. The host currently permits cross-origin `GET
 
 - NASA FIRMS supplies country/area CSV data and MAP_KEY status. Failures are isolated per segment; only a verified country-feature outage enables area fallback.
 - NASA GIBS supplies exact-date notification imagery, land-cover tiles, and backend-retrieved viewer map tiles. GIBS failure leaves missing viewer pixels transparent and does not stop FIRMS ingestion or the anomaly API.
+- OpenStreetMap's public Overpass endpoint supplies named nodes, ways, and relations within 2 km on demand. Requests are serialized and cached; failure logs a Warning and produces no nearby results without affecting diagnostics, Telegram delivery, FIRMS polling, or the anomaly API.
 - Telegram is outbound only. Missing credentials, validation failure, or notifier disablement does not stop polling or HTTP service.
 - Natural Earth boundary data is embedded in Core, so fallback does not depend on a runtime boundary service.
-- Browser-only external dependencies are pinned Leaflet assets from unpkg and optional Google Maps JavaScript. Selected-anomaly links can navigate to Google or Yandex Maps, but neither is a server-side data dependency. NASA/FIRMS data is never requested directly by viewer code. Browser or viewer-tile failure affects the viewer, not FIRMS ingestion.
+- Browser-only external dependencies are pinned Leaflet assets from unpkg and optional Google Maps JavaScript. Selected-anomaly links can navigate to Google or Yandex Maps, and nearby-result links can navigate to canonical OpenStreetMap element pages; none is a server-side data dependency. NASA/FIRMS/Overpass data is never requested directly by viewer code. Browser or viewer-tile failure affects the viewer, not FIRMS ingestion.
 - Serilog writes structured events to the console. The repository defines no database, durable queue, health endpoint, metrics, tracing, or production deployment target.
 
 Read the focused [FIRMS](components/firms-ingestion.md), [Telegram](components/telegram-notifier.md), or [viewer](components/web-viewer.md) document before changing those failure semantics.

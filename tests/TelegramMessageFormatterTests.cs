@@ -22,7 +22,8 @@ public sealed class TelegramMessageFormatterTests
             new GibsPreview([1], new(FirmsSource: "VIIRS_SNPP_NRT", Satellite: "Suomi-NPP", "VIIRS")),
             new(WidthKilometers: 30, HeightKilometers: 20, PixelWidth: 900, PixelHeight: 600),
             clusterDiameterKilometers: 1,
-            landCoverSummary: "Vegetation · 20%");
+            landCoverSummary: "Vegetation · 20%",
+            nearbyFeatures: []);
 
         Assert.Contains("50.123456, 30.654321", caption, StringComparison.Ordinal);
         Assert.DoesNotContain("Open in Google Maps", caption, StringComparison.Ordinal);
@@ -82,7 +83,8 @@ public sealed class TelegramMessageFormatterTests
             new GibsPreview([1], new(FirmsSource: "MODIS_NRT", Satellite: "Aqua", "MODIS")),
             new(WidthKilometers: 30, HeightKilometers: 20, PixelWidth: 900, PixelHeight: 600),
             clusterDiameterKilometers: 1,
-            landCoverSummary: "Vegetation · 20%");
+            landCoverSummary: "Vegetation · 20%",
+            nearbyFeatures: []);
 
         Assert.Contains(expectedPreviewLine, caption, StringComparison.Ordinal);
     }
@@ -103,10 +105,83 @@ public sealed class TelegramMessageFormatterTests
             new GibsPreview([1], new(FirmsSource: "VIIRS_SNPP_NRT", Satellite: "Suomi-NPP", "VIIRS")),
             new(WidthKilometers: 30, HeightKilometers: 20, PixelWidth: 900, PixelHeight: 600),
             clusterDiameterKilometers: 1,
-            landCoverSummary: "Vegetation · 20%");
+            landCoverSummary: "Vegetation · 20%",
+            nearbyFeatures: []);
 
         Assert.Contains(expectedPreviewLine, caption, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void FormatShowsEveryNearbyFeatureWithDistanceAndCausalityWarning()
+    {
+        Anomaly representative = Detection(id: "first", satellite: "Suomi-NPP");
+        var cluster = new NotificationCluster(Id: "cluster", representative, [representative]);
+        NearbyFeature[] nearbyFeatures =
+        [
+            Feature(id: 1, name: "Factory & Sons", distanceKilometers: 0.12),
+            Feature(id: 2, name: "Fuel depot", distanceKilometers: 0.4),
+            Feature(id: 3, name: "Workshop", distanceKilometers: 0.75),
+            Feature(id: 4, name: "Rail terminal", distanceKilometers: 1.25),
+            Feature(id: 5, name: "Power station", distanceKilometers: 1.9)
+        ];
+
+        string caption = TelegramMessageFormatter.Format(
+            cluster,
+            GibsPreview.Unavailable,
+            new(WidthKilometers: 30, HeightKilometers: 20, PixelWidth: 900, PixelHeight: 600),
+            clusterDiameterKilometers: 0,
+            landCoverSummary: null,
+            nearbyFeatures);
+
+        Assert.Contains("<b>Possible nearby sources:</b>", caption, StringComparison.Ordinal);
+        Assert.Contains("Factory &amp; Sons · 0.12 km", caption, StringComparison.Ordinal);
+        Assert.Contains("Power station · 1.9 km", caption, StringComparison.Ordinal);
+        Assert.Contains(
+            "https://www.openstreetmap.org/copyright\">OpenStreetMap contributors</a>",
+            caption,
+            StringComparison.Ordinal);
+        Assert.Contains("Mapped proximity does not establish cause.", caption, StringComparison.Ordinal);
+        Assert.Equal(5, caption.Split('\n').Count(line => line.StartsWith(value: "• ", StringComparison.Ordinal)));
+        Assert.InRange(caption.Length, low: 1, high: 1024);
+    }
+
+    [Fact]
+    public void FormatKeepsFiveNearbyFeaturesWithinPhotoCaptionLimitWhenNamesAreLong()
+    {
+        Anomaly representative = Detection(id: "first", satellite: "Suomi-NPP");
+        var cluster = new NotificationCluster(Id: "cluster", representative, [representative]);
+        string longName = string.Concat(Enumerable.Repeat(element: "&", count: 300));
+        NearbyFeature[] nearbyFeatures =
+        [
+            Feature(id: 1, name: longName, distanceKilometers: 0.1),
+            Feature(id: 2, name: longName, distanceKilometers: 0.2),
+            Feature(id: 3, name: longName, distanceKilometers: 0.3),
+            Feature(id: 4, name: longName, distanceKilometers: 0.4),
+            Feature(id: 5, name: longName, distanceKilometers: 0.5)
+        ];
+
+        string caption = TelegramMessageFormatter.Format(
+            cluster,
+            new GibsPreview([1], new(FirmsSource: "VIIRS_SNPP_NRT", Satellite: "Suomi-NPP", "VIIRS")),
+            new(WidthKilometers: 30, HeightKilometers: 20, PixelWidth: 900, PixelHeight: 600),
+            clusterDiameterKilometers: 1,
+            landCoverSummary: "Vegetation · 20%",
+            nearbyFeatures);
+
+        Assert.InRange(caption.Length, low: 1, high: 1024);
+        Assert.Equal(5, caption.Split('\n').Count(line => line.StartsWith(value: "• ", StringComparison.Ordinal)));
+        Assert.Contains("Mapped proximity does not establish cause.", caption, StringComparison.Ordinal);
+    }
+
+    private static NearbyFeature Feature(long id, string name, double distanceKilometers) =>
+        new(
+            OsmType: "node",
+            id,
+            name,
+            Latitude: 50.123,
+            Longitude: 30.654,
+            distanceKilometers,
+            OpenStreetMapUrl: $"https://www.openstreetmap.org/node/{id}");
 
     private static Anomaly Detection(string id, string satellite) =>
         new(

@@ -11,4 +11,5 @@ public sealed record NotificationDiagnostic(
     double ClusterDiameterKilometers,
     bool IsEligible,
     ImmutableArray<NotificationCriterionResult> Criteria,
-    GibsPreviewSource? PreviewBaseSource);
+    GibsPreviewSource? PreviewBaseSource,
+    ImmutableArray<NearbyFeature> NearbyFeatures);

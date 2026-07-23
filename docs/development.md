@@ -94,7 +94,7 @@ Sourcing all variables can enable Telegram's hosted service. Viewer and read-onl
 | Viewer JavaScript | Run both `node --check` commands and `node --test tests/viewer-map-support.test.js`, then complete the screenshot and vision workflow below. |
 | Static assets or hosting | Run the static-asset publish and Kestrel smoke check below. |
 | Environment parsing | Add option tests and verify missing, valid, boundary, and invalid values without printing secrets. |
-| FIRMS, GIBS, or Telegram logic | Add focused unit tests with fake HTTP handlers or model fixtures; do not make tests call live services. |
+| FIRMS, GIBS, Overpass, or Telegram logic | Add focused unit tests with fake HTTP handlers or model fixtures; do not make tests call live services. |
 | Documentation or agent workflow | Run the focused documentation test and validate any changed skill metadata. |
 | Container or archive publishing | Follow the exact commands in the relevant [workflow](../.github/workflows/) and inspect publish contents before changing packaging assumptions. |
 

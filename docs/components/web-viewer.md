@@ -1,8 +1,8 @@
 # Web viewer
 
-> **Purpose:** Explain the Viewer project boundary, framework-free interface, notification diagnostics, same-origin NASA imagery, provider adapters, and browser-specific failure behavior.
-> **Scope:** Root-mounted static assets, viewer routes and state, Core notification diagnostics and GIBS map tiles, Google and Yandex Maps, markers, responsive layout, and validation.
-> **Sources of truth:** [Viewer project](../../src/ThermalWatch.Viewer/ThermalWatch.Viewer.csproj), [viewer endpoints](../../src/ThermalWatch.Viewer/ViewerEndpoints.cs), [controller](../../src/ThermalWatch.Viewer/wwwroot/app.js), [map support](../../src/ThermalWatch.Viewer/wwwroot/map-support.js), [Core tile client](../../src/ThermalWatch.Core/GibsMapTileClient.cs), and [composition root](../../src/ThermalWatch.Api/Program.cs).
+> **Purpose:** Explain the Viewer project boundary, framework-free interface, notification diagnostics, nearby mapped context, same-origin NASA imagery, provider adapters, and browser-specific failure behavior.
+> **Scope:** Root-mounted static assets, viewer routes and state, Core notification diagnostics, nearby features and GIBS map tiles, Google, OpenStreetMap, and Yandex links, markers, responsive layout, and validation.
+> **Sources of truth:** [Viewer project](../../src/ThermalWatch.Viewer/ThermalWatch.Viewer.csproj), [viewer endpoints](../../src/ThermalWatch.Viewer/ViewerEndpoints.cs), [controller](../../src/ThermalWatch.Viewer/wwwroot/app.js), [map support](../../src/ThermalWatch.Viewer/wwwroot/map-support.js), [Core tile client](../../src/ThermalWatch.Core/GibsMapTileClient.cs), [Core nearby client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs), and [composition root](../../src/ThermalWatch.Api/Program.cs).
 > **Update when:** Viewer inputs, project/static-asset boundaries, imagery composition, provider contracts, browser dependencies, marker behavior, diagnostics, layout, or validation changes.
 
 ## Project, hosting, and inputs
@@ -14,7 +14,7 @@ The UI remains plain HTML, CSS, and JavaScript with no package manifest, bundler
 - `/api/viewer/config` for optional Google Maps availability and its browser key.
 - `/api/anomalies` for the complete current snapshot and source diagnostics.
 
-Selecting an anomaly additionally requests `/api/viewer/notification-diagnostics/{anomalyId}`. The response identifies the active-snapshot cluster and exhaustively explains the current Core notification criteria. The NASA adapter requests visible same-origin PNGs from `/api/viewer/imagery/gibs/{z}/{x}/{y}.png`. No browser asset contains a FIRMS or GIBS request host. Refresh rereads APIs and never starts a FIRMS poll.
+Selecting an anomaly additionally requests `/api/viewer/notification-diagnostics/{anomalyId}`. The response identifies the active-snapshot cluster, exhaustively explains the current Core notification criteria, and includes up to five named OpenStreetMap features within 2 km of that selected observation. The NASA adapter requests visible same-origin PNGs from `/api/viewer/imagery/gibs/{z}/{x}/{y}.png`. No browser asset contains a FIRMS, GIBS, or Overpass request host. Refresh rereads APIs and never starts a FIRMS poll.
 
 Coordinate search is entirely local to the static viewer. It does not call a geocoder or add an HTTP endpoint.
 
@@ -24,7 +24,7 @@ The controller owns configuration, snapshot, validated points, malformed-coordin
 
 NASA and Google receive the same validated points, point keys, marker colors, selected/cluster state, tooltips, click callback, and fit rules. The selected anomaly is gold, other members of its current notification cluster are cyan, and unrelated observations remain red. Empty data uses a world view, one point uses bounded zoom 8, and multiple points use padded bounds capped at zoom 10. Selection and cluster highlighting survive provider switches. A selection survives a successful refresh while the observation exists and triggers a fresh diagnostic; it clears when the observation disappears and does not toggle off on repeated marker or map-background clicks.
 
-The browser defensively accepts only finite in-range coordinates. Malformed observations are omitted with a visible count rather than failing the snapshot. The inspector renders notification eligibility, cluster membership, every criterion's observed and required values, every anomaly property, snapshot readiness/staleness metadata, matching country/source status, and raw JSON. Dynamic values use text nodes. A valid HTTP(S) Google URL is paired with a Yandex Maps action whose target is derived from the validated coordinates and defaults to satellite view; both are explicit new-tab navigations rather than data inputs.
+The browser defensively accepts only finite in-range coordinates. Malformed observations are omitted with a visible count rather than failing the snapshot. The inspector renders notification eligibility, cluster membership, every criterion's observed and required values, every anomaly property, snapshot readiness/staleness metadata, matching country/source status, and raw JSON. When nearby features exist, it renders their names and distances nearest first under “Possible nearby sources,” links only canonical HTTPS OpenStreetMap element URLs, provides OpenStreetMap contributor attribution, and warns that mapped proximity does not establish cause. Dynamic values use text nodes. A valid HTTP(S) Google URL is paired with a Yandex Maps action whose target is derived from the validated coordinates and defaults to satellite view; all map actions are explicit new-tab navigations rather than data inputs.
 
 Coordinate search accepts latitude/longitude in decimal degrees, labeled or cardinal order, degrees and decimal minutes, degrees/minutes/seconds, and colon-delimited angles. It also accepts `geo:` URIs, WKT Points, GeoJSON Points, and embedded coordinates from full Google Maps or Google Earth, OpenStreetMap, Bing, and Yandex links. Common punctuation, wrappers, ASCII or Unicode angle marks, and unambiguous decimal commas are normalized. Ambiguous bare pairs are latitude first unless a label, cardinal direction, recognized wire format, provider URL, or an out-of-latitude-range first value establishes longitude first. Invalid ranges, contradictory labels, malformed angles, unsupported links, and inputs with extra ambiguous numbers fail visibly without changing the current map state.
 
@@ -32,9 +32,9 @@ A successful search places the same violet search ring in both providers, center
 
 ## Notification diagnostics through Core
 
-The Viewer endpoint passes the current snapshot and selected anomaly ID to Core's candidate engine. Core uses the configured notification radius/time window, deterministic representative selection, metadata thresholds, land-cover policy, preview sizing, and exact-date preview checks. It returns `404` if the selected anomaly is no longer active.
+The Viewer endpoint passes the current snapshot and selected anomaly ID to Core's candidate engine. Core uses the configured notification radius/time window, deterministic representative selection, metadata thresholds, land-cover policy, preview sizing, and exact-date preview checks. It separately queries nearby context around the selected observation, even when another cluster member is the representative. Nearby results never affect eligibility. Core returns `404` if the selected anomaly is no longer active.
 
-The diagnostic evaluates all criteria even when one already fails and never reads or mutates automatic seen, pending, or delivered state. Enabled land-cover and preview checks may make cached server-side GIBS requests, so selection has its own loading state and request cancellation. A stale response cannot replace a newer selection. Failure retains the selected anomaly, removes cluster highlighting, and shows a diagnostic error without disrupting the map or raw observation inspector.
+The diagnostic evaluates all criteria even when one already fails and never reads or mutates automatic seen, pending, or delivered state. Enabled land-cover and preview checks may make cached server-side GIBS requests, and every valid selection may make a cached server-side Overpass request, so selection has its own loading state and request cancellation. Overpass failure returns an empty nearby array and logs server-side rather than failing the diagnostic. A stale response cannot replace a newer selection. Other diagnostic failure retains the selected anomaly, removes cluster highlighting, and shows a diagnostic error without disrupting the map or raw observation inspector.
 
 ## NASA GIBS through Core
 
@@ -44,11 +44,11 @@ Each upstream response is size, media-type, and dimension checked before decode.
 
 The caption avoids claiming one exact date or satellite for the complete mosaic. This contextual map differs from representative-sensor, day/night-matched exact-date notification previews.
 
-## Google, Yandex, and the external-browser boundary
+## Google, OpenStreetMap, Yandex, and the external-browser boundary
 
 Google Maps JavaScript remains an explicit exception to the same-origin data rule. It loads only when selected and only when `GOOGLE_MAPS_API_KEY` is available from viewer configuration. The option stays visible but disabled otherwise. Loading has a 15-second timeout; download/callback failures clean up for retry, and authentication failures are reported without breaking NASA or server processing. The key remains browser-visible by design and requires Google API and HTTP-referrer restrictions.
 
-Consequently, automatic browser external requests are limited by design to pinned unpkg assets and optional Google Maps. Selected-anomaly actions can navigate the user to Google or Yandex Maps with the observation coordinates. Pasting a map URL into coordinate search only parses its text and never navigates to or resolves it. NASA/FIRMS data and imagery always cross the ThermalWatch HTTP boundary first.
+Consequently, automatic browser external requests are limited by design to pinned unpkg assets and optional Google Maps. Selected-anomaly actions can navigate the user to Google or Yandex Maps with the observation coordinates, and nonempty nearby results can navigate to canonical OpenStreetMap element pages. The browser never calls Overpass. Pasting a map URL into coordinate search only parses its text and never navigates to or resolves it. NASA/FIRMS data, imagery, and Overpass data always cross the ThermalWatch HTTP boundary first.
 
 ## Interface and failure states
 
@@ -59,6 +59,7 @@ The refined dark interface is map-first: header controls, compact snapshot-statu
 - Initial anomaly failure shows an unavailable state; refresh failure retains the last usable snapshot and markers.
 - Empty results retain the world map and an explanatory inspector state.
 - Diagnostic loading is local to the inspector; a diagnostic failure preserves the selected anomaly and provider recovery controls.
+- Empty or unavailable nearby context omits its section without showing an end-user provider error; the server Warning is the operational signal.
 - Provider/script/authentication failure leaves provider selection available for recovery.
 - Partial FIRMS staleness, malformed coordinates, and unresolved GIBS coverage are warnings, not fatal map failures.
 
@@ -72,6 +73,6 @@ node --check src/ThermalWatch.Viewer/wwwroot/app.js
 node --test tests/viewer-map-support.test.js
 ```
 
-The Node suite covers coordinate formats, map-link extraction and rejection, nearest-point selection, provider-neutral marker styles/member mapping, same-origin tile URLs, Yandex coordinate-link construction, coverage propagation, warning deduplication, failed loads, cancellation/object-URL cleanup, absence of direct NASA request hosts, and Google success/failure/retry/authentication behavior. The .NET suite owns diagnostic policy/endpoint behavior plus GIBS product order, response validation, pixel composition, coverage, cache, cancellation, and endpoint headers. Then run the complete build, test, format, documentation, and publish checks from [development](../development.md).
+The Node suite covers coordinate formats, map-link extraction and rejection, nearby-feature validation and canonical OSM links, nearest-point selection, provider-neutral marker styles/member mapping, same-origin tile URLs, Yandex coordinate-link construction, coverage propagation, warning deduplication, failed loads, cancellation/object-URL cleanup, absence of direct NASA request hosts, and Google success/failure/retry/authentication behavior. The .NET suite owns diagnostic and nearby-feature endpoint behavior plus GIBS product order, response validation, pixel composition, coverage, cache, cancellation, and endpoint headers. Then run the complete build, test, format, documentation, and publish checks from [development](../development.md).
 
-Every viewer task also requires the [live screenshot workflow](../development.md#live-viewer-screenshot-verification). Capture and open NASA and Google desktop/narrow states plus a provider round trip. For notification-diagnostic work, include a selected cluster and inspect eligibility/criterion readability and consistent cluster highlighting. Treat imagery defects, missing markers/controls, unreadable details, unstable desktop bounds, or narrow overflow as failures. For imagery-boundary work, observe that browser NASA tiles use only the same-origin imagery API; do not save archives or logs containing a Google key.
+Every viewer task also requires the [live screenshot workflow](../development.md#live-viewer-screenshot-verification). Capture and open NASA and Google desktop/narrow states plus a provider round trip. For notification-diagnostic work, include a selected cluster and inspect eligibility/criterion readability, nearby-feature cards and links when present, causal warning text, and consistent cluster highlighting. Treat imagery defects, missing markers/controls, unreadable details, unstable desktop bounds, or narrow overflow as failures. For imagery-boundary work, observe that browser NASA tiles use only the same-origin imagery API; do not save archives or logs containing a Google key.

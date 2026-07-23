@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Net;
+using System.Text;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using ThermalWatch.Core;
@@ -73,16 +74,94 @@ public sealed class NotificationCandidateEngineTests
         Assert.Equal(0, handler.RequestCount);
     }
 
+    [Fact]
+    public async Task DiagnoseAsyncLooksUpNearbyFeaturesForSelectedAnomalyInsteadOfRepresentative()
+    {
+        var gibsHandler = new NotFoundHandler();
+        var nearbyHandler = new NearbyHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationCandidateEngine engine = CreateEngine(gibsHandler, cache, nearbyHandler);
+        AnomalySnapshot snapshot = Snapshot(
+            Detection(id: "selected", longitude: 30, frpMegawatts: 100),
+            Detection(id: "representative", longitude: 30.02, frpMegawatts: 200));
+
+        NotificationDiagnostic diagnostic = Assert.IsType<NotificationDiagnostic>(
+            await engine.DiagnoseAsync(
+                snapshot,
+                anomalyId: "selected",
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal("representative", diagnostic.RepresentativeId);
+        string query = Assert.Single(nearbyHandler.Queries);
+        Assert.Contains("around:2000,50.000000,30.000000", query, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AutomaticAndManualCandidatesEnrichOnlyTheirSelectedRepresentatives()
+    {
+        var automaticGibs = new NotFoundHandler();
+        var automaticNearby = new NearbyHandler();
+        using var automaticCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationCandidateEngine automaticEngine = CreateEngine(
+            automaticGibs,
+            automaticCache,
+            automaticNearby);
+        AnomalySnapshot automaticSnapshot = Snapshot(
+            Detection(id: "lower", longitude: 30, frpMegawatts: 100),
+            Detection(id: "higher", longitude: 30.02, frpMegawatts: 200));
+
+        await automaticEngine.ProcessAutomaticAsync(
+            automaticSnapshot,
+            (_, _) => Task.FromResult(NotificationDeliveryOutcome.Delivered),
+            TestContext.Current.CancellationToken);
+
+        string automaticQuery = Assert.Single(automaticNearby.Queries);
+        Assert.Contains("around:2000,50.000000,30.020000", automaticQuery, StringComparison.Ordinal);
+
+        var manualGibs = new NotFoundHandler();
+        var manualNearby = new NearbyHandler();
+        using var manualCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationCandidateEngine manualEngine = CreateEngine(manualGibs, manualCache, manualNearby);
+        AnomalySnapshot manualSnapshot = Snapshot(
+            Detection(id: "low", longitude: 30, frpMegawatts: 100),
+            Detection(id: "low-context", longitude: 30.01, frpMegawatts: 90),
+            Detection(id: "highest", longitude: 31, frpMegawatts: 300),
+            Detection(id: "highest-context", longitude: 31.01, frpMegawatts: 290),
+            Detection(id: "middle", longitude: 32, frpMegawatts: 200),
+            Detection(id: "middle-context", longitude: 32.01, frpMegawatts: 190));
+
+        ManualNotificationCandidates manual = await manualEngine.PrepareManualAsync(
+            manualSnapshot,
+            requestedCount: 1,
+            TestContext.Current.CancellationToken);
+
+        Assert.Single(manual.Selected);
+        string manualQuery = Assert.Single(manualNearby.Queries);
+        Assert.Contains("around:2000,50.000000,31.000000", manualQuery, StringComparison.Ordinal);
+    }
+
     private static NotificationCandidateEngine CreateEngine(
         HttpMessageHandler handler,
-        IMemoryCache cache)
+        IMemoryCache cache,
+        HttpMessageHandler? nearbyHandler = null)
     {
         var httpClient = new HttpClient(handler)
         {
             BaseAddress = new(uriString: "https://gibs.example.test/")
         };
         var gibsClient = new GibsClient(httpClient, cache, NullLogger<GibsClient>.Instance);
-        return new(DefaultOptions(), gibsClient, new FixedTimeProvider(s_observedAt.AddHours(1)));
+        var nearbyClient = new NearbyFeatureClient(
+            new HttpClient(nearbyHandler ?? new NotFoundHandler())
+            {
+                BaseAddress = new(uriString: "https://overpass.example.test/api/")
+            },
+            cache,
+            NullLogger<NearbyFeatureClient>.Instance);
+        return new(
+            DefaultOptions(),
+            gibsClient,
+            nearbyClient,
+            new FixedTimeProvider(s_observedAt.AddHours(1)));
     }
 
     private static NotificationOptions DefaultOptions() =>
@@ -166,6 +245,27 @@ public sealed class NotificationCandidateEngineTests
             cancellationToken.ThrowIfCancellationRequested();
             RequestCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+    }
+
+    private sealed class NearbyHandler : HttpMessageHandler
+    {
+        public List<string> Queries { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            string body = await request.Content!.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            Assert.StartsWith("data=", body, StringComparison.Ordinal);
+            Queries.Add(Uri.UnescapeDataString(body[5..].Replace(oldChar: '+', newChar: ' ')));
+            return new(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    content: "{\"elements\":[]}",
+                    Encoding.UTF8,
+                    mediaType: "application/json")
+            };
         }
     }
 }

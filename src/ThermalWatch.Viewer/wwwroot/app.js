@@ -537,11 +537,14 @@
         || diagnostic.selectedAnomalyId !== anomalyId
         || !Array.isArray(diagnostic.memberIds)
         || !Array.isArray(diagnostic.criteria)
+        || !Array.isArray(diagnostic.nearbyFeatures)
         || typeof diagnostic.clusterId !== "string"
         || typeof diagnostic.representativeId !== "string"
         || typeof diagnostic.isEligible !== "boolean") {
       throw new Error("The notification diagnostic response is invalid.");
     }
+
+    mapSupport.validateNearbyFeatures(diagnostic.nearbyFeatures);
   }
 
   function resetDiagnostic() {
@@ -625,6 +628,10 @@
 
     wrapper.append(notificationDiagnosticSection());
 
+    const nearbyFeatures = nearbyFeatureSection();
+    if (nearbyFeatures)
+      wrapper.append(nearbyFeatures);
+
     const observationSection = section("Observation data");
     observationSection.append(fieldList(Object.entries(anomaly), point));
     wrapper.append(observationSection);
@@ -662,6 +669,44 @@
 
     elements.detailsPanel.replaceChildren(wrapper);
     elements.detailsPanel.scrollTop = 0;
+  }
+
+  function nearbyFeatureSection() {
+    const nearbyFeatures = state.diagnosticStatus === "ready"
+      && Array.isArray(state.diagnostic?.nearbyFeatures)
+      ? state.diagnostic.nearbyFeatures
+      : [];
+    if (nearbyFeatures.length === 0)
+      return null;
+
+    const nearbySection = section("Possible nearby sources");
+    nearbySection.append(textElement(
+      "p",
+      "Named OpenStreetMap features within 2 km of the selected anomaly, nearest first.",
+      "details-subtitle"));
+    const list = document.createElement("ul");
+    list.className = "nearby-feature-list";
+    nearbyFeatures.forEach(feature => {
+      const item = document.createElement("li");
+      const link = externalMapLink(feature.openStreetMapUrl, feature.name);
+      link.className = "nearby-feature-link";
+      link.textContent = feature.name;
+      item.append(
+        link,
+        textElement("span", formatDistance(feature.distanceKilometers), "nearby-feature-distance"));
+      list.append(item);
+    });
+    const warning = textElement("p", "", "nearby-feature-warning");
+    const attribution = externalMapLink(
+      "https://www.openstreetmap.org/copyright",
+      "© OpenStreetMap contributors");
+    attribution.className = "nearby-feature-attribution";
+    attribution.textContent = "© OpenStreetMap contributors";
+    warning.append(
+      attribution,
+      document.createTextNode(". Mapped proximity does not establish cause."));
+    nearbySection.append(list, warning);
+    return nearbySection;
   }
 
   function notificationDiagnosticSection() {

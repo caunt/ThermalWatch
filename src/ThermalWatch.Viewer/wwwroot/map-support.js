@@ -44,6 +44,51 @@
     return url.href;
   }
 
+  function validateNearbyFeatures(features) {
+    if (!Array.isArray(features))
+      throw new Error("Nearby features must be an array.");
+
+    features.forEach(feature => {
+      if (!feature
+          || !["node", "way", "relation"].includes(feature.osmType)
+          || !Number.isSafeInteger(feature.osmId)
+          || feature.osmId <= 0
+          || typeof feature.name !== "string"
+          || feature.name.trim().length === 0
+          || !Number.isFinite(feature.latitude)
+          || feature.latitude < -90
+          || feature.latitude > 90
+          || !Number.isFinite(feature.longitude)
+          || feature.longitude < -180
+          || feature.longitude > 180
+          || !Number.isFinite(feature.distanceKilometers)
+          || feature.distanceKilometers < 0
+          || feature.distanceKilometers > 2.000001
+          || !isCanonicalOpenStreetMapUrl(feature)) {
+        throw new Error("A nearby feature is invalid.");
+      }
+    });
+
+    return features;
+  }
+
+  function isCanonicalOpenStreetMapUrl(feature) {
+    if (typeof feature.openStreetMapUrl !== "string")
+      return false;
+
+    try {
+      const url = new URL(feature.openStreetMapUrl);
+      return url.protocol === "https:"
+        && url.hostname === "www.openstreetmap.org"
+        && url.port === ""
+        && url.pathname === `/${feature.osmType}/${feature.osmId}`
+        && url.search === ""
+        && url.hash === "";
+    } catch {
+      return false;
+    }
+  }
+
   function parseCoordinateInput(input) {
     if (typeof input !== "string" || input.trim().length === 0)
       throw new Error("Enter a latitude and longitude or a coordinate-bearing map link.");
@@ -767,6 +812,7 @@
     imageryCoverageHeader,
     gibsTileApiUrl,
     yandexMapsUrl,
+    validateNearbyFeatures,
     parseCoordinateInput,
     nearestCoordinatePoint,
     notificationMarkerStyle,

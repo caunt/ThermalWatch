@@ -9,7 +9,7 @@
 
 The process binds plain HTTP to `0.0.0.0:8080`, starts one immediate FIRMS refresh, then runs non-overlapping polling cycles. Application options are parsed once at startup and are not reloaded.
 
-All application state is in memory: source segments, the published snapshot, GIBS preview/land-cover/viewer-tile cache entries, notification seen IDs, delivered-episode history, and pending preview notifications. The service has no database, durable queue, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
+All application state is in memory: source segments, the published snapshot, GIBS preview/land-cover/viewer-tile cache entries, Overpass nearby-feature cache entries, notification seen IDs, delivered-episode history, and pending preview notifications. The service has no database, durable queue, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
 
 The application-specific options below use exact uppercase environment names. Framework hosting still uses ASP.NET Core's normal host configuration, but .NET-style nested names such as `Firms__MapKey` do not configure ThermalWatch options.
 
@@ -80,12 +80,15 @@ No credentials disables Telegram without affecting the API. Supplying only one c
 | --- | --- | --- |
 | NASA FIRMS | Country and area CSV plus MAP_KEY status. | Isolated by country/source segment; stale data is retained where available. |
 | NASA GIBS | Exact-date notification previews and diagnostics, spatial base-image probes, availability domains, annual land-cover domains, and latest viewer map tiles. | Preview/land-cover results become unavailable; viewer tiles become partial or transparent; FIRMS and the anomaly API continue. |
+| OpenStreetMap Overpass | Named nodes, ways, and relations within 2 km for ready Telegram candidates and selected Viewer diagnostics. | Returns no nearby context and logs a Warning; candidate delivery, diagnostics, polling, and the anomaly API continue. |
 | Telegram Bot API | Startup validation and outbound channel messages. | Notifier can disable or defer; polling and HTTP API continue. |
 | Natural Earth | Embedded boundary data loaded from Core. | Missing or unusable geometry for a configured country is a fatal startup error. |
 | unpkg and Google Maps | Approved browser-only viewer resources. NASA/FIRMS data is same-origin through ThermalWatch. | A browser provider can fail while server APIs and polling continue. |
 | Yandex Maps | No server-side use; a selected-anomaly action can navigate the browser to the observation coordinates. | Navigation failure affects only the external map action. |
 
-Configured HTTP clients use bounded total and attempt timeouts, exponential retry delay with jitter, and `Retry-After` handling. FIRMS uses its configured request timeout; GIBS and Telegram use fixed 30-second total policies. See [Program.cs](../src/ThermalWatch.Api/Program.cs) for retry counts and attempt-timeout calculation.
+FIRMS, GIBS, and Telegram HTTP clients use bounded total and attempt timeouts, exponential retry delay with jitter, and `Retry-After` handling. FIRMS uses its configured request timeout; GIBS and Telegram use fixed 30-second total policies. Overpass uses one request with a 15-second `HttpClient` timeout and no automatic retry, so a free endpoint error does not trigger an immediate repeat. See [Program.cs](../src/ThermalWatch.Api/Program.cs) for executable policy values.
+
+The Overpass client posts a 10-second server-side query for named features, accepts at most 10 MiB, serializes the process to one upstream request, caches successful results including empty sets for one hour, and caches unavailable results for one minute. Cache keys round lookup coordinates to six decimal places. There is no API key or configuration variable for this fixed public provider.
 
 Viewer tile composition admits at most eight concurrent Core operations. Each upstream tile must be a bounded 256×256 JPEG; complete composed PNGs use the shared 64 MiB memory cache for five minutes, while partial and unavailable results are not cached so transient coverage can recover. The HTTP response advertises the same five-minute cache only for complete tiles.
 
@@ -93,13 +96,13 @@ Live provider availability, data ranges, and error bodies change independently o
 
 ## Observability and security
 
-Serilog writes structured console events. `LOGGING_MINIMUM_LEVEL` controls the application minimum while the host suppresses noisy ASP.NET and HTTP-client categories and excludes Polly's per-attempt resilience telemetry at every level. Retry and timeout attempts therefore do not emit exception stacks; component-owned final failures remain visible as safe summaries. Successful viewer imagery requests are Debug-level to keep map navigation from flooding normal logs; other request summaries remain Information unless they fail. Logs report safe error summaries, segment refreshes, snapshot publication, notification filtering, preview state, and sends; they must never include credential values.
+Serilog writes structured console events. `LOGGING_MINIMUM_LEVEL` controls the application minimum while the host suppresses noisy ASP.NET and HTTP-client categories and excludes Polly's per-attempt resilience telemetry at every level. Retry and timeout attempts therefore do not emit exception stacks; component-owned final failures remain visible as safe summaries. Successful viewer imagery requests are Debug-level to keep map navigation from flooding normal logs; other request summaries remain Information unless they fail. Logs report safe error summaries, segment refreshes, snapshot publication, notification filtering, preview state, nearby-feature unavailability, and sends; they must never include credential values.
 
 There is no health/readiness route, metrics endpoint, tracing, external log sink, alert, or dashboard. `/api/anomalies` source statuses are the only built-in structured operational diagnostics. A viewer refresh rereads the snapshot and does not force an upstream poll.
 
 All current HTTP endpoints are unauthenticated. Cross-origin `GET` is allowed:
 
-- `/api/anomalies`, `/api/viewer/config`, `/api/viewer/imagery/gibs/{z}/{x}/{y}.png`, and `/api/viewer/notification-diagnostics/{anomalyId}` are read-only. The imagery and diagnostic routes can cause bounded backend GIBS requests for uncached data.
+- `/api/anomalies`, `/api/viewer/config`, `/api/viewer/imagery/gibs/{z}/{x}/{y}.png`, and `/api/viewer/notification-diagnostics/{anomalyId}` are read-only. The imagery and diagnostic routes can cause bounded backend GIBS requests for uncached data; every valid selected-anomaly diagnostic can also cause a serialized, cached Overpass request.
 - `/api/viewer/config` intentionally exposes a browser API key when configured.
 - `/api/telegram/send-top` sends Telegram messages and must sit behind an appropriate network access boundary. Its use is not safe as a health check.
 
@@ -146,6 +149,7 @@ The repository contains no production deployment manifests, immutable release ta
 | Verified country-feature outage | Switch globally to polygon-clipped area fallback and probe the country API after one hour. | Automatic when the country API succeeds again. |
 | GIBS preview unavailable or base crop is mostly no-data | Try other supported same-date, pass-matched satellite bases; if none is usable, keep the automatic candidate pending until retry expiry, then discard if preview is required or send text-only if allowed. | Later snapshots retry uncached spatial probes until expiry. |
 | GIBS land cover unavailable or invalid | Retain the notification candidate and record fail-open diagnostics. | Later candidates retry after cache expiry. |
+| Overpass HTTP, transport, timeout, oversized, or malformed-response failure | Log one Warning per uncached lookup, return no nearby features, and continue the diagnostic or Telegram delivery. | A lookup after the one-minute failure cache expires retries automatically on demand. |
 | Telegram startup validation failure | Disable notifier for the process lifetime. | Correct credentials/channel permissions and restart. |
 | Telegram automatic send returns `400`, `401`, or `403` | Disable automatic notifier processing for the process lifetime. | Correct the permanent condition and restart. |
 | Telegram transient send failure | Keep the pending item and return to the snapshot loop. | A later snapshot update retries it. |

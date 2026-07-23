@@ -14,27 +14,31 @@ public static class TelegramMessageFormatter
         bool hasPreview,
         GibsPreviewDimensions previewDimensions,
         double? clusterDiameterKilometers,
-        string? landCoverSummary) =>
+        string? landCoverSummary,
+        IReadOnlyList<NearbyFeature> nearbyFeatures) =>
         Format(
             cluster,
             hasPreview ? new([1]) : GibsPreview.Unavailable,
             previewDimensions,
             clusterDiameterKilometers,
-            landCoverSummary);
+            landCoverSummary,
+            nearbyFeatures);
 
     public static string Format(
         NotificationCluster cluster,
         GibsPreview preview,
         GibsPreviewDimensions previewDimensions,
         double? clusterDiameterKilometers,
-        string? landCoverSummary)
+        string? landCoverSummary,
+        IReadOnlyList<NearbyFeature> nearbyFeatures)
     {
         TemplateData data = CreateTemplateData(
             cluster,
             preview,
             previewDimensions,
             clusterDiameterKilometers,
-            landCoverSummary);
+            landCoverSummary,
+            nearbyFeatures);
         Func<TemplateData, int, string> build = data.Satellites.Length >= 2
             ? BuildMultiSatellite
             : BuildBalanced;
@@ -102,6 +106,9 @@ public static class TelegramMessageFormatter
             sections.Add(string.Join('\n', preview));
         }
 
+        if (FormatNearbyFeatures(data.NearbyFeatures, compactLevel) is { } nearbyFeatures)
+            sections.Add(nearbyFeatures);
+
         sections.Add(FormatLocation(data));
         return string.Join(separator: "\n\n", sections);
     }
@@ -146,6 +153,9 @@ public static class TelegramMessageFormatter
             sections.Add(string.Join('\n', preview));
         }
 
+        if (FormatNearbyFeatures(data.NearbyFeatures, compactLevel) is { } nearbyFeatures)
+            sections.Add(nearbyFeatures);
+
         sections.Add(FormatLocation(data));
         return string.Join(separator: "\n\n", sections);
     }
@@ -160,14 +170,19 @@ public static class TelegramMessageFormatter
         DateTimeOffset observedAt = multiSatellite
             ? data.LatestObservation
             : data.Cluster.Representative.AcquiredAtUtc;
-        return string.Join(
-            separator: "\n\n",
+        var sections = new List<string>
+        {
             title,
             string.Join('\n',
                 $"📍 <b>{Html(FormatInlineList(data.Countries, compactLevel: 2))}</b>",
                 $"🕓 <b>{timeLabel}:</b> {Html(FormatDateTime(observedAt))} UTC",
-                $"🔎 <b>Detections:</b> {Html(data.Cluster.Members.Length.ToString(CultureInfo.InvariantCulture))}"),
-            FormatLocation(data));
+                $"🔎 <b>Detections:</b> {Html(data.Cluster.Members.Length.ToString(CultureInfo.InvariantCulture))}")
+        };
+        if (FormatNearbyFeatures(data.NearbyFeatures, compactLevel: 2) is { } nearbyFeatures)
+            sections.Add(nearbyFeatures);
+
+        sections.Add(FormatLocation(data));
+        return string.Join(separator: "\n\n", sections);
     }
 
     private static TemplateData CreateTemplateData(
@@ -175,7 +190,8 @@ public static class TelegramMessageFormatter
         GibsPreview preview,
         GibsPreviewDimensions previewDimensions,
         double? clusterDiameterKilometers,
-        string? landCoverSummary) =>
+        string? landCoverSummary,
+        IReadOnlyList<NearbyFeature> nearbyFeatures) =>
         new(
             cluster,
             SortedDistinct(cluster.Members.Select(member =>
@@ -189,7 +205,51 @@ public static class TelegramMessageFormatter
             preview.BaseSource,
             previewDimensions,
             clusterDiameterKilometers,
-            landCoverSummary);
+            landCoverSummary,
+            nearbyFeatures);
+
+    private static string? FormatNearbyFeatures(
+        IReadOnlyList<NearbyFeature> nearbyFeatures,
+        int compactLevel)
+    {
+        if (nearbyFeatures.Count == 0)
+            return null;
+
+        var lines = new List<string>
+        {
+            "🏷 <b>Possible nearby sources:</b>"
+        };
+        foreach (NearbyFeature feature in nearbyFeatures)
+        {
+            lines.Add(
+                $"• {Html(CompactNearbyName(feature.Name, compactLevel))} · {Html(FormatNearbyDistance(feature.DistanceKilometers))} km");
+        }
+
+        lines.Add("© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap contributors</a>");
+        lines.Add("⚠️ <i>Mapped proximity does not establish cause.</i>");
+        return string.Join('\n', lines);
+    }
+
+    private static string CompactNearbyName(string name, int compactLevel)
+    {
+        int maximumTextElements = compactLevel switch
+        {
+            0 => 64,
+            1 => 36,
+            _ => 16
+        };
+        if (name.Length <= maximumTextElements)
+            return name;
+
+        TextElementEnumerator elements = StringInfo.GetTextElementEnumerator(name);
+        var result = new StringBuilder();
+        while (elements.MoveNext() && maximumTextElements-- > 1)
+            result.Append(elements.GetTextElement());
+        return result.Append('…').ToString();
+    }
+
+    private static string FormatNearbyDistance(double value) =>
+        value.ToString(format: "0.##", CultureInfo.InvariantCulture);
 
     private static string FormatLocation(TemplateData data)
     {
@@ -369,5 +429,6 @@ public static class TelegramMessageFormatter
         GibsPreviewSource? PreviewBaseSource,
         GibsPreviewDimensions PreviewDimensions,
         double? ClusterDiameterKilometers,
-        string? LandCoverSummary);
+        string? LandCoverSummary,
+        IReadOnlyList<NearbyFeature> NearbyFeatures);
 }

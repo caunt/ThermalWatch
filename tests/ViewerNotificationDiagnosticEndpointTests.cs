@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -40,6 +41,12 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
         Assert.Equal(2, body.RootElement.GetProperty(propertyName: "detectionCount").GetInt32());
         Assert.Equal(7, body.RootElement.GetProperty(propertyName: "criteria").GetArrayLength());
         Assert.True(body.RootElement.GetProperty(propertyName: "isEligible").GetBoolean());
+        JsonElement nearbyFeature = Assert.Single(
+            body.RootElement.GetProperty(propertyName: "nearbyFeatures").EnumerateArray());
+        Assert.Equal("Nearby workshop", nearbyFeature.GetProperty(propertyName: "name").GetString());
+        Assert.Equal("https://www.openstreetmap.org/node/123", nearbyFeature
+            .GetProperty(propertyName: "openStreetMapUrl")
+            .GetString());
         Assert.Equal(
             ["first", "second"],
             body.RootElement.GetProperty(propertyName: "memberIds")
@@ -64,6 +71,7 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
     private static async Task<WebApplication> CreateAppAsync()
     {
         var noRequests = new NotFoundHandler();
+        var nearbyRequests = new NearbyHandler();
         var timeProvider = new FixedTimeProvider(s_now);
         var firmsOptions = new FirmsOptions(
             MapKey: new string('a', count: 32),
@@ -86,6 +94,10 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
             new HttpClient(noRequests) { BaseAddress = new(uriString: "https://gibs.example.test/") },
             serviceProvider.GetRequiredService<IMemoryCache>(),
             NullLogger<GibsClient>.Instance));
+        builder.Services.AddSingleton(serviceProvider => new NearbyFeatureClient(
+            new HttpClient(nearbyRequests) { BaseAddress = new(uriString: "https://overpass.example.test/api/") },
+            serviceProvider.GetRequiredService<IMemoryCache>(),
+            NullLogger<NearbyFeatureClient>.Instance));
         builder.Services.AddSingleton<NotificationCandidateEngine>();
         builder.Services.AddSingleton(serviceProvider => new GibsMapTileClient(
             new HttpClient(noRequests) { BaseAddress = new(uriString: "https://gibs.example.test/") },
@@ -177,6 +189,33 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+    }
+
+    private sealed class NearbyHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            const string json = """
+                {
+                  "elements": [
+                    {
+                      "type": "node",
+                      "id": 123,
+                      "lat": 50,
+                      "lon": 30.001,
+                      "tags": { "name": "Nearby workshop" }
+                    }
+                  ]
+                }
+                """;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, mediaType: "application/json")
+            });
         }
     }
 }

@@ -83,6 +83,16 @@ try
             retryCount: 2));
 
     builder.Services
+        .AddHttpClient<NearbyFeatureClient>(client =>
+        {
+            client.BaseAddress = new("https://overpass-api.de/api/");
+            client.Timeout = TimeSpan.FromSeconds(seconds: 15);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                input: "ThermalWatch/1.0 (+https://github.com/caunt/ThermalWatch)");
+            client.DefaultRequestHeaders.Accept.ParseAdd(input: "application/json");
+        });
+
+    builder.Services
         .AddHttpClient(name: "GibsMapTiles", client =>
         {
             client.BaseAddress = new(uriString: "https://gibs.earthdata.nasa.gov/");

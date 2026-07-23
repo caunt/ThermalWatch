@@ -294,7 +294,8 @@ public sealed class TelegramNotificationService(
             candidate.Preview,
             candidate.PreviewSelection.Dimensions,
             candidate.PreviewSelection.ClusterDiameterKilometers,
-            candidate.LandCoverSummary);
+            candidate.LandCoverSummary,
+            candidate.NearbyFeatures);
 
         if (candidate.Preview.PngBytes is { } pngBytes)
         {

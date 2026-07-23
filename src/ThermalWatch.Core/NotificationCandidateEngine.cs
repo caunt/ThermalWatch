@@ -6,6 +6,7 @@ namespace ThermalWatch.Core;
 public sealed class NotificationCandidateEngine(
     NotificationOptions options,
     GibsClient gibsClient,
+    NearbyFeatureClient nearbyFeatureClient,
     TimeProvider timeProvider)
 {
     private const int MaximumSeenIds = 100_000;
@@ -147,10 +148,11 @@ public sealed class NotificationCandidateEngine(
                 cluster,
                 preview,
                 previewSelection,
-                evaluation.LandCoverResult?.FormattingSummary));
+                evaluation.LandCoverResult?.FormattingSummary,
+                NearbyFeatures: []));
         }
 
-        ImmutableArray<PreparedNotificationCandidate> selected =
+        PreparedNotificationCandidate[] selectedWithoutNearby =
         [
             .. eligible
                 .OrderByDescending(candidate => candidate.Cluster.Representative.FrpMegawatts.HasValue)
@@ -161,7 +163,18 @@ public sealed class NotificationCandidateEngine(
                 .ThenBy(candidate => candidate.Cluster.Id, StringComparer.Ordinal)
                 .Take(requestedCount)
         ];
-        return new(eligible.Count, selected);
+        ImmutableArray<PreparedNotificationCandidate>.Builder selected =
+            ImmutableArray.CreateBuilder<PreparedNotificationCandidate>(
+            selectedWithoutNearby.Length);
+        foreach (PreparedNotificationCandidate candidate in selectedWithoutNearby)
+        {
+            ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
+                candidate.Cluster.Representative,
+                cancellationToken).ConfigureAwait(false);
+            selected.Add(candidate with { NearbyFeatures = nearbyFeatures });
+        }
+
+        return new(eligible.Count, selected.MoveToImmutable());
     }
 
     public async Task<NotificationDiagnostic?> DiagnoseAsync(
@@ -169,13 +182,12 @@ public sealed class NotificationCandidateEngine(
         string anomalyId,
         CancellationToken cancellationToken)
     {
-        NotificationCluster? cluster = NotificationClustering.Create(
-                snapshot.Items,
-                options.ClusterRadiusKilometers,
-                options.ClusterTimeWindow)
-            .FirstOrDefault(candidate => candidate.Members.Any(member => member.Id.Equals(anomalyId, StringComparison.Ordinal)));
-        if (cluster is null)
+        (Anomaly SelectedAnomaly, NotificationCluster Cluster)? target =
+            FindDiagnosticTarget(snapshot, anomalyId);
+        if (target is not { } found)
             return null;
+
+        NotificationCluster cluster = found.Cluster;
 
         var criteria = NotificationPolicy.ExplainMetadata(cluster, options.Visibility).ToBuilder();
         NotificationLandCoverResult? landCover = null;
@@ -214,6 +226,9 @@ public sealed class NotificationCandidateEngine(
         }
 
         ImmutableArray<NotificationCriterionResult> criterionResults = criteria.ToImmutable();
+        ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
+            found.SelectedAnomaly,
+            cancellationToken).ConfigureAwait(false);
         return new(
             anomalyId,
             cluster.Id,
@@ -223,7 +238,26 @@ public sealed class NotificationCandidateEngine(
             previewSelection.ClusterDiameterKilometers,
             IsEligible: !criterionResults.Any(criterion => criterion.IsBlocking),
             criterionResults,
-            previewBaseSource);
+            previewBaseSource,
+            nearbyFeatures);
+    }
+
+    private (Anomaly SelectedAnomaly, NotificationCluster Cluster)? FindDiagnosticTarget(
+        AnomalySnapshot snapshot,
+        string anomalyId)
+    {
+        Anomaly? selectedAnomaly = snapshot.Items.FirstOrDefault(candidate =>
+            candidate.Id.Equals(anomalyId, StringComparison.Ordinal));
+        if (selectedAnomaly is null)
+            return null;
+
+        NotificationCluster? cluster = NotificationClustering.Create(
+                snapshot.Items,
+                options.ClusterRadiusKilometers,
+                options.ClusterTimeWindow)
+            .FirstOrDefault(candidate => candidate.Members.Any(member =>
+                member.Id.Equals(anomalyId, StringComparison.Ordinal)));
+        return cluster is null ? null : (selectedAnomaly, cluster);
     }
 
     private bool IsPreviewRequired =>
@@ -265,11 +299,15 @@ public sealed class NotificationCandidateEngine(
                 continue;
             }
 
+            ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
+                pending.Cluster.Representative,
+                cancellationToken).ConfigureAwait(false);
             var candidate = new PreparedNotificationCandidate(
                 pending.Cluster,
                 preview,
                 pending.PreviewSelection,
-                pending.LandCoverSummary);
+                pending.LandCoverSummary,
+                nearbyFeatures);
             NotificationDeliveryOutcome outcome = await deliverAsync(
                 candidate,
                 cancellationToken).ConfigureAwait(false);
