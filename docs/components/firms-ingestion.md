@@ -9,7 +9,9 @@
 
 Each configured country is crossed with the four source IDs in `FirmsSources.All`: MODIS NRT and Suomi-NPP, NOAA-20, and NOAA-21 VIIRS NRT. Sources remain separate through ingestion and the API.
 
-The background poller refreshes once immediately. After a complete cycle it waits one configured interval, so cycles do not overlap. The first segment is refreshed before the remaining parallel work; this lets the process-wide country-API capability be established before concurrent requests. Remaining work honors `FIRMS_MAX_CONCURRENCY`.
+The background poller refreshes once immediately. After every completed cycle it waits at least one configured interval plus up to 10 percent positive jitter, so cycles neither overlap nor shorten the post-cycle pause. A cycle where no segment succeeds doubles the next base delay for each consecutive total failure, capped at the greater of one hour or the configured interval; any successful segment resets that backoff.
+
+The first segment is refreshed before the remaining parallel work so the process-wide country-API capability is established before concurrent requests. At most two remaining segments refresh concurrently. `FIRMS_MAX_CONCURRENCY` independently bounds admitted FIRMS HTTP operations across those segments.
 
 Every result is a complete segment success or failure. The store atomically publishes one immutable snapshot only after the cycle finishes.
 
@@ -32,11 +34,13 @@ The matching and key-status rules in [FirmsClient.cs](../../src/ThermalWatch.Cor
 
 [CountryBoundaryCatalog.cs](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs) loads only requested countries from the embedded compressed Natural Earth Admin 0 data. It joins multiple parts, repairs invalid geometry where possible, prepares it for point tests, and fails startup when a requested country has no usable polygon or multipolygon.
 
-Boundaries whose envelope exceeds 10 degrees are divided into non-overlapping 10-degree grid cells that intersect the geometry. Every required area tile must succeed. A single failed tile fails the segment rather than publishing a partial rectangle result.
+Boundaries whose envelope exceeds 10 degrees are divided into non-overlapping 10-degree grid cells that intersect the geometry. Tiles are enumerated lazily by bounded workers. Every required tile must succeed; the first failure cancels queued and in-flight sibling work and fails the segment rather than publishing a partial rectangle result.
 
 Tile results are merged, clipped locally with polygon coverage checks, and deduplicated by anomaly ID. Country and area responses are never merged for one segment refresh. Natural Earth geometry is generalized cartographic data; see its [embedded license](../../src/ThermalWatch.Core/Data/NaturalEarth.LICENSE.txt).
 
 ## Response validation and parsing
+
+The configured request timeout starts only after admission through the global request gate and remains active through response-body consumption. It bounds one area operation or the complete country capability operation, including a MAP_KEY status check needed to verify an ambiguous country-endpoint response. The HTTP resilience pipeline permits one retry, gives each transport attempt 40 percent of the total timeout without a fixed ceiling, and honors `Retry-After`; a body-read timeout fails the segment and is retried by a later polling cycle rather than immediately repeating the download.
 
 The client bounds response size, rejects incompatible content types and upstream status categories, and requires common plus source-specific CSV headers. It parses values with invariant culture and validates:
 
@@ -67,6 +71,6 @@ The current snapshot is swapped atomically. A bounded one-item, drop-oldest chan
 - A segment failure does not block successful countries or sources.
 - Unexpected client exceptions become a generic safe segment error.
 - API clients receive the retained snapshot and source diagnostics with HTTP `200`; they do not trigger recovery.
-- Later polling cycles retry failed FIRMS work automatically.
+- Later polling cycles retry failed FIRMS work automatically; only a cycle with zero successful segments activates exponential cycle backoff.
 
-There are currently no direct live-service or full FIRMS-client integration tests. Changes should use fake `HttpMessageHandler` responses and focused boundary/model fixtures rather than NASA network calls.
+Focused FIRMS client and scheduler tests use fake `HttpMessageHandler` responses, embedded boundary fixtures, and fake time. There is no direct live-service integration test; provider checks must remain bounded and cannot replace deterministic tests.

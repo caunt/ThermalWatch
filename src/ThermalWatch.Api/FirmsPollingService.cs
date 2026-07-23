@@ -4,107 +4,65 @@ using ThermalWatch.Core;
 
 namespace ThermalWatch.Api;
 
-public sealed class FirmsPollingService(
-    FirmsClient firmsClient,
-    FirmsOptions options,
-    AnomalySnapshotStore snapshotStore,
-    TimeProvider timeProvider,
-    ILogger<FirmsPollingService> logger) : BackgroundService
+public sealed class FirmsPollingService : BackgroundService
 {
+    private readonly ILogger<FirmsPollingService> _logger;
+    private readonly FirmsOptions _options;
+    private readonly IFirmsRefreshCycle _refreshCycle;
+    private readonly FirmsPollingSchedule _schedule;
+    private readonly TimeProvider _timeProvider;
+
+    public FirmsPollingService(
+        FirmsClient firmsClient,
+        FirmsOptions options,
+        AnomalySnapshotStore snapshotStore,
+        TimeProvider timeProvider,
+        ILogger<FirmsPollingService> logger) : this(
+            new FirmsRefreshCycle(firmsClient, options, snapshotStore, timeProvider, logger),
+            options,
+            new FirmsPollingSchedule(),
+            timeProvider,
+            logger)
+    {
+    }
+
+    internal FirmsPollingService(
+        IFirmsRefreshCycle refreshCycle,
+        FirmsOptions options,
+        FirmsPollingSchedule schedule,
+        TimeProvider timeProvider,
+        ILogger<FirmsPollingService> logger)
+    {
+        _refreshCycle = refreshCycle;
+        _options = options;
+        _schedule = schedule;
+        _timeProvider = timeProvider;
+        _logger = logger;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await RefreshAsync(stoppingToken).ConfigureAwait(false);
+        int consecutiveTotalFailures = 0;
 
-        using var timer = new PeriodicTimer(options.PollInterval, timeProvider);
-        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
-            await RefreshAsync(stoppingToken).ConfigureAwait(false);
-    }
-
-    private async Task RefreshAsync(CancellationToken cancellationToken)
-    {
-        SegmentKey[] keys = [.. options.Countries.SelectMany(country => FirmsSources.All.Select(source => new SegmentKey(country, source)))];
-        var results = new SegmentRefreshResult[keys.Length];
-
-        await RefreshSegmentAsync(keys, results, index: 0, cancellationToken).ConfigureAwait(false);
-        await Parallel.ForEachAsync(
-            Enumerable.Range(start: 1, keys.Length - 1),
-            new ParallelOptions
-            {
-                CancellationToken = cancellationToken,
-                MaxDegreeOfParallelism = options.MaxConcurrency
-            },
-            async (index, token) => await RefreshSegmentAsync(
-                keys,
-                results,
-                index,
-                token).ConfigureAwait(false)).ConfigureAwait(false);
-
-        AnomalySnapshot snapshot = snapshotStore.Publish(results);
-        FirmsPollingLog.SnapshotPublished(
-            logger,
-            snapshot.Count,
-            snapshot.IsPartiallyStale);
-    }
-
-    private async ValueTask RefreshSegmentAsync(
-        SegmentKey[] keys,
-        SegmentRefreshResult[] results,
-        int index,
-        CancellationToken cancellationToken)
-    {
-        SegmentKey key = keys[index];
-        DateTimeOffset attemptedAtUtc = timeProvider.GetUtcNow();
-
-        try
+        while (!stoppingToken.IsCancellationRequested)
         {
-            FirmsSegmentResult segment = await firmsClient.GetSegmentAsync(
-                key.CountryCode,
-                key.Source,
-                cancellationToken).ConfigureAwait(false);
-            results[index] = SegmentRefreshResult.Success(
-                key,
-                attemptedAtUtc,
-                timeProvider.GetUtcNow(),
-                segment.Detections,
-                segment.IngestionMode);
-            FirmsPollingLog.SegmentRefreshed(
-                logger,
-                key.CountryCode,
-                key.Source,
-                segment.IngestionMode,
-                segment.Detections.Length);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (FirmsRequestException exception)
-        {
-            RecordFailure(results, index, key, attemptedAtUtc, exception.SafeMessage);
-        }
-        catch (Exception)
-        {
-            const string safeError = "Unexpected FIRMS client failure.";
-            RecordFailure(results, index, key, attemptedAtUtc, safeError);
-        }
-    }
+            long startedTimestamp = _timeProvider.GetTimestamp();
+            FirmsRefreshCycleResult result = await _refreshCycle.RefreshAsync(stoppingToken).ConfigureAwait(false);
+            consecutiveTotalFailures = result.SuccessfulSegmentCount == 0
+                ? consecutiveTotalFailures + 1
+                : 0;
+            TimeSpan delay = _schedule.CalculateDelay(_options.PollInterval, consecutiveTotalFailures);
+            TimeSpan elapsed = _timeProvider.GetElapsedTime(startedTimestamp);
 
-    private void RecordFailure(
-        SegmentRefreshResult[] results,
-        int index,
-        SegmentKey key,
-        DateTimeOffset attemptedAtUtc,
-        string safeError)
-    {
-        results[index] = SegmentRefreshResult.Failure(
-            key,
-            attemptedAtUtc,
-            timeProvider.GetUtcNow(),
-            safeError);
-        FirmsPollingLog.SegmentRefreshFailed(
-            logger,
-            key.CountryCode,
-            key.Source,
-            safeError);
+            FirmsPollingLog.CycleCompleted(
+                _logger,
+                elapsed,
+                result.SuccessfulSegmentCount,
+                result.FailedSegmentCount,
+                delay,
+                isTotalFailureBackoffActive: consecutiveTotalFailures > 0);
+
+            await Task.Delay(delay, _timeProvider, stoppingToken).ConfigureAwait(false);
+        }
     }
 }

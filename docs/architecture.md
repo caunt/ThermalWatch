@@ -32,7 +32,7 @@ Google Maps ------------------------------------------------------------------> 
 ```
 
 1. Startup parses application-specific environment variables and loads embedded Natural Earth boundaries for every configured country. Invalid application configuration or unusable requested boundaries are fatal.
-2. The poller refreshes immediately, then starts non-overlapping cycles after the configured interval. Each country/source combination is an independent segment.
+2. The poller refreshes immediately, then waits a jittered configured interval after each completed non-overlapping cycle. Consecutive cycles with zero successful segments back off; each country/source combination remains an independent segment.
 3. Successful segments replace their prior data. Failed segments retain their last complete data and become stale.
 4. The store atomically publishes an immutable, active-window snapshot and offers a single-consumer update stream. The Telegram hosted service passes each update to the Core candidate engine and supplies only the message-delivery callback. Core looks up nearby mapped context around the representative only after an automatic candidate is ready to deliver or a manual candidate has been ranked and selected.
 5. Anomaly API requests read the current snapshot only and never trigger NASA requests. Viewer imagery API requests may retrieve and compose GIBS tiles in Core; complete results use the bounded in-memory cache.

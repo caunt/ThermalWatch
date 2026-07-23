@@ -117,17 +117,11 @@ public sealed partial class FirmsClient(
             source,
             boundary.Tiles.Length);
 
-        ImmutableArray<Anomaly>[] tileDetections;
-        try
-        {
-            tileDetections = await Task.WhenAll(boundary.Tiles.Select(tile =>
-                GetAreaDetectionsAsync(countryCode, source, tile, cancellationToken))).ConfigureAwait(false);
-        }
-        catch (FirmsRequestException exception)
-        {
-            throw new FirmsRequestException(
-                safeMessage: $"FIRMS area fallback tile failed: {exception.SafeMessage}");
-        }
+        ImmutableArray<Anomaly>[] tileDetections = await GetAreaTileDetectionsAsync(
+            countryCode,
+            source,
+            boundary,
+            cancellationToken).ConfigureAwait(false);
 
         var detections = tileDetections
             .SelectMany(tile => tile)
@@ -139,47 +133,169 @@ public sealed partial class FirmsClient(
         return new(detections, IngestionModes.AreaFallback);
     }
 
+    private async Task<ImmutableArray<Anomaly>[]> GetAreaTileDetectionsAsync(
+        string countryCode,
+        string source,
+        CountryBoundary boundary,
+        CancellationToken cancellationToken)
+    {
+        var tileDetections = new ImmutableArray<Anomaly>[boundary.Tiles.Length];
+        using var failureState = new AreaTileFailureState(cancellationToken);
+        try
+        {
+            await Parallel.ForEachAsync(
+                Enumerable.Range(start: 0, boundary.Tiles.Length),
+                new ParallelOptions
+                {
+                    CancellationToken = failureState.Token,
+                    MaxDegreeOfParallelism = options.MaxConcurrency
+                },
+                async (index, token) => await RefreshAreaTileAsync(
+                    countryCode,
+                    source,
+                    boundary,
+                    index,
+                    tileDetections,
+                    failureState,
+                    token).ConfigureAwait(false)).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception) when (failureState.PrimaryFailure is { } primaryFailure)
+        {
+            LogAreaTileFailed(
+                logger,
+                countryCode,
+                source,
+                primaryFailure.Bounds.West,
+                primaryFailure.Bounds.South,
+                primaryFailure.Bounds.East,
+                primaryFailure.Bounds.North,
+                primaryFailure.Elapsed,
+                primaryFailure.SafeError);
+            throw new FirmsRequestException(
+                safeMessage: $"FIRMS area fallback tile failed: {primaryFailure.SafeError}");
+        }
+
+        return tileDetections;
+    }
+
+    private async ValueTask RefreshAreaTileAsync(
+        string countryCode,
+        string source,
+        CountryBoundary boundary,
+        int index,
+        ImmutableArray<Anomaly>[] tileDetections,
+        AreaTileFailureState failureState,
+        CancellationToken cancellationToken)
+    {
+        GeographicBounds tile = boundary.Tiles[index];
+        long startedTimestamp = timeProvider.GetTimestamp();
+        try
+        {
+            tileDetections[index] = await GetAreaDetectionsAsync(
+                countryCode,
+                source,
+                tile,
+                cancellationToken).ConfigureAwait(false);
+
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                TimeSpan elapsed = timeProvider.GetElapsedTime(startedTimestamp);
+                LogAreaTileRefreshed(
+                    logger,
+                    countryCode,
+                    source,
+                    index + 1,
+                    boundary.Tiles.Length,
+                    tile.West,
+                    tile.South,
+                    tile.East,
+                    tile.North,
+                    elapsed);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (FirmsRequestException exception)
+        {
+            TimeSpan elapsed = timeProvider.GetElapsedTime(startedTimestamp);
+            failureState.Record(new(tile, exception.SafeMessage, elapsed));
+            throw;
+        }
+        catch (Exception)
+        {
+            TimeSpan elapsed = timeProvider.GetElapsedTime(startedTimestamp);
+            failureState.Record(new(
+                tile,
+                SafeError: "Unexpected FIRMS client failure.",
+                elapsed));
+            throw;
+        }
+    }
+
     private async Task<ImmutableArray<Anomaly>> GetCountryDetectionsAsync(
         string countryCode,
         string source,
-        CancellationToken cancellationToken)
-    {
-        await _requestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            using var request = new HttpRequestMessage(
-                HttpMethod.Get,
-                requestUri: $"api/country/csv/{Uri.EscapeDataString(options.MapKey)}/{source}/{countryCode}/1");
-            using HttpResponseMessage response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
-
-            if (!response.IsSuccessStatusCode
-                && await IsCountryFeatureUnavailableAsync(response, cancellationToken).ConfigureAwait(false))
+        CancellationToken cancellationToken) =>
+        await ExecuteRequestAsync(
+            async requestToken =>
             {
-                throw new CountryFeatureUnavailableException();
-            }
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Get,
+                    requestUri: $"api/country/csv/{Uri.EscapeDataString(options.MapKey)}/{source}/{countryCode}/1");
+                using HttpResponseMessage response = await SendAsync(request, requestToken).ConfigureAwait(false);
 
-            return await ReadCsvResponseAsync(response, countryCode, source, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _requestGate.Release();
-        }
-    }
+                if (!response.IsSuccessStatusCode
+                    && await IsCountryFeatureUnavailableAsync(response, requestToken).ConfigureAwait(false))
+                {
+                    throw new CountryFeatureUnavailableException();
+                }
+
+                return await ReadCsvResponseAsync(response, countryCode, source, requestToken).ConfigureAwait(false);
+            },
+            cancellationToken).ConfigureAwait(false);
 
     private async Task<ImmutableArray<Anomaly>> GetAreaDetectionsAsync(
         string countryCode,
         string source,
         GeographicBounds bounds,
+        CancellationToken cancellationToken) =>
+        await ExecuteRequestAsync(
+            async requestToken =>
+            {
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Get,
+                    requestUri: $"api/area/csv/{Uri.EscapeDataString(options.MapKey)}/{source}/{bounds.ToInvariantString()}/1");
+                using HttpResponseMessage response = await SendAsync(request, requestToken).ConfigureAwait(false);
+                return await ReadCsvResponseAsync(response, countryCode, source, requestToken).ConfigureAwait(false);
+            },
+            cancellationToken).ConfigureAwait(false);
+
+    private async Task<tResult> ExecuteRequestAsync<tResult>(
+        Func<CancellationToken, Task<tResult>> operation,
         CancellationToken cancellationToken)
     {
         await _requestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            using var request = new HttpRequestMessage(
-                HttpMethod.Get,
-                requestUri: $"api/area/csv/{Uri.EscapeDataString(options.MapKey)}/{source}/{bounds.ToInvariantString()}/1");
-            using HttpResponseMessage response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
-            return await ReadCsvResponseAsync(response, countryCode, source, cancellationToken).ConfigureAwait(false);
+            using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            requestTimeout.CancelAfter(options.RequestTimeout);
+
+            try
+            {
+                return await operation(requestTimeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (
+                !cancellationToken.IsCancellationRequested
+                && requestTimeout.IsCancellationRequested)
+            {
+                throw new FirmsRequestException(safeMessage: "FIRMS request timed out.");
+            }
         }
         finally
         {
@@ -503,6 +619,37 @@ public sealed partial class FirmsClient(
         string country,
         string source);
 
+    [LoggerMessage(
+        EventId = 8,
+        Level = LogLevel.Debug,
+        Message = "Refreshed FIRMS area tile {TileNumber}/{TileCount} for {Country} {Source} at {West},{South},{East},{North} in {Elapsed}")]
+    private static partial void LogAreaTileRefreshed(
+        ILogger logger,
+        string country,
+        string source,
+        int tileNumber,
+        int tileCount,
+        double west,
+        double south,
+        double east,
+        double north,
+        TimeSpan elapsed);
+
+    [LoggerMessage(
+        EventId = 9,
+        Level = LogLevel.Warning,
+        Message = "FIRMS area tile failed for {Country} {Source} at {West},{South},{East},{North} after {Elapsed}: {SafeError}")]
+    private static partial void LogAreaTileFailed(
+        ILogger logger,
+        string country,
+        string source,
+        double west,
+        double south,
+        double east,
+        double north,
+        TimeSpan elapsed,
+        string safeError);
+
     private enum CountryApiCapability
     {
         Unknown,
@@ -511,6 +658,32 @@ public sealed partial class FirmsClient(
     }
 
     private sealed class CountryFeatureUnavailableException : Exception;
+
+    private sealed record AreaTileFailure(
+        GeographicBounds Bounds,
+        string SafeError,
+        TimeSpan Elapsed);
+
+    private sealed class AreaTileFailureState : IDisposable
+    {
+        private readonly CancellationTokenSource _siblingCancellation;
+        private AreaTileFailure? _primaryFailure;
+
+        internal AreaTileFailureState(CancellationToken cancellationToken) =>
+            _siblingCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        internal CancellationToken Token => _siblingCancellation.Token;
+
+        internal AreaTileFailure? PrimaryFailure => Volatile.Read(ref _primaryFailure);
+
+        internal void Record(AreaTileFailure failure)
+        {
+            if (Interlocked.CompareExchange(ref _primaryFailure, failure, comparand: null) is null)
+                _siblingCancellation.Cancel();
+        }
+
+        public void Dispose() => _siblingCancellation.Dispose();
+    }
 
     private ImmutableArray<Anomaly> ParseCsv(string content, string countryCode, string source)
     {

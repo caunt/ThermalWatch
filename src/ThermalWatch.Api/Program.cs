@@ -64,11 +64,9 @@ try
             client.BaseAddress = new("https://firms.modaps.eosdis.nasa.gov/");
             client.Timeout = Timeout.InfiniteTimeSpan;
         })
-        .AddStandardResilienceHandler(options => ConfigureResilience(
+        .AddStandardResilienceHandler(options => FirmsResilience.Configure(
             options,
-            configuration.Firms.RequestTimeout,
-            AttemptTimeout(configuration.Firms.RequestTimeout),
-            retryCount: 2));
+            configuration.Firms.RequestTimeout));
 
     builder.Services
         .AddHttpClient<GibsClient>(client =>
@@ -205,9 +203,6 @@ finally
 {
     await Log.CloseAndFlushAsync().ConfigureAwait(false);
 }
-
-static TimeSpan AttemptTimeout(TimeSpan totalTimeout) =>
-    TimeSpan.FromSeconds(Math.Clamp(totalTimeout.TotalSeconds / 3, min: 1, max: 15));
 
 static void ConfigureResilience(
     HttpStandardResilienceOptions options,

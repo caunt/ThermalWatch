@@ -7,7 +7,7 @@
 
 ## Runtime model
 
-The process binds plain HTTP to `0.0.0.0:8080`, starts one immediate FIRMS refresh, then runs non-overlapping polling cycles. Application options are parsed once at startup and are not reloaded.
+The process binds plain HTTP to `0.0.0.0:8080`, starts one immediate FIRMS refresh, then runs non-overlapping polling cycles. Each completed cycle is followed by at least the configured interval plus positive jitter. Consecutive cycles where no segment succeeds use capped exponential backoff; any segment success resets it. Application options are parsed once at startup and are not reloaded.
 
 All application state is in memory: source segments, the published snapshot, GIBS preview/land-cover/viewer-tile cache entries, Overpass nearby-feature cache entries, notification seen IDs, delivered-episode history, and pending preview notifications. The service has no database, durable queue, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
 
@@ -23,10 +23,10 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | --- | --- | --- |
 | `FIRMS_MAP_KEY` | required | Exactly 32 ASCII alphanumeric characters. |
 | `FIRMS_COUNTRIES` | required | Nonempty comma-separated ISO alpha-3 codes; trimmed, uppercased, deduplicated, and required to have usable embedded boundary geometry. |
-| `FIRMS_POLL_INTERVAL` | `00:05:00` | Duration from 10 seconds through 1 day. |
+| `FIRMS_POLL_INTERVAL` | `00:05:00` | Base post-cycle delay from 10 seconds through 1 day, before positive jitter or total-failure backoff. |
 | `FIRMS_ACTIVE_WINDOW` | `24:00:00` | Duration from 1 minute through 24 hours. |
-| `FIRMS_REQUEST_TIMEOUT` | `00:00:45` | Duration from 5 seconds through 5 minutes. |
-| `FIRMS_MAX_CONCURRENCY` | `4` | Integer from 1 through 32. |
+| `FIRMS_REQUEST_TIMEOUT` | `00:00:45` | Duration from 5 seconds through 5 minutes, applied after request admission through bounded response-body consumption. |
+| `FIRMS_MAX_CONCURRENCY` | `4` | Integer from 1 through 32 bounding admitted FIRMS HTTP operations; segment concurrency is internally capped at two. |
 | `GOOGLE_MAPS_API_KEY` | unset | Optional trimmed browser key. When present, it is returned by `/api/viewer/config`; protect it with Google API and HTTP-referrer restrictions. |
 | `LOGGING_MINIMUM_LEVEL` | `Information` | `Verbose`, `Debug`, `Information`, `Warning`, `Error`, or `Fatal`, case-insensitive. |
 
@@ -86,7 +86,7 @@ No credentials disables Telegram without affecting the API. Supplying only one c
 | unpkg and Google Maps | Approved browser-only viewer resources. NASA/FIRMS data is same-origin through ThermalWatch. | A browser provider can fail while server APIs and polling continue. |
 | Yandex Maps | No server-side use; a selected-anomaly action can navigate the browser to the observation coordinates. | Navigation failure affects only the external map action. |
 
-FIRMS, GIBS, and Telegram HTTP clients use bounded total and attempt timeouts, exponential retry delay with jitter, and `Retry-After` handling. FIRMS uses its configured request timeout; GIBS and Telegram use fixed 30-second total policies. Overpass uses one request with a 15-second `HttpClient` timeout and no automatic retry, so a free endpoint error does not trigger an immediate repeat. See [Program.cs](../src/ThermalWatch.Api/Program.cs) for executable policy values.
+FIRMS, GIBS, and Telegram HTTP clients use bounded total and attempt timeouts, retry delay with jitter, and `Retry-After` handling. FIRMS uses its configured timeout for the admitted operation through content consumption, permits one transport retry, and assigns each attempt 40 percent of that budget without a fixed attempt ceiling. A FIRMS body-read timeout is left for the next polling cycle instead of immediately repeating the download. GIBS uses two retries and Telegram one within their fixed 30-second handler policies. Overpass uses one request with a 15-second `HttpClient` timeout and no automatic retry, so a free endpoint error does not trigger an immediate repeat. See [Program.cs](../src/ThermalWatch.Api/Program.cs) for executable policy values.
 
 The Overpass client posts a 10-second server-side query for named features, accepts at most 10 MiB, serializes the process to one upstream request, caches successful results including empty sets for one hour, and caches unavailable results for one minute. Cache keys round lookup coordinates to six decimal places. There is no API key or configuration variable for this fixed public provider.
 
@@ -96,7 +96,7 @@ Live provider availability, data ranges, and error bodies change independently o
 
 ## Observability and security
 
-Serilog writes structured console events. `LOGGING_MINIMUM_LEVEL` controls the application minimum while the host suppresses noisy ASP.NET and HTTP-client categories and excludes Polly's per-attempt resilience telemetry at every level. Retry and timeout attempts therefore do not emit exception stacks; component-owned final failures remain visible as safe summaries. Successful viewer imagery requests are Debug-level to keep map navigation from flooding normal logs; other request summaries remain Information unless they fail. Logs report safe error summaries, segment refreshes, snapshot publication, notification filtering, preview state, nearby-feature unavailability, and sends; they must never include credential values.
+Serilog writes structured console events. `LOGGING_MINIMUM_LEVEL` controls the application minimum while the host suppresses noisy ASP.NET and HTTP-client categories and excludes Polly's per-attempt resilience telemetry at every level. Retry and timeout attempts therefore do not emit exception stacks; component-owned final failures remain visible as safe summaries. FIRMS logs report cycle duration/result counts/next delay, the primary failed fallback tile, segment refreshes, and snapshot publication; successful tile timings are Debug-level. Successful viewer imagery requests are also Debug-level to keep map navigation from flooding normal logs. Other request summaries remain Information unless they fail. Logs also report notification filtering, preview state, nearby-feature unavailability, and sends; they must never include credential values.
 
 There is no health/readiness route, metrics endpoint, tracing, external log sink, alert, or dashboard. `/api/anomalies` source statuses are the only built-in structured operational diagnostics. A viewer refresh rereads the snapshot and does not force an upstream poll.
 
@@ -145,7 +145,8 @@ The repository contains no production deployment manifests, immutable release ta
 | Condition | Runtime behavior | Recovery |
 | --- | --- | --- |
 | Invalid application option or requested country geometry | Process prints a safe startup error and exits with code 1. | Correct environment configuration or embedded data, then restart. |
-| FIRMS segment failure | Retain the previous complete segment, mark it stale, and continue other segments. | Later polls retry automatically. Inspect source statuses and logs. |
+| FIRMS segment failure | Cancel remaining fallback tiles for that segment, retain its previous complete data, mark it stale, and continue other segments. | A later completion-delayed poll retries automatically. Inspect source statuses and logs. |
+| Complete FIRMS cycle failure | Publish retained stale state, then exponentially increase the next base delay up to the configured cap. | The first later cycle with any successful segment resets the normal interval. |
 | Verified country-feature outage | Switch globally to polygon-clipped area fallback and probe the country API after one hour. | Automatic when the country API succeeds again. |
 | GIBS preview unavailable or base crop is mostly no-data | Try other supported same-date, pass-matched satellite bases; if none is usable, keep the automatic candidate pending until retry expiry, then discard if preview is required or send text-only if allowed. | Later snapshots retry uncached spatial probes until expiry. |
 | GIBS land cover unavailable or invalid | Retain the notification candidate and record fail-open diagnostics. | Later candidates retry after cache expiry. |

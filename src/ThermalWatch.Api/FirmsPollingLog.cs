@@ -27,4 +27,14 @@ internal static partial class FirmsPollingLog
         string country,
         string source,
         string safeError);
+
+    [LoggerMessage(EventId = 4, Level = LogLevel.Information,
+        Message = "Completed FIRMS refresh cycle in {Elapsed}; successful segments {SuccessfulSegmentCount}; failed segments {FailedSegmentCount}; next refresh in {Delay}; total-failure backoff: {IsTotalFailureBackoffActive}")]
+    internal static partial void CycleCompleted(
+        ILogger logger,
+        TimeSpan elapsed,
+        int successfulSegmentCount,
+        int failedSegmentCount,
+        TimeSpan delay,
+        bool isTotalFailureBackoffActive);
 }
