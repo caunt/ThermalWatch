@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
@@ -629,13 +630,24 @@ public sealed class TelegramNotificationService(
         }
     }
 
-    internal static InlineKeyboardMarkup CreateLocationKeyboard(NotificationCluster cluster) =>
-        new(
+    internal static InlineKeyboardMarkup CreateLocationKeyboard(NotificationCluster cluster)
+    {
+        Anomaly representative = cluster.Representative;
+        string yandexMapsUrl = string.Create(
+            CultureInfo.InvariantCulture,
+            handler: $"https://yandex.com/maps/?ll={representative.Longitude:0.######}%2C{representative.Latitude:0.######}&pt={representative.Longitude:0.######}%2C{representative.Latitude:0.######}&z=12&l=map");
+        return new(
         [
-            [InlineKeyboardButton.WithUrl(
-                text: "🗺 Open in Google Maps",
-                cluster.Representative.GoogleMapsUrl)]
+            [
+                InlineKeyboardButton.WithUrl(
+                    text: "🗺 Google Maps",
+                    url: representative.GoogleMapsUrl),
+                InlineKeyboardButton.WithUrl(
+                    text: "🗺 Yandex Maps",
+                    url: yandexMapsUrl)
+            ]
         ]);
+    }
 
     private void DisableValidatedTelegram(ValidatedTelegram validated) =>
         Interlocked.CompareExchange(ref _validated, value: null, validated);

@@ -42,7 +42,7 @@ The shared memory cache is limited by the API host to 64 MiB. Successful preview
 
 ## Delivery behavior
 
-Messages use Telegram HTML and an inline Google Maps button. The formatter selects a single- or multi-satellite template and progressively compacts it to Telegram's photo-caption limit. It HTML-encodes dynamic values.
+Messages use Telegram HTML and paired inline Google and Yandex Maps buttons. The formatter selects a single- or multi-satellite template and progressively compacts it to Telegram's photo-caption limit. It HTML-encodes dynamic values.
 
 When a preview exists, the service sends a photo with caption. A fallback caption names its contextual base and the representative thermal overlay instead of claiming sensor-matched imagery. When text fallback is allowed, the service sends a message with link previews disabled.
 

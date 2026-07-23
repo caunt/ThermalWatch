@@ -27,7 +27,7 @@ Clusters can cross configured countries, FIRMS sources, and satellites. Members 
 2. Newest acquisition time.
 3. Lexically smallest anomaly ID.
 
-The cluster ID is a deterministic hash of its sorted member IDs. Preview sensor/date, filter metadata, map link, and much of the message are based on the representative, while multi-satellite and detection-count facts use all members. Because adding a member changes that hash, automatic delivery does not use cluster ID alone as the identity of an ongoing episode.
+The cluster ID is a deterministic hash of its sorted member IDs. Preview sensor/date, filter metadata, map links, and much of the message are based on the representative, while multi-satellite and detection-count facts use all members. Because adding a member changes that hash, automatic delivery does not use cluster ID alone as the identity of an ongoing episode.
 
 After an automatic message sends successfully, its members establish a delivered episode. A later cluster continues that episode when any new member is linked to a delivered member by the same radius and acquisition-time rule. Suppressed members extend the history, so continuity is transitive across snapshots: A linked to B and B linked to C remains one episode even if A is not linked directly to C. A cluster outside both limits can establish a new episode. The first successful message is not edited when later detections extend it.
 

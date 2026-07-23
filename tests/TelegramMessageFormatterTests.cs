@@ -29,19 +29,35 @@ public sealed class TelegramMessageFormatterTests
         Assert.DoesNotContain("View location", caption, StringComparison.Ordinal);
         Assert.DoesNotContain("<a href=", caption, StringComparison.Ordinal);
         Assert.DoesNotContain(first.GoogleMapsUrl, caption, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Automated satellite detection; event type is not confirmed.",
+            caption,
+            StringComparison.Ordinal);
     }
 
     [Fact]
-    public void CreateLocationKeyboardKeepsGoogleMapsButton()
+    public void CreateLocationKeyboardAddsGoogleAndYandexMapsButtons()
     {
         Anomaly detection = Detection(id: "keyboard", satellite: "Suomi-NPP");
         var cluster = new NotificationCluster(Id: "cluster", detection, [detection]);
 
         InlineKeyboardMarkup keyboard = TelegramNotificationService.CreateLocationKeyboard(cluster);
-        InlineKeyboardButton button = Assert.Single(Assert.Single(keyboard.InlineKeyboard));
+        IEnumerable<InlineKeyboardButton> row = Assert.Single(keyboard.InlineKeyboard);
 
-        Assert.Equal("🗺 Open in Google Maps", button.Text);
-        Assert.Equal(detection.GoogleMapsUrl, button.Url);
+        Assert.Collection(
+            row,
+            googleButton =>
+            {
+                Assert.Equal("🗺 Google Maps", googleButton.Text);
+                Assert.Equal(detection.GoogleMapsUrl, googleButton.Url);
+            },
+            yandexButton =>
+            {
+                Assert.Equal("🗺 Yandex Maps", yandexButton.Text);
+                Assert.Equal(
+                    "https://yandex.com/maps/?ll=30.654321%2C50.123456&pt=30.654321%2C50.123456&z=12&l=map",
+                    yandexButton.Url);
+            });
     }
 
     [Theory]

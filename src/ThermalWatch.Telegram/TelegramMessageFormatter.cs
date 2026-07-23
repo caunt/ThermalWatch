@@ -148,7 +148,6 @@ public static class TelegramMessageFormatter
         }
 
         sections.Add(FormatLocation(data));
-        sections.Add("⚠️ <i>Automated satellite detection; event type is not confirmed.</i>");
         return string.Join(separator: "\n\n", sections);
     }
 
@@ -162,17 +161,18 @@ public static class TelegramMessageFormatter
         DateTimeOffset observedAt = multiSatellite
             ? data.LatestObservation
             : data.Cluster.Representative.AcquiredAtUtc;
-        return string.Join(
-            separator: "\n\n",
+        var sections = new List<string>
+        {
             title,
             string.Join('\n',
                 $"📍 <b>{Html(FormatInlineList(data.Countries, compactLevel: 2))}</b>",
                 $"🕓 <b>{timeLabel}:</b> {Html(FormatDateTime(observedAt))} UTC",
                 $"🔎 <b>Detections:</b> {Html(data.Cluster.Members.Length.ToString(CultureInfo.InvariantCulture))}"),
-            FormatLocation(data),
-            multiSatellite
-                ? "⚠️ <i>Automated satellite detection; event type is not confirmed.</i>"
-                : "⚠️ <i>Satellite-detected thermal anomaly; not a confirmed fire.</i>");
+            FormatLocation(data)
+        };
+        if (!multiSatellite)
+            sections.Add("⚠️ <i>Satellite-detected thermal anomaly; not a confirmed fire.</i>");
+        return string.Join(separator: "\n\n", sections);
     }
 
     private static TemplateData CreateTemplateData(
