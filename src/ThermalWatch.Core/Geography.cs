@@ -1,19 +1,9 @@
-using System.Globalization;
-
 namespace ThermalWatch.Core;
-
-public readonly record struct GeographicBounds(double West, double South, double East, double North)
-{
-    public string ToInvariantString() => string.Join(',',
-        West.ToString("0.######", CultureInfo.InvariantCulture),
-        South.ToString("0.######", CultureInfo.InvariantCulture),
-        East.ToString("0.######", CultureInfo.InvariantCulture),
-        North.ToString("0.######", CultureInfo.InvariantCulture));
-}
 
 public static class Geography
 {
     private const double EarthRadiusKilometers = 6371.0088;
+    private const double SquareExponent = 2;
 
     public static double HaversineKilometers(Anomaly first, Anomaly second) =>
         HaversineKilometers(first.Latitude, first.Longitude, second.Latitude, second.Longitude);
@@ -24,24 +14,24 @@ public static class Geography
         double secondLatitude,
         double secondLongitude)
     {
-        var latitudeDelta = DegreesToRadians(secondLatitude - firstLatitude);
-        var longitudeDelta = DegreesToRadians(secondLongitude - firstLongitude);
-        var firstLatitudeRadians = DegreesToRadians(firstLatitude);
-        var secondLatitudeRadians = DegreesToRadians(secondLatitude);
+        double latitudeDelta = DegreesToRadians(secondLatitude - firstLatitude);
+        double longitudeDelta = DegreesToRadians(secondLongitude - firstLongitude);
+        double firstLatitudeRadians = DegreesToRadians(firstLatitude);
+        double secondLatitudeRadians = DegreesToRadians(secondLatitude);
 
-        var haversine = Math.Pow(Math.Sin(latitudeDelta / 2), 2)
+        double haversine = Math.Pow(Math.Sin(latitudeDelta / 2), SquareExponent)
             + Math.Cos(firstLatitudeRadians) * Math.Cos(secondLatitudeRadians)
-            * Math.Pow(Math.Sin(longitudeDelta / 2), 2);
+            * Math.Pow(Math.Sin(longitudeDelta / 2), SquareExponent);
 
         return EarthRadiusKilometers * 2 * Math.Atan2(Math.Sqrt(haversine), Math.Sqrt(1 - haversine));
     }
 
     public static double ClusterDiameterKilometers(IReadOnlyList<Anomaly> detections)
     {
-        var diameter = 0d;
-        for (var first = 0; first < detections.Count; first++)
+        double diameter = 0d;
+        for (int first = 0; first < detections.Count; first++)
         {
-            for (var second = first + 1; second < detections.Count; second++)
+            for (int second = first + 1; second < detections.Count; second++)
             {
                 diameter = Math.Max(
                     diameter,
@@ -58,10 +48,10 @@ public static class Geography
         double widthKilometers,
         double heightKilometers)
     {
-        var (northLatitude, _) = DestinationPoint(latitude, longitude, heightKilometers / 2, 0);
-        var (southLatitude, _) = DestinationPoint(latitude, longitude, heightKilometers / 2, 180);
-        var (_, eastLongitude) = DestinationPoint(latitude, longitude, widthKilometers / 2, 90);
-        var (_, westLongitude) = DestinationPoint(latitude, longitude, widthKilometers / 2, 270);
+        (double northLatitude, double _) = DestinationPoint(latitude, longitude, heightKilometers / 2, bearingDegrees: 0);
+        (double southLatitude, double _) = DestinationPoint(latitude, longitude, heightKilometers / 2, bearingDegrees: 180);
+        (double _, double eastLongitude) = DestinationPoint(latitude, longitude, widthKilometers / 2, bearingDegrees: 90);
+        (double _, double westLongitude) = DestinationPoint(latitude, longitude, widthKilometers / 2, bearingDegrees: 270);
 
         if (westLongitude >= eastLongitude)
             return null;
@@ -75,16 +65,16 @@ public static class Geography
         double distanceKilometers,
         double bearingDegrees)
     {
-        var angularDistance = distanceKilometers / EarthRadiusKilometers;
-        var bearing = DegreesToRadians(bearingDegrees);
-        var latitudeRadians = DegreesToRadians(latitude);
-        var longitudeRadians = DegreesToRadians(longitude);
+        double angularDistance = distanceKilometers / EarthRadiusKilometers;
+        double bearing = DegreesToRadians(bearingDegrees);
+        double latitudeRadians = DegreesToRadians(latitude);
+        double longitudeRadians = DegreesToRadians(longitude);
 
-        var destinationLatitude = Math.Asin(
+        double destinationLatitude = Math.Asin(
             Math.Sin(latitudeRadians) * Math.Cos(angularDistance)
             + Math.Cos(latitudeRadians) * Math.Sin(angularDistance) * Math.Cos(bearing));
 
-        var destinationLongitude = longitudeRadians + Math.Atan2(
+        double destinationLongitude = longitudeRadians + Math.Atan2(
             Math.Sin(bearing) * Math.Sin(angularDistance) * Math.Cos(latitudeRadians),
             Math.Cos(angularDistance) - Math.Sin(latitudeRadians) * Math.Sin(destinationLatitude));
 

@@ -14,22 +14,22 @@ public static class AnomalyId
         double latitude,
         double longitude)
     {
-        var canonical = string.Join('|',
+        string canonical = string.Join('|',
             country,
             source,
             satellite,
-            acquiredAtUtc.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture),
-            latitude.ToString("R", CultureInfo.InvariantCulture),
-            longitude.ToString("R", CultureInfo.InvariantCulture));
+            acquiredAtUtc.UtcDateTime.ToString(format: "yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture),
+            latitude.ToString(format: "R", CultureInfo.InvariantCulture),
+            longitude.ToString(format: "R", CultureInfo.InvariantCulture));
 
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
-        return Convert.ToHexStringLower(hash.AsSpan(0, 16));
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
+        return Convert.ToHexStringLower(hash.AsSpan(start: 0, length: 16));
     }
 
     public static string CreateClusterId(IEnumerable<string> anomalyIds)
     {
-        var canonical = string.Join('|', anomalyIds.Order(StringComparer.Ordinal));
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
-        return Convert.ToHexStringLower(hash.AsSpan(0, 16));
+        string canonical = string.Join('|', anomalyIds.Order(StringComparer.Ordinal));
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
+        return Convert.ToHexStringLower(hash.AsSpan(start: 0, length: 16));
     }
 }

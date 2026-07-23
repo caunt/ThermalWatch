@@ -12,20 +12,20 @@ namespace ThermalWatch.Tests;
 public sealed class GibsClientLandCoverTests
 {
     [Fact]
-    public async Task GetLandCoverAsync_SamplesNearbyPixelsAndReusesCachedTiles()
+    public async Task GetLandCoverAsyncSamplesNearbyPixelsAndReusesCachedTiles()
     {
-        var handler = new LandCoverHandler(CreateUniformIndexedPng(33, 138, 33));
+        var handler = new LandCoverHandler(CreateUniformIndexedPng(red: 33, green: 138, blue: 33));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new("https://gibs.example.test/")
+            BaseAddress = new(uriString: "https://gibs.example.test/")
         };
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         var client = new GibsClient(httpClient, cache, NullLogger<GibsClient>.Instance);
-        var detection = Detection(55.737840, 38.421440);
+        Anomaly detection = Detection(latitude: 55.737840, longitude: 38.421440);
 
-        var first = await client.GetLandCoverAsync([detection], 2, TestContext.Current.CancellationToken);
-        var requestCount = handler.RequestCount;
-        var second = await client.GetLandCoverAsync([detection], 2, TestContext.Current.CancellationToken);
+        GibsLandCoverResult first = await client.GetLandCoverAsync([detection], builtUpProximityKilometers: 2, TestContext.Current.CancellationToken);
+        int requestCount = handler.RequestCount;
+        GibsLandCoverResult second = await client.GetLandCoverAsync([detection], builtUpProximityKilometers: 2, TestContext.Current.CancellationToken);
 
         Assert.True(first.IsAvailable);
         Assert.Equal(2024, first.Year);
@@ -40,19 +40,19 @@ public sealed class GibsClientLandCoverTests
     }
 
     [Fact]
-    public async Task GetLandCoverAsync_ReportsBuiltUpFromNearbySampleSet()
+    public async Task GetLandCoverAsyncReportsBuiltUpFromNearbySampleSet()
     {
-        var handler = new LandCoverHandler(CreateUniformIndexedPng(255, 0, 0));
+        var handler = new LandCoverHandler(CreateUniformIndexedPng(red: 255, green: 0, blue: 0));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new("https://gibs.example.test/")
+            BaseAddress = new(uriString: "https://gibs.example.test/")
         };
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         var client = new GibsClient(httpClient, cache, NullLogger<GibsClient>.Instance);
 
-        var result = await client.GetLandCoverAsync(
-            [Detection(55.737840, 38.421440)],
-            2,
+        GibsLandCoverResult result = await client.GetLandCoverAsync(
+            [Detection(latitude: 55.737840, longitude: 38.421440)],
+            builtUpProximityKilometers: 2,
             TestContext.Current.CancellationToken);
 
         Assert.True(result.IsAvailable);
@@ -63,30 +63,30 @@ public sealed class GibsClientLandCoverTests
 
     private static Anomaly Detection(double latitude, double longitude) =>
         new(
-            "detection",
-            "RUS",
-            "VIIRS_SNPP_NRT",
-            "Suomi-NPP",
-            "VIIRS",
+            Id: "detection",
+            CountryCode: "RUS",
+            Source: "VIIRS_SNPP_NRT",
+            Satellite: "Suomi-NPP",
+            Instrument: "VIIRS",
             latitude,
             longitude,
-            new(2026, 7, 19, 12, 0, 0, TimeSpan.Zero),
-            "D",
-            330,
-            300,
-            100,
-            0.4,
-            0.4,
-            "n",
-            null,
-            "nominal",
-            "2.0NRT",
-            $"https://www.google.com/maps?q={latitude},{longitude}");
+            new(year: 2026, month: 7, day: 19, hour: 12, minute: 0, second: 0, TimeSpan.Zero),
+            DayNight: "D",
+            BrightnessKelvin: 330,
+            SecondaryBrightnessKelvin: 300,
+            FrpMegawatts: 100,
+            ScanKilometers: 0.4,
+            TrackKilometers: 0.4,
+            ConfidenceRaw: "n",
+            ConfidencePercent: null,
+            ConfidenceCategory: "nominal",
+            Version: "2.0NRT",
+            GoogleMapsUrl: $"https://www.google.com/maps?q={latitude},{longitude}");
 
     private static byte[] CreateUniformIndexedPng(byte red, byte green, byte blue)
     {
         const int size = 512;
-        var raw = new byte[(size + 1) * size];
+        byte[] raw = new byte[(size + 1) * size];
         using var compressed = new MemoryStream();
         using (var zlib = new ZLibStream(compressed, CompressionLevel.SmallestSize, leaveOpen: true))
             zlib.Write(raw);
@@ -95,7 +95,7 @@ public sealed class GibsClientLandCoverTests
         png.Write([137, 80, 78, 71, 13, 10, 26, 10]);
         Span<byte> header = stackalloc byte[13];
         BinaryPrimitives.WriteUInt32BigEndian(header[..4], size);
-        BinaryPrimitives.WriteUInt32BigEndian(header.Slice(4, 4), size);
+        BinaryPrimitives.WriteUInt32BigEndian(header.Slice(start: 4, length: 4), size);
         header[8] = 8;
         header[9] = 3;
         WriteChunk(png, "IHDR"u8, header);
@@ -113,7 +113,7 @@ public sealed class GibsClientLandCoverTests
         stream.Write(type);
         stream.Write(data);
 
-        var crc = uint.MaxValue;
+        uint crc = uint.MaxValue;
         UpdateCrc(ref crc, type);
         UpdateCrc(ref crc, data);
         BinaryPrimitives.WriteUInt32BigEndian(value, ~crc);
@@ -122,10 +122,10 @@ public sealed class GibsClientLandCoverTests
 
     private static void UpdateCrc(ref uint crc, ReadOnlySpan<byte> data)
     {
-        foreach (var item in data)
+        foreach (byte item in data)
         {
             crc ^= item;
-            for (var bit = 0; bit < 8; bit++)
+            for (int bit = 0; bit < 8; bit++)
                 crc = (crc >> 1) ^ (0xedb88320u & (uint)-(int)(crc & 1));
         }
     }
@@ -142,17 +142,17 @@ public sealed class GibsClientLandCoverTests
         {
             Interlocked.Increment(ref _requestCount);
             HttpContent content;
-            if (request.RequestUri!.AbsolutePath.EndsWith("/all.xml", StringComparison.Ordinal))
+            if (request.RequestUri!.AbsolutePath.EndsWith(value: "/all.xml", StringComparison.Ordinal))
             {
                 content = new StringContent(
-                    "<Domains><Domain>2024-01-01</Domain></Domains>",
+                    content: "<Domains><Domain>2024-01-01</Domain></Domains>",
                     Encoding.UTF8,
-                    "application/xml");
+                    mediaType: "application/xml");
             }
             else
             {
                 content = new ByteArrayContent(pngBytes);
-                content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+                content.Headers.ContentType = new MediaTypeHeaderValue(mediaType: "image/png");
             }
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)

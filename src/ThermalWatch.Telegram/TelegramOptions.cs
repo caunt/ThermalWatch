@@ -20,53 +20,53 @@ public sealed record TelegramOptions(
 
     public static TelegramOptions FromEnvironment(Func<string, string?> getEnvironmentVariable)
     {
-        var botToken = Normalize(getEnvironmentVariable("TELEGRAM_BOT_TOKEN"));
-        var channelId = Normalize(getEnvironmentVariable("TELEGRAM_CHANNEL_ID"));
+        string? botToken = Normalize(getEnvironmentVariable("TELEGRAM_BOT_TOKEN"));
+        string? channelId = Normalize(getEnvironmentVariable("TELEGRAM_CHANNEL_ID"));
 
         if (channelId is not null
             && !long.TryParse(channelId, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
             && (channelId.Length < 2 || channelId[0] != '@'))
         {
             throw new TelegramConfigurationException(
-                "TELEGRAM_CHANNEL_ID must be a numeric channel ID or an @channel_username.");
+                safeMessage: "TELEGRAM_CHANNEL_ID must be a numeric channel ID or an @channel_username.");
         }
 
         return new(
             botToken,
             channelId,
-            ParseBool(getEnvironmentVariable, "TELEGRAM_NOTIFY_EXISTING_ON_STARTUP", false),
-            ParseDouble(getEnvironmentVariable, "TELEGRAM_CLUSTER_RADIUS_KM", 5, 0.01, 100),
-            ParseTimeSpan(getEnvironmentVariable, "TELEGRAM_CLUSTER_TIME_WINDOW", TimeSpan.FromMinutes(90), TimeSpan.FromMinutes(1), TimeSpan.FromDays(1)),
-            ParseTimeSpan(getEnvironmentVariable, "TELEGRAM_SEEN_RETENTION", TimeSpan.FromHours(48), TimeSpan.FromMinutes(1), TimeSpan.FromDays(30)),
-            ParseTimeSpan(getEnvironmentVariable, "TELEGRAM_PREVIEW_RETRY_WINDOW", TimeSpan.FromHours(1), TimeSpan.Zero, TimeSpan.FromDays(1)),
+            ParseBool(getEnvironmentVariable, name: "TELEGRAM_NOTIFY_EXISTING_ON_STARTUP", defaultValue: false),
+            ParseDouble(getEnvironmentVariable, name: "TELEGRAM_CLUSTER_RADIUS_KM", defaultValue: 5, minimum: 0.01, maximum: 100),
+            ParseTimeSpan(getEnvironmentVariable, name: "TELEGRAM_CLUSTER_TIME_WINDOW", TimeSpan.FromMinutes(minutes: 90), TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 1)),
+            ParseTimeSpan(getEnvironmentVariable, name: "TELEGRAM_SEEN_RETENTION", TimeSpan.FromHours(hours: 48), TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 30)),
+            ParseTimeSpan(getEnvironmentVariable, name: "TELEGRAM_PREVIEW_RETRY_WINDOW", TimeSpan.FromHours(hours: 1), TimeSpan.Zero, TimeSpan.FromDays(days: 1)),
             new(
                 new(
-                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_PREVIEW_WIDTH_KM", 30),
-                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_PREVIEW_HEIGHT_KM", 20)),
+                    ParsePositiveDouble(getEnvironmentVariable, name: "TELEGRAM_PREVIEW_WIDTH_KM", defaultValue: 30),
+                    ParsePositiveDouble(getEnvironmentVariable, name: "TELEGRAM_PREVIEW_HEIGHT_KM", defaultValue: 20)),
                 new(
-                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_LARGE_PREVIEW_WIDTH_KM", 45),
-                    ParsePositiveDouble(getEnvironmentVariable, "TELEGRAM_LARGE_PREVIEW_HEIGHT_KM", 30)),
-                ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_PREVIEW_PIXEL_WIDTH", 900),
-                ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_PREVIEW_PIXEL_HEIGHT", 600),
-                ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_LARGE_CLUSTER_MIN_DETECTIONS", 8),
-                ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_LARGE_CLUSTER_MIN_FRP_MW", 500),
-                ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_LARGE_CLUSTER_MIN_DIAMETER_KM", 8)),
+                    ParsePositiveDouble(getEnvironmentVariable, name: "TELEGRAM_LARGE_PREVIEW_WIDTH_KM", defaultValue: 45),
+                    ParsePositiveDouble(getEnvironmentVariable, name: "TELEGRAM_LARGE_PREVIEW_HEIGHT_KM", defaultValue: 30)),
+                ParsePositiveInt(getEnvironmentVariable, name: "TELEGRAM_PREVIEW_PIXEL_WIDTH", defaultValue: 900),
+                ParsePositiveInt(getEnvironmentVariable, name: "TELEGRAM_PREVIEW_PIXEL_HEIGHT", defaultValue: 600),
+                ParsePositiveInt(getEnvironmentVariable, name: "TELEGRAM_LARGE_CLUSTER_MIN_DETECTIONS", defaultValue: 8),
+                ParseNonNegativeDouble(getEnvironmentVariable, name: "TELEGRAM_LARGE_CLUSTER_MIN_FRP_MW", defaultValue: 500),
+                ParseNonNegativeDouble(getEnvironmentVariable, name: "TELEGRAM_LARGE_CLUSTER_MIN_DIAMETER_KM", defaultValue: 8)),
             new(
-                ParseBool(getEnvironmentVariable, "TELEGRAM_LAND_COVER_FILTER_ENABLED", true),
-                ParseDouble(getEnvironmentVariable, "TELEGRAM_VEGETATION_PERCENT_THRESHOLD", 50, 0, 100),
-                ParseDouble(getEnvironmentVariable, "TELEGRAM_BUILT_UP_PROXIMITY_KM", 2, 0, 100),
-                ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_VEGETATION_MAX_FRP_MW", 300),
-                ParseBool(getEnvironmentVariable, "TELEGRAM_KEEP_HIGH_FRP_VEGETATION", false),
-                ParseBool(getEnvironmentVariable, "TELEGRAM_KEEP_MULTI_SATELLITE_VEGETATION", false)),
+                ParseBool(getEnvironmentVariable, name: "TELEGRAM_LAND_COVER_FILTER_ENABLED", defaultValue: true),
+                ParseDouble(getEnvironmentVariable, name: "TELEGRAM_VEGETATION_PERCENT_THRESHOLD", defaultValue: 50, minimum: 0, maximum: 100),
+                ParseDouble(getEnvironmentVariable, name: "TELEGRAM_BUILT_UP_PROXIMITY_KM", defaultValue: 2, minimum: 0, maximum: 100),
+                ParseNonNegativeDouble(getEnvironmentVariable, name: "TELEGRAM_VEGETATION_MAX_FRP_MW", defaultValue: 300),
+                ParseBool(getEnvironmentVariable, name: "TELEGRAM_KEEP_HIGH_FRP_VEGETATION", defaultValue: false),
+                ParseBool(getEnvironmentVariable, name: "TELEGRAM_KEEP_MULTI_SATELLITE_VEGETATION", defaultValue: false)),
             new(
-                ParseBool(getEnvironmentVariable, "TELEGRAM_VISIBILITY_FILTER_ENABLED", true),
-                ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_MIN_FRP_MW", 50),
-                ParseNonNegativeDouble(getEnvironmentVariable, "TELEGRAM_MIN_THERMAL_CONTRAST_K", 20),
-                ParsePositiveInt(getEnvironmentVariable, "TELEGRAM_MIN_CLUSTER_DETECTIONS", 2),
-                ParseDouble(getEnvironmentVariable, "TELEGRAM_MIN_MODIS_CONFIDENCE_PERCENT", 60, 0, 100),
+                ParseBool(getEnvironmentVariable, name: "TELEGRAM_VISIBILITY_FILTER_ENABLED", defaultValue: true),
+                ParseNonNegativeDouble(getEnvironmentVariable, name: "TELEGRAM_MIN_FRP_MW", defaultValue: 50),
+                ParseNonNegativeDouble(getEnvironmentVariable, name: "TELEGRAM_MIN_THERMAL_CONTRAST_K", defaultValue: 20),
+                ParsePositiveInt(getEnvironmentVariable, name: "TELEGRAM_MIN_CLUSTER_DETECTIONS", defaultValue: 2),
+                ParseDouble(getEnvironmentVariable, name: "TELEGRAM_MIN_MODIS_CONFIDENCE_PERCENT", defaultValue: 60, minimum: 0, maximum: 100),
                 ParseViirsConfidence(getEnvironmentVariable),
-                ParseBool(getEnvironmentVariable, "TELEGRAM_REQUIRE_DAYTIME", true),
-                ParseBool(getEnvironmentVariable, "TELEGRAM_REQUIRE_PREVIEW", true)));
+                ParseBool(getEnvironmentVariable, name: "TELEGRAM_REQUIRE_DAYTIME", defaultValue: true),
+                ParseBool(getEnvironmentVariable, name: "TELEGRAM_REQUIRE_PREVIEW", defaultValue: true)));
     }
 
     private static string? Normalize(string? value) =>
@@ -77,13 +77,13 @@ public sealed record TelegramOptions(
         string name,
         bool defaultValue)
     {
-        var value = Normalize(getEnvironmentVariable(name));
+        string? value = Normalize(getEnvironmentVariable(name));
         if (value is null)
             return defaultValue;
 
-        return bool.TryParse(value, out var parsed)
+        return bool.TryParse(value, out bool parsed)
             ? parsed
-            : throw new TelegramConfigurationException($"{name} must be true or false.");
+            : throw new TelegramConfigurationException(safeMessage: $"{name} must be true or false.");
     }
 
     private static double ParseDouble(
@@ -93,17 +93,17 @@ public sealed record TelegramOptions(
         double minimum,
         double maximum)
     {
-        var value = Normalize(getEnvironmentVariable(name));
+        string? value = Normalize(getEnvironmentVariable(name));
         if (value is null)
             return defaultValue;
 
-        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed)
             && double.IsFinite(parsed)
             && parsed >= minimum
             && parsed <= maximum
                 ? parsed
                 : throw new TelegramConfigurationException(
-                    $"{name} must be between {minimum} and {maximum}.");
+                    safeMessage: $"{name} must be between {minimum} and {maximum}.");
     }
 
     private static double ParseNonNegativeDouble(
@@ -111,16 +111,16 @@ public sealed record TelegramOptions(
         string name,
         double defaultValue)
     {
-        var value = Normalize(getEnvironmentVariable(name));
+        string? value = Normalize(getEnvironmentVariable(name));
         if (value is null)
             return defaultValue;
 
-        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed)
             && double.IsFinite(parsed)
             && parsed >= 0
                 ? parsed
                 : throw new TelegramConfigurationException(
-                    $"{name} must be a non-negative finite number.");
+                    safeMessage: $"{name} must be a non-negative finite number.");
     }
 
     private static double ParsePositiveDouble(
@@ -128,16 +128,16 @@ public sealed record TelegramOptions(
         string name,
         double defaultValue)
     {
-        var value = Normalize(getEnvironmentVariable(name));
+        string? value = Normalize(getEnvironmentVariable(name));
         if (value is null)
             return defaultValue;
 
-        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed)
             && double.IsFinite(parsed)
             && parsed > 0
                 ? parsed
                 : throw new TelegramConfigurationException(
-                    $"{name} must be a positive finite number.");
+                    safeMessage: $"{name} must be a positive finite number.");
     }
 
     private static int ParsePositiveInt(
@@ -145,15 +145,15 @@ public sealed record TelegramOptions(
         string name,
         int defaultValue)
     {
-        var value = Normalize(getEnvironmentVariable(name));
+        string? value = Normalize(getEnvironmentVariable(name));
         if (value is null)
             return defaultValue;
 
-        return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+        return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int parsed)
             && parsed >= 1
                 ? parsed
                 : throw new TelegramConfigurationException(
-                    $"{name} must be an integer greater than or equal to 1.");
+                    safeMessage: $"{name} must be an integer greater than or equal to 1.");
     }
 
     private static ViirsConfidenceLevel ParseViirsConfidence(
@@ -164,7 +164,7 @@ public sealed record TelegramOptions(
             "l" => ViirsConfidenceLevel.Low,
             "h" => ViirsConfidenceLevel.High,
             _ => throw new TelegramConfigurationException(
-                "TELEGRAM_MIN_VIIRS_CONFIDENCE must be l, n, or h.")
+                safeMessage: "TELEGRAM_MIN_VIIRS_CONFIDENCE must be l, n, or h.")
         };
 
     private static TimeSpan ParseTimeSpan(
@@ -174,55 +174,15 @@ public sealed record TelegramOptions(
         TimeSpan minimum,
         TimeSpan maximum)
     {
-        var value = Normalize(getEnvironmentVariable(name));
+        string? value = Normalize(getEnvironmentVariable(name));
         if (value is null)
             return defaultValue;
 
-        return TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out var parsed)
+        return TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out TimeSpan parsed)
             && parsed >= minimum
             && parsed <= maximum
                 ? parsed
                 : throw new TelegramConfigurationException(
-                    $"{name} must be a duration between {minimum} and {maximum}.");
+                    safeMessage: $"{name} must be a duration between {minimum} and {maximum}.");
     }
 }
-
-public sealed record TelegramPreviewOptions(
-    TelegramPreviewSize PreviewSize,
-    TelegramPreviewSize LargePreviewSize,
-    int PixelWidth,
-    int PixelHeight,
-    int LargeClusterMinimumDetections,
-    double LargeClusterMinimumFrpMegawatts,
-    double LargeClusterMinimumDiameterKilometers);
-
-public readonly record struct TelegramPreviewSize(
-    double WidthKilometers,
-    double HeightKilometers);
-
-public sealed record TelegramLandCoverOptions(
-    bool Enabled,
-    double VegetationPercentThreshold,
-    double BuiltUpProximityKilometers,
-    double VegetationMaximumFrpMegawatts,
-    bool KeepHighFrpVegetation,
-    bool KeepMultiSatelliteVegetation);
-
-public sealed record TelegramVisibilityOptions(
-    bool Enabled,
-    double MinimumFrpMegawatts,
-    double MinimumThermalContrastKelvin,
-    int MinimumClusterDetections,
-    double MinimumModisConfidencePercent,
-    ViirsConfidenceLevel MinimumViirsConfidence,
-    bool RequireDaytime,
-    bool RequirePreview);
-
-public enum ViirsConfidenceLevel
-{
-    Low,
-    Nominal,
-    High
-}
-
-public sealed class TelegramConfigurationException(string safeMessage) : Exception(safeMessage);

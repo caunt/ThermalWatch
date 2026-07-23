@@ -29,7 +29,7 @@ public static class TelegramMessageFormatter
         double? clusterDiameterKilometers,
         string? landCoverSummary)
     {
-        var data = CreateTemplateData(
+        TemplateData data = CreateTemplateData(
             cluster,
             preview,
             previewDimensions,
@@ -39,7 +39,7 @@ public static class TelegramMessageFormatter
             ? BuildMultiSatellite
             : BuildBalanced;
 
-        var message = build(data, 0);
+        string message = build(data, 0);
         if (message.Length <= MaximumPhotoCaptionLength)
             return message;
 
@@ -55,7 +55,7 @@ public static class TelegramMessageFormatter
 
     private static string BuildBalanced(TemplateData data, int compactLevel)
     {
-        var representative = data.Cluster.Representative;
+        Anomaly representative = data.Cluster.Representative;
         var sections = new List<string>
         {
             "🔥 <b>New thermal anomaly</b>"
@@ -90,7 +90,7 @@ public static class TelegramMessageFormatter
 
         if (data.HasPreview && compactLevel < 2)
         {
-            var imagery = IsSensorMatchedPreview(representative, data.PreviewBaseSource)
+            string imagery = IsSensorMatchedPreview(representative, data.PreviewBaseSource)
                 ? "Sensor-matched"
                 : FormatFallbackPreview(representative, data.PreviewBaseSource!.Value);
             var preview = new List<string>
@@ -104,12 +104,12 @@ public static class TelegramMessageFormatter
 
         sections.Add(FormatLocation(data));
         sections.Add("⚠️ <i>Satellite-detected thermal anomaly; not a confirmed fire.</i>");
-        return string.Join("\n\n", sections);
+        return string.Join(separator: "\n\n", sections);
     }
 
     private static string BuildMultiSatellite(TemplateData data, int compactLevel)
     {
-        var representative = data.Cluster.Representative;
+        Anomaly representative = data.Cluster.Representative;
         var sections = new List<string>
         {
             "🔥 <b>Multi-satellite thermal anomaly</b>",
@@ -135,7 +135,7 @@ public static class TelegramMessageFormatter
 
         if (data.HasPreview && compactLevel < 2)
         {
-            var imagery = IsSensorMatchedPreview(representative, data.PreviewBaseSource)
+            string imagery = IsSensorMatchedPreview(representative, data.PreviewBaseSource)
                 ? $"{FormatSatellite(representative)} imagery"
                 : FormatFallbackPreview(representative, data.PreviewBaseSource!.Value);
             var preview = new List<string>
@@ -149,24 +149,24 @@ public static class TelegramMessageFormatter
 
         sections.Add(FormatLocation(data));
         sections.Add("⚠️ <i>Automated satellite detection; event type is not confirmed.</i>");
-        return string.Join("\n\n", sections);
+        return string.Join(separator: "\n\n", sections);
     }
 
     private static string BuildMinimal(TemplateData data)
     {
-        var multiSatellite = data.Satellites.Length >= 2;
-        var title = multiSatellite
+        bool multiSatellite = data.Satellites.Length >= 2;
+        string title = multiSatellite
             ? "🔥 <b>Multi-satellite thermal anomaly</b>"
             : "🔥 <b>New thermal anomaly</b>";
-        var timeLabel = multiSatellite ? "Latest observation" : "Observed";
-        var observedAt = multiSatellite
+        string timeLabel = multiSatellite ? "Latest observation" : "Observed";
+        DateTimeOffset observedAt = multiSatellite
             ? data.LatestObservation
             : data.Cluster.Representative.AcquiredAtUtc;
         return string.Join(
-            "\n\n",
+            separator: "\n\n",
             title,
             string.Join('\n',
-                $"📍 <b>{Html(FormatInlineList(data.Countries, 2))}</b>",
+                $"📍 <b>{Html(FormatInlineList(data.Countries, compactLevel: 2))}</b>",
                 $"🕓 <b>{timeLabel}:</b> {Html(FormatDateTime(observedAt))} UTC",
                 $"🔎 <b>Detections:</b> {Html(data.Cluster.Members.Length.ToString(CultureInfo.InvariantCulture))}"),
             FormatLocation(data),
@@ -198,15 +198,15 @@ public static class TelegramMessageFormatter
 
     private static string FormatLocation(TemplateData data)
     {
-        var representative = data.Cluster.Representative;
-        var latitude = representative.Latitude.ToString("0.000000", CultureInfo.InvariantCulture);
-        var longitude = representative.Longitude.ToString("0.000000", CultureInfo.InvariantCulture);
+        Anomaly representative = data.Cluster.Representative;
+        string latitude = representative.Latitude.ToString(format: "0.000000", CultureInfo.InvariantCulture);
+        string longitude = representative.Longitude.ToString(format: "0.000000", CultureInfo.InvariantCulture);
         return $"📌 <code>{Html(latitude)}, {Html(longitude)}</code>";
     }
 
     private static string FormatSatelliteBullets(string[] satellites, int compactLevel)
     {
-        var maximumItems = compactLevel switch
+        int maximumItems = compactLevel switch
         {
             0 => int.MaxValue,
             1 => 2,
@@ -221,7 +221,7 @@ public static class TelegramMessageFormatter
 
     private static string FormatInlineList(string[] values, int compactLevel)
     {
-        var maximumItems = compactLevel switch
+        int maximumItems = compactLevel switch
         {
             0 => int.MaxValue,
             1 => 2,
@@ -233,12 +233,12 @@ public static class TelegramMessageFormatter
             .ToList();
         if (values.Length > included.Count)
             included.Add($"+{values.Length - included.Count} more");
-        return string.Join("; ", included);
+        return string.Join(separator: "; ", included);
     }
 
     private static string CompactValue(string value, int compactLevel)
     {
-        var maximumTextElements = compactLevel switch
+        int maximumTextElements = compactLevel switch
         {
             0 => int.MaxValue,
             1 => 48,
@@ -247,7 +247,7 @@ public static class TelegramMessageFormatter
         if (value.Length <= maximumTextElements)
             return value;
 
-        var elements = StringInfo.GetTextElementEnumerator(value);
+        TextElementEnumerator elements = StringInfo.GetTextElementEnumerator(value);
         var result = new StringBuilder();
         while (elements.MoveNext() && maximumTextElements-- > 1)
             result.Append(elements.GetTextElement());
@@ -256,21 +256,21 @@ public static class TelegramMessageFormatter
 
     private static string FormatSatellite(Anomaly anomaly)
     {
-        if (anomaly.Source == "VIIRS_SNPP_NRT")
+        if ("VIIRS_SNPP_NRT".Equals(anomaly.Source, StringComparison.Ordinal))
             return "Suomi-NPP · VIIRS";
-        if (anomaly.Source == "VIIRS_NOAA20_NRT")
+        if ("VIIRS_NOAA20_NRT".Equals(anomaly.Source, StringComparison.Ordinal))
             return "NOAA-20 · VIIRS";
-        if (anomaly.Source == "VIIRS_NOAA21_NRT")
+        if ("VIIRS_NOAA21_NRT".Equals(anomaly.Source, StringComparison.Ordinal))
             return "NOAA-21 · VIIRS";
-        if (anomaly.Source == "MODIS_NRT")
+        if ("MODIS_NRT".Equals(anomaly.Source, StringComparison.Ordinal))
         {
-            if (anomaly.Satellite.Equals("Terra", StringComparison.OrdinalIgnoreCase)
-                || anomaly.Satellite.Equals("T", StringComparison.OrdinalIgnoreCase))
+            if (anomaly.Satellite.Equals(value: "Terra", StringComparison.OrdinalIgnoreCase)
+                || anomaly.Satellite.Equals(value: "T", StringComparison.OrdinalIgnoreCase))
             {
                 return "Terra · MODIS";
             }
-            if (anomaly.Satellite.Equals("Aqua", StringComparison.OrdinalIgnoreCase)
-                || anomaly.Satellite.Equals("A", StringComparison.OrdinalIgnoreCase))
+            if (anomaly.Satellite.Equals(value: "Aqua", StringComparison.OrdinalIgnoreCase)
+                || anomaly.Satellite.Equals(value: "A", StringComparison.OrdinalIgnoreCase))
             {
                 return "Aqua · MODIS";
             }
@@ -322,8 +322,8 @@ public static class TelegramMessageFormatter
 
     private static string? FormatCoverage(GibsPreviewDimensions dimensions)
     {
-        var width = FormatNumber(dimensions.WidthKilometers);
-        var height = FormatNumber(dimensions.HeightKilometers);
+        string? width = FormatNumber(dimensions.WidthKilometers);
+        string? height = FormatNumber(dimensions.HeightKilometers);
         return width is not null && height is not null
             ? $"{width} × {height}"
             : null;
@@ -331,28 +331,27 @@ public static class TelegramMessageFormatter
 
     private static string? FormatNumber(double? value) =>
         value is { } number && double.IsFinite(number)
-            ? number.ToString("0.##", CultureInfo.InvariantCulture)
+            ? number.ToString(format: "0.##", CultureInfo.InvariantCulture)
             : null;
 
     private static string? FormatSignedNumber(double? value) =>
         value is { } number && double.IsFinite(number)
-            ? number.ToString("+0.##;-0.##;0", CultureInfo.InvariantCulture)
+            ? number.ToString(format: "+0.##;-0.##;0", CultureInfo.InvariantCulture)
             : null;
 
     private static double? MaximumAvailable(IEnumerable<double?> values)
     {
-        var available = values
+        double[] available = [.. values
             .Where(value => value is { } number && double.IsFinite(number))
-            .Select(value => value!.Value)
-            .ToArray();
+            .Select(value => value!.Value)];
         return available.Length == 0 ? null : available.Max();
     }
 
     private static string FormatDateTime(DateTimeOffset value) =>
-        value.UtcDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+        value.UtcDateTime.ToString(format: "yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
 
     private static string FormatDate(DateTimeOffset value) =>
-        value.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        value.UtcDateTime.ToString(format: "yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static string[] SortedDistinct(IEnumerable<string> values) =>
     [

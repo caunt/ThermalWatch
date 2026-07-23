@@ -5,28 +5,35 @@ namespace ThermalWatch.Tests;
 public sealed class DocumentationValidationTests
 {
     private const int MaximumAgentGuideLines = 150;
-    private static readonly string RepositoryRoot = FindRepositoryRoot();
-    private static readonly Regex MarkdownLinkPattern = new(
-        """!?\[[^\]]*\]\(\s*(?<target><[^>]+>|[^\s\)]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^\)]*\)))?\s*\)""",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex UriSchemePattern = new(
-        @"^[a-z][a-z0-9+.-]*:",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
-    private static readonly Regex AdrFileNamePattern = new(
-        @"^(?<id>[0-9]{4})-.+\.md$",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
-    private static readonly Regex FencedBlockPattern = new(
-        @"^```(?:bash|sh|shell|zsh|powershell|pwsh|cmd|bat|console)(?:[ \t][^\r\n]*)?\r?\n(?<body>.*?)^```\s*$",
+    private static readonly string s_repositoryRoot = FindRepositoryRoot();
+    private static readonly Regex s_markdownLinkPattern = new(
+        pattern: """!?\[[^\]]*\]\(\s*(?<target><[^>]+>|[^\s\)]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^\)]*\)))?\s*\)""",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        matchTimeout: TimeSpan.FromSeconds(seconds: 1));
+    private static readonly Regex s_uriSchemePattern = new(
+        pattern: @"^[a-z][a-z0-9+.-]*:",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+        matchTimeout: TimeSpan.FromSeconds(seconds: 1));
+    private static readonly Regex s_adrFileNamePattern = new(
+        pattern: @"^(?<id>[0-9]{4})-.+\.md$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+        matchTimeout: TimeSpan.FromSeconds(seconds: 1));
+    private static readonly Regex s_fencedBlockPattern = new(
+        pattern: @"^```(?:bash|sh|shell|zsh|powershell|pwsh|cmd|bat|console)(?:[ \t][^\r\n]*)?\r?\n(?<body>.*?)^```\s*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase
-            | RegexOptions.Multiline | RegexOptions.Singleline);
-    private static readonly Regex CommandPathPattern = new(
-        @"(?<![A-Za-z0-9_./\\-])(?<path>(?:\.{1,2}[/\\])?(?:[A-Za-z0-9_.-]+[/\\])*[A-Za-z0-9_.-]+\.(?:slnx|sln|csproj|fsproj|vbproj|sh|bash|zsh|ps1|cmd|bat|js|mjs|cjs|py))(?![A-Za-z0-9_.-])",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
-    private static readonly Regex PlaceholderPattern = new(
-        @"\b(?:TODO|TBD|FIXME|XXX)\b|lorem\s+ipsum|coming\s+soon|replace\s+me|insert\s+.+?\s+here",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            | RegexOptions.Multiline | RegexOptions.Singleline,
+        matchTimeout: TimeSpan.FromSeconds(seconds: 1));
+    private static readonly Regex s_commandPathPattern = new(
+        pattern: @"(?<![A-Za-z0-9_./\\-])(?<path>(?:\.{1,2}[/\\])?(?:[A-Za-z0-9_.-]+[/\\])*[A-Za-z0-9_.-]+\.(?:slnx|sln|csproj|fsproj|vbproj|sh|bash|zsh|ps1|cmd|bat|js|mjs|cjs|py))(?![A-Za-z0-9_.-])",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+        matchTimeout: TimeSpan.FromSeconds(seconds: 1));
+    private static readonly Regex s_placeholderPattern = new(
+        pattern: @"\b(?:TODO|TBD|FIXME|XXX)\b|lorem\s+ipsum|coming\s+soon|replace\s+me|insert\s+.+?\s+here",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+        matchTimeout: TimeSpan.FromSeconds(seconds: 1));
 
-    private static readonly string[] RequiredAdrTemplateHeadings =
+    private static readonly string[] s_routedDocumentationDirectories = ["domain", "components"];
+    private static readonly string[] s_requiredAdrTemplateHeadings =
     [
         "# 0000: Title",
         "## Status",
@@ -45,11 +52,11 @@ public sealed class DocumentationValidationTests
     {
         var failures = new List<string>();
 
-        foreach (var document in GetDocumentationFiles())
+        foreach (string document in GetDocumentationFiles())
         {
-            foreach (var target in GetMarkdownLinkTargets(document))
+            foreach (string target in GetMarkdownLinkTargets(document))
             {
-                if (!TryResolveLocalTarget(document, target, out var resolvedPath, out var error))
+                if (!TryResolveLocalTarget(document, target, out string? resolvedPath, out string? error))
                     continue;
 
                 if (error is not null)
@@ -63,86 +70,86 @@ public sealed class DocumentationValidationTests
             }
         }
 
-        AssertNoFailures("Unresolved local Markdown links", failures);
+        AssertNoFailures(description: "Unresolved local Markdown links", failures);
     }
 
     [Fact]
     public void DocumentationIndexCoversDomainAndComponentDocuments()
     {
-        var indexPath = Path.Combine(RepositoryRoot, "docs", "README.md");
+        string indexPath = Path.Combine([s_repositoryRoot, "docs", "README.md"]);
         Assert.True(File.Exists(indexPath), "docs/README.md is required.");
 
         var indexedFiles = GetMarkdownLinkTargets(indexPath)
-            .Select(target => TryResolveLocalTarget(indexPath, target, out var path, out var error)
+            .Select(target => TryResolveLocalTarget(indexPath, target, out string? path, out string? error)
                 && error is null
                     ? path
                     : null)
             .OfType<string>()
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var routedFiles = new[] { "domain", "components" }
-            .SelectMany(directory => EnumerateMarkdownFiles(Path.Combine(RepositoryRoot, "docs", directory)))
-            .Where(path => !Path.GetFileName(path).Equals("README.md", StringComparison.OrdinalIgnoreCase));
+        IEnumerable<string> routedFiles = s_routedDocumentationDirectories
+            .SelectMany(directory => EnumerateMarkdownFiles(Path.Combine([s_repositoryRoot, "docs", directory])))
+            .Where(path => !Path.GetFileName(path).Equals(value: "README.md", StringComparison.OrdinalIgnoreCase));
         var missing = routedFiles
             .Where(path => !indexedFiles.Contains(path))
             .Select(Relative)
             .Order(StringComparer.Ordinal)
             .ToList();
 
-        AssertNoFailures("Domain or component documents missing from docs/README.md", missing);
+        AssertNoFailures(description: "Domain or component documents missing from docs/README.md", missing);
     }
 
     [Fact]
     public void AdrIdentifiersAreFourDigitsAndUnique()
     {
-        var decisionsDirectory = Path.Combine(RepositoryRoot, "docs", "decisions");
+        string decisionsDirectory = Path.Combine([s_repositoryRoot, "docs", "decisions"]);
         var adrFiles = EnumerateMarkdownFiles(decisionsDirectory)
-            .Where(path => !Path.GetFileName(path).Equals("README.md", StringComparison.OrdinalIgnoreCase))
+            .Where(path => !Path.GetFileName(path).Equals(value: "README.md", StringComparison.OrdinalIgnoreCase))
             .ToList();
         var malformed = new List<string>();
         var identifiers = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
-        foreach (var file in adrFiles)
+        foreach (string? file in adrFiles)
         {
-            var match = AdrFileNamePattern.Match(Path.GetFileName(file));
+            Match match = s_adrFileNamePattern.Match(Path.GetFileName(file));
             if (!match.Success)
             {
                 malformed.Add(Relative(file));
                 continue;
             }
 
-            var identifier = match.Groups["id"].Value;
-            if (!identifiers.TryGetValue(identifier, out var files))
+            string identifier = match.Groups["id"].Value;
+            if (!identifiers.TryGetValue(identifier, out List<string>? files))
                 identifiers.Add(identifier, files = []);
 
             files.Add(Relative(file));
         }
 
-        AssertNoFailures("ADR filenames without a four-digit identifier", malformed);
+        AssertNoFailures(description: "ADR filenames without a four-digit identifier", malformed);
 
         var duplicates = identifiers
             .Where(pair => pair.Value.Count > 1)
-            .Select(pair => $"{pair.Key}: {string.Join(", ", pair.Value.Order(StringComparer.Ordinal))}")
+            .Select(pair => $"{pair.Key}: {string.Join(separator: ", ", pair.Value.Order(StringComparer.Ordinal))}")
             .Order(StringComparer.Ordinal)
             .ToList();
-        AssertNoFailures("Duplicate ADR identifiers", duplicates);
+        AssertNoFailures(description: "Duplicate ADR identifiers", duplicates);
     }
 
     [Fact]
     public void AdrTemplateContainsRequiredHeadingsInOrder()
     {
-        var templatePath = Path.Combine(RepositoryRoot, "docs", "decisions", "0000-template.md");
+        string templatePath = Path.Combine([s_repositoryRoot, "docs", "decisions", "0000-template.md"]);
         Assert.True(File.Exists(templatePath), "docs/decisions/0000-template.md is required.");
 
         var headings = File.ReadLines(templatePath)
             .Select(line => line.TrimEnd())
             .Where(line => line.StartsWith('#'))
             .ToList();
-        var nextSearchIndex = 0;
+        int nextSearchIndex = 0;
         var missingOrOutOfOrder = new List<string>();
 
-        foreach (var requiredHeading in RequiredAdrTemplateHeadings)
+        foreach (string requiredHeading in s_requiredAdrTemplateHeadings)
         {
-            var index = headings.FindIndex(
+            int index = headings.FindIndex(
                 nextSearchIndex,
                 heading => heading.Equals(requiredHeading, StringComparison.Ordinal));
             if (index < 0)
@@ -154,16 +161,16 @@ public sealed class DocumentationValidationTests
             nextSearchIndex = index + 1;
         }
 
-        AssertNoFailures("Missing or out-of-order ADR template headings", missingOrOutOfOrder);
+        AssertNoFailures(description: "Missing or out-of-order ADR template headings", missingOrOutOfOrder);
     }
 
     [Fact]
     public void RootAgentGuideRemainsConcise()
     {
-        var agentGuidePath = Path.Combine(RepositoryRoot, "AGENTS.md");
+        string agentGuidePath = Path.Combine([s_repositoryRoot, "AGENTS.md"]);
         Assert.True(File.Exists(agentGuidePath), "AGENTS.md is required.");
 
-        var lineCount = File.ReadLines(agentGuidePath).Count();
+        int lineCount = File.ReadLines(agentGuidePath).Count();
         Assert.True(
             lineCount <= MaximumAgentGuideLines,
             $"AGENTS.md has {lineCount} lines; the limit is {MaximumAgentGuideLines}.");
@@ -174,17 +181,17 @@ public sealed class DocumentationValidationTests
     {
         var failures = new List<string>();
 
-        foreach (var document in GetDocumentationFiles().Where(path => !IsDeliberateTemplate(path)))
+        foreach (string? document in GetDocumentationFiles().Where(path => !IsDeliberateTemplate(path)))
         {
-            var lines = File.ReadAllLines(document);
-            for (var index = 0; index < lines.Length; index++)
+            string[] lines = File.ReadAllLines(document);
+            for (int index = 0; index < lines.Length; index++)
             {
-                if (PlaceholderPattern.IsMatch(lines[index]))
+                if (s_placeholderPattern.IsMatch(lines[index]))
                     failures.Add($"{Relative(document)}:{index + 1}: {lines[index].Trim()}");
             }
         }
 
-        AssertNoFailures("Obvious unfinished documentation markers", failures);
+        AssertNoFailures(description: "Obvious unfinished documentation markers", failures);
     }
 
     [Fact]
@@ -192,19 +199,19 @@ public sealed class DocumentationValidationTests
     {
         var failures = new List<string>();
 
-        foreach (var document in GetDocumentationFiles().Where(path => !IsDeliberateTemplate(path)))
+        foreach (string? document in GetDocumentationFiles().Where(path => !IsDeliberateTemplate(path)))
         {
-            var content = File.ReadAllText(document);
-            foreach (Match block in FencedBlockPattern.Matches(content))
+            string content = File.ReadAllText(document);
+            foreach (Match block in s_fencedBlockPattern.Matches(content))
             {
-                foreach (Match pathMatch in CommandPathPattern.Matches(block.Groups["body"].Value))
+                foreach (Match pathMatch in s_commandPathPattern.Matches(block.Groups["body"].Value))
                 {
-                    var target = pathMatch.Groups["path"].Value;
+                    string target = pathMatch.Groups["path"].Value;
                     if (target.Contains('$') || target.Contains('*'))
                         continue;
 
-                    var resolvedPath = Path.GetFullPath(Path.Combine(
-                        RepositoryRoot,
+                    string resolvedPath = Path.GetFullPath(Path.Combine(
+                        s_repositoryRoot,
                         target
                             .Replace('/', Path.DirectorySeparatorChar)
                             .Replace('\\', Path.DirectorySeparatorChar)));
@@ -217,33 +224,33 @@ public sealed class DocumentationValidationTests
             }
         }
 
-        AssertNoFailures("Missing repository paths referenced by fenced commands", failures);
+        AssertNoFailures(description: "Missing repository paths referenced by fenced commands", failures);
     }
 
     private static IEnumerable<string> GetDocumentationFiles()
     {
-        foreach (var fileName in new[] { "README.md", "AGENTS.md" })
+        foreach (string? fileName in new[] { "README.md", "AGENTS.md" })
         {
-            var path = Path.Combine(RepositoryRoot, fileName);
+            string path = Path.Combine(s_repositoryRoot, fileName);
             if (File.Exists(path))
                 yield return path;
         }
 
-        foreach (var directory in new[] { "docs", ".agent", ".agents" })
+        foreach (string? directory in new[] { "docs", ".agent", ".agents" })
         {
-            foreach (var path in EnumerateMarkdownFiles(Path.Combine(RepositoryRoot, directory)))
+            foreach (string path in EnumerateMarkdownFiles(Path.Combine(s_repositoryRoot, directory)))
                 yield return path;
         }
     }
 
     private static IEnumerable<string> EnumerateMarkdownFiles(string directory) =>
         Directory.Exists(directory)
-            ? Directory.EnumerateFiles(directory, "*.md", SearchOption.AllDirectories)
+            ? Directory.EnumerateFiles(directory, searchPattern: "*.md", SearchOption.AllDirectories)
                 .Order(StringComparer.Ordinal)
             : [];
 
     private static IEnumerable<string> GetMarkdownLinkTargets(string document) =>
-        MarkdownLinkPattern.Matches(File.ReadAllText(document))
+        s_markdownLinkPattern.Matches(File.ReadAllText(document))
             .Cast<Match>()
             .Select(match => match.Groups["target"].Value.Trim('<', '>'));
 
@@ -258,13 +265,13 @@ public sealed class DocumentationValidationTests
         if (string.IsNullOrWhiteSpace(target)
             || target.StartsWith('#')
             || target.StartsWith('/')
-            || target.StartsWith("//", StringComparison.Ordinal)
-            || UriSchemePattern.IsMatch(target))
+            || target.StartsWith(value: "//", StringComparison.Ordinal)
+            || s_uriSchemePattern.IsMatch(target))
         {
             return false;
         }
 
-        var path = target.Split('#', 2)[0].Split('?', 2)[0];
+        string path = target.Split('#', count: 2)[0].Split('?', count: 2)[0];
         if (path.Length == 0)
             return false;
 
@@ -287,19 +294,19 @@ public sealed class DocumentationValidationTests
 
     private static bool IsInsideRepository(string path)
     {
-        var relative = Path.GetRelativePath(RepositoryRoot, path);
-        return !relative.Equals("..", StringComparison.Ordinal)
-            && !relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal);
+        string relative = Path.GetRelativePath(s_repositoryRoot, path);
+        return !relative.Equals(value: "..", StringComparison.Ordinal)
+            && !relative.StartsWith(value: $"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal);
     }
 
     private static bool IsDeliberateTemplate(string path)
     {
-        var relative = Relative(path).Replace(Path.DirectorySeparatorChar, '/');
-        return relative.Equals("docs/decisions/0000-template.md", StringComparison.OrdinalIgnoreCase)
-            || relative.Equals(".agent/PLANS.md", StringComparison.OrdinalIgnoreCase);
+        string relative = Relative(path).Replace(Path.DirectorySeparatorChar, '/');
+        return relative.Equals(value: "docs/decisions/0000-template.md", StringComparison.OrdinalIgnoreCase)
+            || relative.Equals(value: ".agent/PLANS.md", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string Relative(string path) => Path.GetRelativePath(RepositoryRoot, path);
+    private static string Relative(string path) => Path.GetRelativePath(s_repositoryRoot, path);
 
     private static string FindRepositoryRoot()
     {
@@ -307,15 +314,15 @@ public sealed class DocumentationValidationTests
              directory is not null;
              directory = directory.Parent)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "ThermalWatch.slnx")))
+            if (File.Exists(Path.Combine([directory.FullName, "ThermalWatch.slnx"])))
                 return directory.FullName;
         }
 
         throw new InvalidOperationException(
-            $"Could not locate ThermalWatch.slnx above '{AppContext.BaseDirectory}'.");
+            message: $"Could not locate ThermalWatch.slnx above '{AppContext.BaseDirectory}'.");
     }
 
-    private static void AssertNoFailures(string description, IReadOnlyCollection<string> failures) =>
+    private static void AssertNoFailures(string description, List<string> failures) =>
         Assert.True(
             failures.Count == 0,
             failures.Count == 0

@@ -6,40 +6,40 @@ using StbImageWriteSharp;
 
 namespace ThermalWatch.Core;
 
-public sealed class GibsMapTileClient(
+public sealed partial class GibsMapTileClient(
     HttpClient httpClient,
     IMemoryCache cache,
-    ILogger<GibsMapTileClient> logger)
+    ILogger<GibsMapTileClient> logger) : IDisposable
 {
     public const int MaximumZoom = 9;
 
     private const int TileSize = 256;
     private const int MaximumTileBytes = 1024 * 1024;
     private const byte NoDataMaximumChannel = 12;
-    private static readonly TimeSpan CompleteTileCacheDuration = TimeSpan.FromMinutes(5);
-    private static readonly GibsMapProduct[] Products =
+    private static readonly TimeSpan s_completeTileCacheDuration = TimeSpan.FromMinutes(minutes: 5);
+    private static readonly GibsMapProduct[] s_products =
     [
-        new("MODIS_Terra_CorrectedReflectance_TrueColor"),
-        new("MODIS_Aqua_CorrectedReflectance_TrueColor"),
-        new("VIIRS_NOAA21_CorrectedReflectance_TrueColor"),
-        new("VIIRS_NOAA20_CorrectedReflectance_TrueColor"),
-        new("VIIRS_SNPP_CorrectedReflectance_TrueColor")
+        new(Layer: "MODIS_Terra_CorrectedReflectance_TrueColor"),
+        new(Layer: "MODIS_Aqua_CorrectedReflectance_TrueColor"),
+        new(Layer: "VIIRS_NOAA21_CorrectedReflectance_TrueColor"),
+        new(Layer: "VIIRS_NOAA20_CorrectedReflectance_TrueColor"),
+        new(Layer: "VIIRS_SNPP_CorrectedReflectance_TrueColor")
     ];
 
-    private readonly SemaphoreSlim compositionSlots = new(8, 8);
+    private readonly SemaphoreSlim _compositionSlots = new(initialCount: 8, maxCount: 8);
 
     public async Task<GibsMapTileResult> GetMapTileAsync(
         GibsMapTileCoordinates coordinates,
         CancellationToken cancellationToken)
     {
-        var cacheKey = (Prefix: "gibs:map", coordinates.Zoom, coordinates.X, coordinates.Y);
-        if (cache.TryGetValue<GibsMapTileResult>(cacheKey, out var cachedTile)
+        (string Prefix, int Zoom, int X, int Y) cacheKey = (Prefix: "gibs:map", coordinates.Zoom, coordinates.X, coordinates.Y);
+        if (cache.TryGetValue<GibsMapTileResult>(cacheKey, out GibsMapTileResult? cachedTile)
             && cachedTile is not null)
         {
             return cachedTile;
         }
 
-        await compositionSlots.WaitAsync(cancellationToken);
+        await _compositionSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (cache.TryGetValue<GibsMapTileResult>(cacheKey, out cachedTile)
@@ -48,7 +48,7 @@ public sealed class GibsMapTileClient(
                 return cachedTile;
             }
 
-            var tile = await ComposeTileAsync(coordinates, cancellationToken);
+            GibsMapTileResult tile = await ComposeTileAsync(coordinates, cancellationToken).ConfigureAwait(false);
             if (tile.Coverage == GibsMapTileCoverage.Complete)
             {
                 cache.Set(
@@ -56,7 +56,7 @@ public sealed class GibsMapTileClient(
                     tile,
                     new MemoryCacheEntryOptions
                     {
-                        AbsoluteExpirationRelativeToNow = CompleteTileCacheDuration,
+                        AbsoluteExpirationRelativeToNow = s_completeTileCacheDuration,
                         Size = tile.PngBytes.Length
                     });
             }
@@ -65,7 +65,7 @@ public sealed class GibsMapTileClient(
         }
         finally
         {
-            compositionSlots.Release();
+            _compositionSlots.Release();
         }
     }
 
@@ -73,16 +73,16 @@ public sealed class GibsMapTileClient(
         GibsMapTileCoordinates coordinates,
         CancellationToken cancellationToken)
     {
-        var pixels = new byte[TileSize * TileSize * 4];
-        var remainingPixels = TileSize * TileSize;
+        byte[] pixels = new byte[TileSize * TileSize * 4];
+        int remainingPixels = TileSize * TileSize;
 
-        foreach (var product in Products)
+        foreach (GibsMapProduct product in s_products)
         {
-            var source = await GetTilePixelsAsync(product, coordinates, cancellationToken);
+            byte[]? source = await GetTilePixelsAsync(product, coordinates, cancellationToken).ConfigureAwait(false);
             if (source is null)
                 continue;
 
-            for (var offset = 0; offset < pixels.Length; offset += 4)
+            for (int offset = 0; offset < pixels.Length; offset += 4)
             {
                 if (pixels[offset + 3] != 0 || IsNoData(source, offset))
                     continue;
@@ -98,7 +98,7 @@ public sealed class GibsMapTileClient(
                 break;
         }
 
-        var coverage = remainingPixels switch
+        GibsMapTileCoverage coverage = remainingPixels switch
         {
             0 => GibsMapTileCoverage.Complete,
             var remaining when remaining == TileSize * TileSize => GibsMapTileCoverage.None,
@@ -116,8 +116,8 @@ public sealed class GibsMapTileClient(
 
         if (coverage != GibsMapTileCoverage.Complete)
         {
-            logger.LogDebug(
-                "GIBS map tile coverage is {Coverage} for zoom {Zoom}, x {X}, y {Y}",
+            LogIncompleteTileCoverage(
+                logger,
                 coverage,
                 coordinates.Zoom,
                 coordinates.X,
@@ -134,30 +134,30 @@ public sealed class GibsMapTileClient(
     {
         try
         {
-            var requestUri = BuildTileUri(product, coordinates);
+            Uri requestUri = BuildTileUri(product, coordinates);
             using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-            using var response = await httpClient.SendAsync(
+            using HttpResponseMessage response = await httpClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode
                 || response.Content.Headers.ContentType?.MediaType is not { } mediaType
-                || !mediaType.Equals("image/jpeg", StringComparison.OrdinalIgnoreCase)
+                || !mediaType.Equals(value: "image/jpeg", StringComparison.OrdinalIgnoreCase)
                 || response.Content.Headers.ContentLength > MaximumTileBytes)
             {
                 return null;
             }
 
-            var bytes = await ReadLimitedBytesAsync(
+            byte[]? bytes = await ReadLimitedBytesAsync(
                 response.Content,
                 MaximumTileBytes,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
             if (bytes is null)
                 return null;
 
             using var imageInfoStream = new MemoryStream(bytes, writable: false);
-            var imageInfo = ImageInfo.FromStream(imageInfoStream);
+            ImageInfo? imageInfo = ImageInfo.FromStream(imageInfoStream);
             if (imageInfo is not { Width: TileSize, Height: TileSize })
                 return null;
 
@@ -172,9 +172,9 @@ public sealed class GibsMapTileClient(
         }
         catch (Exception exception)
         {
-            logger.LogDebug(
+            LogProductUnavailable(
+                logger,
                 exception,
-                "GIBS map product {Product} is unavailable for zoom {Zoom}, x {X}, y {Y}",
                 product.Layer,
                 coordinates.Zoom,
                 coordinates.X,
@@ -185,11 +185,11 @@ public sealed class GibsMapTileClient(
 
     private Uri BuildTileUri(GibsMapProduct product, GibsMapTileCoordinates coordinates)
     {
-        var baseAddress = httpClient.BaseAddress
-            ?? throw new InvalidOperationException("The GIBS HTTP client requires a base address.");
-        var path = string.Create(
+        Uri baseAddress = httpClient.BaseAddress
+            ?? throw new InvalidOperationException(message: "The GIBS HTTP client requires a base address.");
+        string path = string.Create(
             CultureInfo.InvariantCulture,
-            $"wmts/epsg3857/best/{product.Layer}/default/default/GoogleMapsCompatible_Level9/{coordinates.Zoom}/{coordinates.Y}/{coordinates.X}.jpeg");
+            handler: $"wmts/epsg3857/best/{product.Layer}/default/default/GoogleMapsCompatible_Level9/{coordinates.Zoom}/{coordinates.Y}/{coordinates.X}.jpeg");
         return new(baseAddress, path);
     }
 
@@ -204,61 +204,53 @@ public sealed class GibsMapTileClient(
         int maximumBytes,
         CancellationToken cancellationToken)
     {
-        await using var stream = await content.ReadAsStreamAsync(cancellationToken);
-        using var result = new MemoryStream();
-        var buffer = new byte[8192];
-        while (true)
+        Stream stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await using (stream.ConfigureAwait(false))
         {
-            var read = await stream.ReadAsync(buffer, cancellationToken);
-            if (read == 0)
-                return result.ToArray();
+            using var result = new MemoryStream();
+            byte[] buffer = new byte[8192];
+            while (true)
+            {
+                int read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                if (read == 0)
+                    return result.ToArray();
 
-            if (result.Length + read > maximumBytes)
-                return null;
+                if (result.Length + read > maximumBytes)
+                    return null;
 
-            result.Write(buffer, 0, read);
+                result.Write(buffer, offset: 0, read);
+            }
         }
     }
+
+    public void Dispose()
+    {
+        _compositionSlots.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Debug,
+        Message = "GIBS map tile coverage is {Coverage} for zoom {Zoom}, x {X}, y {Y}")]
+    private static partial void LogIncompleteTileCoverage(
+        ILogger logger,
+        GibsMapTileCoverage coverage,
+        int zoom,
+        int x,
+        int y);
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Debug,
+        Message = "GIBS map product {Product} is unavailable for zoom {Zoom}, x {X}, y {Y}")]
+    private static partial void LogProductUnavailable(
+        ILogger logger,
+        Exception exception,
+        string product,
+        int zoom,
+        int x,
+        int y);
 
     private sealed record GibsMapProduct(string Layer);
-}
-
-public readonly record struct GibsMapTileCoordinates
-{
-    private GibsMapTileCoordinates(int zoom, int x, int y)
-    {
-        Zoom = zoom;
-        X = x;
-        Y = y;
-    }
-
-    public int Zoom { get; }
-
-    public int X { get; }
-
-    public int Y { get; }
-
-    public static bool TryCreate(int zoom, int x, int y, out GibsMapTileCoordinates coordinates)
-    {
-        var tileCount = zoom is >= 0 and <= GibsMapTileClient.MaximumZoom
-            ? 1 << zoom
-            : 0;
-        if (x >= 0 && x < tileCount && y >= 0 && y < tileCount)
-        {
-            coordinates = new(zoom, x, y);
-            return true;
-        }
-
-        coordinates = default;
-        return false;
-    }
-}
-
-public sealed record GibsMapTileResult(byte[] PngBytes, GibsMapTileCoverage Coverage);
-
-public enum GibsMapTileCoverage
-{
-    Complete,
-    Partial,
-    None
 }

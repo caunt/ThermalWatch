@@ -15,8 +15,8 @@ internal sealed class TelegramAutomaticNotificationState(
 
     public void Expire(DateTimeOffset now)
     {
-        var cutoff = now - retention;
-        foreach (var id in _delivered
+        DateTimeOffset cutoff = now - retention;
+        foreach (string id in _delivered
             .Where(pair => pair.Value.TrackedAtUtc < cutoff)
             .Select(pair => pair.Key)
             .ToArray())
@@ -32,14 +32,14 @@ internal sealed class TelegramAutomaticNotificationState(
         Expire(now);
 
         var clusters = new List<NotificationCluster> { cluster };
-        var firstSeenUtc = now;
+        DateTimeOffset firstSeenUtc = now;
         bool foundRelatedPending;
         do
         {
             foundRelatedPending = false;
-            for (var index = _pending.Count - 1; index >= 0; index--)
+            for (int index = _pending.Count - 1; index >= 0; index--)
             {
-                var pending = _pending[index];
+                PendingTelegramNotification pending = _pending[index];
                 if (!clusters.Any(existing => TelegramNotificationClustering.AreRelated(
                     existing,
                     pending.Cluster,
@@ -59,11 +59,11 @@ internal sealed class TelegramAutomaticNotificationState(
         }
         while (foundRelatedPending);
 
-        var preparedCluster = TelegramNotificationClustering.MergeRelated(
+        NotificationCluster preparedCluster = TelegramNotificationClustering.MergeRelated(
             clusters,
             radiusKilometers,
             timeWindow);
-        var continuesDeliveredEpisode = TryExtendDeliveredEpisode(preparedCluster, now);
+        bool continuesDeliveredEpisode = TryExtendDeliveredEpisode(preparedCluster, now);
 
         return new(preparedCluster, firstSeenUtc, continuesDeliveredEpisode);
     }
@@ -76,7 +76,7 @@ internal sealed class TelegramAutomaticNotificationState(
 
     public bool TrySuppressPending(int index, DateTimeOffset now)
     {
-        var pending = _pending[index];
+        PendingTelegramNotification pending = _pending[index];
         if (!TryExtendDeliveredEpisode(pending.Cluster, now))
             return false;
 
@@ -96,7 +96,7 @@ internal sealed class TelegramAutomaticNotificationState(
     private bool TryExtendDeliveredEpisode(NotificationCluster cluster, DateTimeOffset now)
     {
         Expire(now);
-        var isContinuation = cluster.Members.Any(candidate =>
+        bool isContinuation = cluster.Members.Any(candidate =>
             _delivered.Values.Any(delivered =>
                 (candidate.AcquiredAtUtc - delivered.AcquiredAtUtc).Duration() <= timeWindow
                 && Geography.HaversineKilometers(
@@ -113,7 +113,7 @@ internal sealed class TelegramAutomaticNotificationState(
 
     private void Track(NotificationCluster cluster, DateTimeOffset now)
     {
-        foreach (var detection in cluster.Members)
+        foreach (Anomaly detection in cluster.Members)
         {
             _delivered[detection.Id] = new(
                 detection.Latitude,
@@ -122,11 +122,11 @@ internal sealed class TelegramAutomaticNotificationState(
                 now);
         }
 
-        var excess = _delivered.Count - MaximumDeliveredDetections;
+        int excess = _delivered.Count - MaximumDeliveredDetections;
         if (excess <= 0)
             return;
 
-        foreach (var id in _delivered
+        foreach (string id in _delivered
             .OrderBy(pair => pair.Value.TrackedAtUtc)
             .ThenBy(pair => pair.Key, StringComparer.Ordinal)
             .Take(excess)
@@ -143,18 +143,3 @@ internal sealed class TelegramAutomaticNotificationState(
         DateTimeOffset AcquiredAtUtc,
         DateTimeOffset TrackedAtUtc);
 }
-
-internal readonly record struct TelegramCandidatePreparation(
-    NotificationCluster Cluster,
-    DateTimeOffset FirstSeenUtc,
-    bool ContinuesDeliveredEpisode);
-
-internal sealed record PendingTelegramNotification(
-    NotificationCluster Cluster,
-    DateTimeOffset FirstSeenUtc,
-    TelegramPreviewSelection PreviewSelection,
-    string? LandCoverSummary);
-
-internal readonly record struct TelegramPreviewSelection(
-    GibsPreviewDimensions Dimensions,
-    double ClusterDiameterKilometers);

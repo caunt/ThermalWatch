@@ -12,7 +12,7 @@ public static class ViewerEndpoints
 
     public static IEndpointRouteBuilder MapThermalWatchViewer(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/api/viewer/config", (ViewerOptions viewerOptions) => Results.Ok(new
+        endpoints.MapGet(pattern: "/api/viewer/config", (ViewerOptions viewerOptions) => Results.Ok(new
         {
             googleMaps = new
             {
@@ -22,7 +22,7 @@ public static class ViewerEndpoints
         }));
 
         endpoints.MapGet(
-            "/api/viewer/imagery/gibs/{z:int}/{x:int}/{y:int}.png",
+            pattern: "/api/viewer/imagery/gibs/{z:int}/{x:int}/{y:int}.png",
             GetGibsMapTileAsync);
 
         return endpoints;
@@ -36,7 +36,7 @@ public static class ViewerEndpoints
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        if (!GibsMapTileCoordinates.TryCreate(z, x, y, out var coordinates))
+        if (!GibsMapTileCoordinates.TryCreate(z, x, y, out GibsMapTileCoordinates coordinates))
         {
             return Results.BadRequest(new
             {
@@ -47,18 +47,18 @@ public static class ViewerEndpoints
         GibsMapTileResult tile;
         try
         {
-            tile = await client.GetMapTileAsync(coordinates, cancellationToken);
+            tile = await client.GetMapTileAsync(coordinates, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
             return Results.Empty;
         }
 
-        var coverage = tile.Coverage.ToString().ToLowerInvariant();
+        string coverage = tile.Coverage.ToString().ToLowerInvariant();
         context.Response.Headers[ImageryCoverageHeader] = coverage;
         context.Response.Headers[HeaderNames.CacheControl] = tile.Coverage == GibsMapTileCoverage.Complete
             ? "public, max-age=300"
             : "no-store";
-        return Results.Bytes(tile.PngBytes, "image/png");
+        return Results.Bytes(tile.PngBytes, contentType: "image/png");
     }
 }

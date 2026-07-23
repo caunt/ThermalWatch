@@ -1,7 +1,9 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Primitives;
 using Polly;
 using Serilog;
 using Serilog.Events;
@@ -19,28 +21,28 @@ try
 }
 catch (Exception exception) when (exception is ApplicationConfigurationException or TelegramConfigurationException)
 {
-    Console.Error.WriteLine($"Configuration error: {exception.Message}");
+    Console.Error.WriteLine(value: $"Configuration error: {exception.Message}");
     return 1;
 }
 catch (CountryBoundaryException exception)
 {
-    Console.Error.WriteLine($"Country boundary error: {exception.Message}");
+    Console.Error.WriteLine(value: $"Country boundary error: {exception.Message}");
     return 1;
 }
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Is(configuration.MinimumLogLevel)
-    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
-    .MinimumLevel.Override("Microsoft.Extensions.Http", LogEventLevel.Fatal)
-    .MinimumLevel.Override("Polly", LogEventLevel.Warning)
-    .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Fatal)
+    .MinimumLevel.Override(source: "Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override(source: "Microsoft.Extensions.Http", LogEventLevel.Fatal)
+    .MinimumLevel.Override(source: "Polly", LogEventLevel.Warning)
+    .MinimumLevel.Override(source: "System.Net.Http.HttpClient", LogEventLevel.Fatal)
     .Enrich.FromLogContext()
-    .WriteTo.Console()
+    .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
     .CreateLogger();
 
 try
 {
-    var builder = WebApplication.CreateBuilder(args);
+    WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
     builder.WebHost.UseStaticWebAssets();
     builder.WebHost.UseUrls("http://0.0.0.0:8080");
     builder.Host.UseSerilog(Log.Logger, dispose: false);
@@ -70,7 +72,7 @@ try
             options,
             configuration.Firms.RequestTimeout,
             AttemptTimeout(configuration.Firms.RequestTimeout),
-            2));
+            retryCount: 2));
 
     builder.Services
         .AddHttpClient<GibsClient>(client =>
@@ -80,33 +82,33 @@ try
         })
         .AddStandardResilienceHandler(options => ConfigureResilience(
             options,
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromSeconds(10),
-            2));
+            TimeSpan.FromSeconds(seconds: 30),
+            TimeSpan.FromSeconds(seconds: 10),
+            retryCount: 2));
 
     builder.Services
-        .AddHttpClient("GibsMapTiles", client =>
+        .AddHttpClient(name: "GibsMapTiles", client =>
         {
-            client.BaseAddress = new("https://gibs.earthdata.nasa.gov/");
+            client.BaseAddress = new(uriString: "https://gibs.earthdata.nasa.gov/");
             client.Timeout = Timeout.InfiniteTimeSpan;
         })
         .AddStandardResilienceHandler(options => ConfigureResilience(
             options,
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromSeconds(10),
-            2));
+            TimeSpan.FromSeconds(seconds: 30),
+            TimeSpan.FromSeconds(seconds: 10),
+            retryCount: 2));
     builder.Services.AddSingleton(serviceProvider => new GibsMapTileClient(
-        serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient("GibsMapTiles"),
+        serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient(name: "GibsMapTiles"),
         serviceProvider.GetRequiredService<IMemoryCache>(),
         serviceProvider.GetRequiredService<ILogger<GibsMapTileClient>>()));
 
     builder.Services
-        .AddHttpClient("Telegram", client => client.Timeout = Timeout.InfiniteTimeSpan)
+        .AddHttpClient(name: "Telegram", client => client.Timeout = Timeout.InfiniteTimeSpan)
         .AddStandardResilienceHandler(options => ConfigureResilience(
             options,
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromSeconds(10),
-            1));
+            TimeSpan.FromSeconds(seconds: 30),
+            TimeSpan.FromSeconds(seconds: 10),
+            retryCount: 1));
 
     builder.Services.AddHostedService<FirmsPollingService>();
     builder.Services.AddSingleton<TelegramNotificationService>();
@@ -117,18 +119,18 @@ try
     }
     else if (configuration.Telegram.IsPartiallyConfigured)
     {
-        Log.Warning("Telegram notifications disabled: both TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL_ID are required");
+        Log.Warning(messageTemplate: "Telegram notifications disabled: both TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL_ID are required");
     }
     else
     {
-        Log.Information("Telegram notifications disabled: no Telegram configuration was provided");
+        Log.Information(messageTemplate: "Telegram notifications disabled: no Telegram configuration was provided");
     }
 
-    var app = builder.Build();
+    WebApplication app = builder.Build();
     app.UseSerilogRequestLogging(options => options.GetLevel =
         (httpContext, _, exception) => exception is not null
             ? LogEventLevel.Error
-            : httpContext.Request.Path.StartsWithSegments("/api/viewer/imagery/gibs")
+            : httpContext.Request.Path.StartsWithSegments(other: "/api/viewer/imagery/gibs", StringComparison.OrdinalIgnoreCase)
                 ? LogEventLevel.Debug
                 : LogEventLevel.Information);
     app.UseCors();
@@ -141,28 +143,28 @@ try
 
     app.MapThermalWatchViewer();
 
-    app.MapGet("/api/anomalies", (HttpRequest request, AnomalySnapshotStore store, FirmsOptions firmsOptions) =>
+    app.MapGet(pattern: "/api/anomalies", (HttpRequest request, AnomalySnapshotStore store, FirmsOptions firmsOptions) =>
     {
-        var snapshot = store.Current;
+        AnomalySnapshot snapshot = store.Current;
         if (!AnomalyQuery.TryParse(
                 request.Query,
                 snapshot.GeneratedAtUtc - firmsOptions.ActiveWindow,
-                out var query,
-                out var error))
+                out AnomalyQuery? query,
+                out string? error))
         {
             return Results.BadRequest(new { error });
         }
 
-        var items = query!.Apply(snapshot.Items);
+        ImmutableArray<Anomaly> items = query!.Apply(snapshot.Items);
         return Results.Ok(snapshot with { Count = items.Length, Items = items });
     });
 
-    app.MapGet("/api/telegram/send-top", async (
+    app.MapGet(pattern: "/api/telegram/send-top", async (
         HttpRequest request,
         TelegramNotificationService telegram,
         CancellationToken cancellationToken) =>
     {
-        if (!TryParseManualSendCount(request.Query, out var count))
+        if (!TryParseManualSendCount(request.Query, out int count))
         {
             return Results.BadRequest(new
             {
@@ -170,7 +172,7 @@ try
             });
         }
 
-        var result = await telegram.SendTopAsync(count, cancellationToken);
+        ManualTelegramSendResult result = await telegram.SendTopAsync(count, cancellationToken).ConfigureAwait(false);
         return result.Status switch
         {
             ManualTelegramSendStatus.Completed => Results.Ok(result.Response),
@@ -189,16 +191,16 @@ try
         };
     });
 
-    await app.RunAsync();
+    await app.RunAsync().ConfigureAwait(false);
     return 0;
 }
 finally
 {
-    await Log.CloseAndFlushAsync();
+    await Log.CloseAndFlushAsync().ConfigureAwait(false);
 }
 
 static TimeSpan AttemptTimeout(TimeSpan totalTimeout) =>
-    TimeSpan.FromSeconds(Math.Clamp(totalTimeout.TotalSeconds / 3, 1, 15));
+    TimeSpan.FromSeconds(Math.Clamp(totalTimeout.TotalSeconds / 3, min: 1, max: 15));
 
 static void ConfigureResilience(
     HttpStandardResilienceOptions options,
@@ -209,7 +211,7 @@ static void ConfigureResilience(
     options.TotalRequestTimeout.Timeout = totalTimeout;
     options.AttemptTimeout.Timeout = attemptTimeout;
     options.Retry.MaxRetryAttempts = retryCount;
-    options.Retry.Delay = TimeSpan.FromSeconds(1);
+    options.Retry.Delay = TimeSpan.FromSeconds(seconds: 1);
     options.Retry.BackoffType = DelayBackoffType.Exponential;
     options.Retry.UseJitter = true;
     options.Retry.ShouldRetryAfterHeader = true;
@@ -218,7 +220,7 @@ static void ConfigureResilience(
 static bool TryParseManualSendCount(IQueryCollection query, out int count)
 {
     count = 5;
-    if (!query.TryGetValue("count", out var values))
+    if (!query.TryGetValue(key: "count", out StringValues values))
         return true;
 
     return values.Count == 1

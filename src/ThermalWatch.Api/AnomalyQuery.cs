@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Globalization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Primitives;
 using ThermalWatch.Core;
 
 namespace ThermalWatch.Api;
@@ -13,7 +14,7 @@ public sealed record AnomalyQuery(
     DateTimeOffset? Since,
     string? DayNight)
 {
-    private static readonly FrozenSet<string> AllowedParameters = new[]
+    private static readonly FrozenSet<string> s_allowedParameters = new[]
     {
         "country", "source", "satellite", "since", "dayNight"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -27,67 +28,89 @@ public sealed record AnomalyQuery(
         parsed = null;
         error = null;
 
-        var unknown = query.Keys.FirstOrDefault(key => !AllowedParameters.Contains(key));
+        string? unknown = query.Keys.FirstOrDefault(key => !s_allowedParameters.Contains(key));
         if (unknown is not null)
         {
             error = $"Unknown query parameter '{unknown}'.";
             return false;
         }
 
-        if (!TryParseList(query, "country", value => value.ToUpperInvariant(), out var countries, out error)
+        if (!TryParseList(query, name: "country", value => value.ToUpperInvariant(), out FrozenSet<string>? countries, out error)
             || countries is not null && countries.Any(country => !CountryCatalog.IsValid(country)))
         {
             error ??= "country must contain comma-separated ISO alpha-3 country codes.";
             return false;
         }
 
-        if (!TryParseList(query, "source", value => value.ToUpperInvariant(), out var sources, out error)
-            || sources is not null && sources.Any(source => !FirmsSources.All.Contains(source)))
+        if (!TryParseList(query, name: "source", value => value.ToUpperInvariant(), out FrozenSet<string>? sources, out error)
+            || sources is not null && sources.Any(source => !FirmsSources.All.Contains(source, StringComparer.Ordinal)))
         {
             error ??= "source must contain supported FIRMS source IDs.";
             return false;
         }
 
-        if (!TryParseList(query, "satellite", value => value, out var satellites, out error))
+        if (!TryParseList(query, name: "satellite", value => value, out FrozenSet<string>? satellites, out error))
             return false;
 
-        DateTimeOffset? since = null;
-        if (query.TryGetValue("since", out var sinceValues))
+        if (!TryParseSince(query, activeWindowCutoff, out DateTimeOffset? since, out error)
+            || !TryParseDayNight(query, out string? dayNight, out error))
         {
-            var value = sinceValues.ToString().Trim();
-            if (!DateTimeOffset.TryParse(
-                    value,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.RoundtripKind,
-                    out var parsedSince)
-                || parsedSince.Offset != TimeSpan.Zero)
-            {
-                error = "since must be an ISO-8601 UTC timestamp.";
-                return false;
-            }
-
-            if (parsedSince < activeWindowCutoff)
-            {
-                error = "since cannot be earlier than FIRMS_ACTIVE_WINDOW.";
-                return false;
-            }
-
-            since = parsedSince;
-        }
-
-        string? dayNight = null;
-        if (query.TryGetValue("dayNight", out var dayNightValues))
-        {
-            dayNight = dayNightValues.ToString().Trim().ToUpperInvariant();
-            if (dayNight is not ("D" or "N"))
-            {
-                error = "dayNight must be D or N.";
-                return false;
-            }
+            return false;
         }
 
         parsed = new(countries, sources, satellites, since, dayNight);
         return true;
+    }
+
+    private static bool TryParseSince(
+        IQueryCollection query,
+        DateTimeOffset activeWindowCutoff,
+        out DateTimeOffset? since,
+        out string? error)
+    {
+        since = null;
+        error = null;
+        if (!query.TryGetValue(key: "since", out StringValues sinceValues))
+            return true;
+
+        string value = sinceValues.ToString().Trim();
+        if (!DateTimeOffset.TryParse(
+                value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out DateTimeOffset parsedSince)
+            || parsedSince.Offset != TimeSpan.Zero)
+        {
+            error = "since must be an ISO-8601 UTC timestamp.";
+            return false;
+        }
+
+        if (parsedSince < activeWindowCutoff)
+        {
+            error = "since cannot be earlier than FIRMS_ACTIVE_WINDOW.";
+            return false;
+        }
+
+        since = parsedSince;
+        return true;
+    }
+
+    private static bool TryParseDayNight(
+        IQueryCollection query,
+        out string? dayNight,
+        out string? error)
+    {
+        dayNight = null;
+        error = null;
+        if (!query.TryGetValue(key: "dayNight", out StringValues dayNightValues))
+            return true;
+
+        dayNight = dayNightValues.ToString().Trim().ToUpperInvariant();
+        if (dayNight is "D" or "N")
+            return true;
+
+        error = "dayNight must be D or N.";
+        return false;
     }
 
     public ImmutableArray<Anomaly> Apply(IEnumerable<Anomaly> detections) =>
@@ -97,7 +120,7 @@ public sealed record AnomalyQuery(
             .Where(detection => Sources is null || Sources.Contains(detection.Source))
             .Where(detection => Satellites is null || Satellites.Contains(detection.Satellite))
             .Where(detection => Since is null || detection.AcquiredAtUtc >= Since)
-            .Where(detection => DayNight is null || detection.DayNight == DayNight)
+            .Where(detection => DayNight is null || string.Equals(detection.DayNight, DayNight, StringComparison.Ordinal))
             .OrderByDescending(detection => detection.AcquiredAtUtc)
             .ThenBy(detection => detection.Id, StringComparer.Ordinal)
     ];
@@ -112,10 +135,10 @@ public sealed record AnomalyQuery(
         values = null;
         error = null;
 
-        if (!query.TryGetValue(name, out var queryValues))
+        if (!query.TryGetValue(name, out StringValues queryValues))
             return true;
 
-        var entries = queryValues.ToString().Split(',');
+        string[] entries = queryValues.ToString().Split(',');
         if (entries.Any(string.IsNullOrWhiteSpace))
         {
             error = $"{name} must not contain empty values.";

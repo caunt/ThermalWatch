@@ -2,8 +2,8 @@
 
 > **Purpose:** Provide verified setup, build, test, formatting, debugging, and validation workflows.
 > **Scope:** Local development and pull-request validation for server, tests, documentation, and static viewer assets.
-> **Sources of truth:** [Build properties](../Directory.Build.props), [solution](../ThermalWatch.slnx), [test project](../tests/ThermalWatch.Tests.csproj), and [PR workflow](../.github/workflows/pr.yml).
-> **Update when:** SDK requirements, commands, project layout, tests, formatting, static assets, or CI validation changes.
+> **Sources of truth:** [Editor configuration](../.editorconfig), [build properties](../Directory.Build.props), [central package versions](../Directory.Packages.props), [solution](../ThermalWatch.slnx), [test project](../tests/ThermalWatch.Tests.csproj), and [PR workflow](../.github/workflows/pr.yml).
+> **Update when:** SDK requirements, commands, project layout, tests, formatting, analyzers, static assets, or CI validation changes.
 
 ## Prerequisites
 
@@ -25,7 +25,7 @@ dotnet test ThermalWatch.slnx -c Release --no-build --nologo
 dotnet format ThermalWatch.slnx --verify-no-changes --no-restore
 ```
 
-Builds are deterministic, nullable-enabled, and treat warnings as errors. `dotnet format` uses the SDK defaults because the repository has no separate formatter configuration.
+Builds are deterministic, nullable-enabled, enforce code-style diagnostics, and treat warnings as errors. The mandatory root [`.editorconfig`](../.editorconfig) defines repository-wide formatting, naming, immutability, syntax, and unused-code policy. [Central build configuration](../Directory.Build.props) applies the private Meziantou analyzer dependency to every project, while [Central Package Management](../Directory.Packages.props) owns its version. Fix analyzer and style violations instead of suppressing them, including MA0003 violations that require meaningful names for unclear literal arguments.
 
 The pull-request workflow configures Node.js 24, validates the Viewer project's static assets, and then runs the independently restorable .NET test command:
 

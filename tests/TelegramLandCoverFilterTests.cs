@@ -6,20 +6,20 @@ namespace ThermalWatch.Tests;
 
 public sealed class TelegramLandCoverFilterTests
 {
-    private static readonly DateTimeOffset ObservedAt = new(2026, 7, 19, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset s_observedAt = new(year: 2026, month: 7, day: 19, hour: 12, minute: 0, second: 0, TimeSpan.Zero);
 
     [Fact]
-    public void Evaluate_SuppressesStrongMultiSatelliteLargeVegetationClusterByDefault()
+    public void EvaluateSuppressesStrongMultiSatelliteLargeVegetationClusterByDefault()
     {
-        var members = Enumerable.Range(0, 12)
+        var members = Enumerable.Range(start: 0, count: 12)
             .Select(index => Detection(
-                index.ToString(),
+                index.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 index == 0 ? 10_000 : 100,
                 index % 2 == 0 ? "Suomi-NPP" : "NOAA-20"))
             .ToImmutableArray();
-        var cluster = new NotificationCluster("cluster", members[0], members);
+        var cluster = new NotificationCluster(Id: "cluster", members[0], members);
 
-        var result = TelegramLandCoverFilter.Evaluate(
+        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
             cluster,
             DefaultOptions(),
             AvailableLandCover([1, 2, 3, 10]));
@@ -29,16 +29,16 @@ public sealed class TelegramLandCoverFilterTests
         Assert.Equal(100, result.VegetationPercent);
         Assert.False(result.HasBuiltUpWithinProximity);
         Assert.Equal(2024, result.LandCoverYear);
-        Assert.Contains("no NASA class 13", result.Reason);
+        Assert.Contains("no NASA class 13", result.Reason, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Evaluate_SuppressesVegetationWhenFrpIsMissing()
+    public void EvaluateSuppressesVegetationWhenFrpIsMissing()
     {
-        var detection = Detection("missing-frp", null, "Suomi-NPP");
+        Anomaly detection = Detection(id: "missing-frp", frpMegawatts: null, satellite: "Suomi-NPP");
 
-        var result = TelegramLandCoverFilter.Evaluate(
-            new("cluster", detection, [detection]),
+        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+            new(Id: "cluster", detection, [detection]),
             DefaultOptions(),
             AvailableLandCover([1, 15]));
 
@@ -47,42 +47,42 @@ public sealed class TelegramLandCoverFilterTests
     }
 
     [Fact]
-    public void Evaluate_RetainsClusterWithBuiltUpPixelNearby()
+    public void EvaluateRetainsClusterWithBuiltUpPixelNearby()
     {
-        var detection = Detection("urban", 100, "Suomi-NPP");
+        Anomaly detection = Detection(id: "urban", frpMegawatts: 100, satellite: "Suomi-NPP");
 
-        var result = TelegramLandCoverFilter.Evaluate(
-            new("cluster", detection, [detection]),
+        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+            new(Id: "cluster", detection, [detection]),
             DefaultOptions(),
             AvailableLandCover([1, 2, 13], hasBuiltUp: true));
 
         Assert.Equal(LandCoverFilterDecision.Retained, result.Decision);
         Assert.True(result.HasBuiltUpWithinProximity);
-        Assert.Contains("class 13", result.Reason);
+        Assert.Contains("class 13", result.Reason, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Evaluate_RetainsClusterBelowVegetationThreshold()
+    public void EvaluateRetainsClusterBelowVegetationThreshold()
     {
-        var detection = Detection("mixed", 100, "Suomi-NPP");
+        Anomaly detection = Detection(id: "mixed", frpMegawatts: 100, satellite: "Suomi-NPP");
 
-        var result = TelegramLandCoverFilter.Evaluate(
-            new("cluster", detection, [detection]),
+        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+            new(Id: "cluster", detection, [detection]),
             DefaultOptions(),
             AvailableLandCover([1, 15, 16]));
 
         Assert.Equal(LandCoverFilterDecision.Retained, result.Decision);
         Assert.Equal(100d / 3, result.VegetationPercent!.Value, 8);
-        Assert.Contains("below 50%", result.Reason);
+        Assert.Contains("below 50%", result.Reason, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Evaluate_UsesExactlyTheConfiguredIgbpVegetationClasses()
+    public void EvaluateUsesExactlyTheConfiguredIgbpVegetationClasses()
     {
-        var detection = Detection("classes", 100, "Suomi-NPP");
+        Anomaly detection = Detection(id: "classes", frpMegawatts: 100, satellite: "Suomi-NPP");
 
-        var result = TelegramLandCoverFilter.Evaluate(
-            new("cluster", detection, [detection]),
+        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+            new(Id: "cluster", detection, [detection]),
             DefaultOptions(vegetationPercentThreshold: 75),
             AvailableLandCover([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]));
 
@@ -91,34 +91,34 @@ public sealed class TelegramLandCoverFilterTests
     }
 
     [Fact]
-    public void Evaluate_HonorsExplicitHighFrpVegetationException()
+    public void EvaluateHonorsExplicitHighFrpVegetationException()
     {
-        var detection = Detection("strong", 500, "Suomi-NPP");
-        var options = DefaultOptions() with { KeepHighFrpVegetation = true };
+        Anomaly detection = Detection(id: "strong", frpMegawatts: 500, satellite: "Suomi-NPP");
+        TelegramLandCoverOptions options = DefaultOptions() with { KeepHighFrpVegetation = true };
 
-        var result = TelegramLandCoverFilter.Evaluate(
-            new("cluster", detection, [detection]),
+        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+            new(Id: "cluster", detection, [detection]),
             options,
             AvailableLandCover([1]));
 
         Assert.Equal(LandCoverFilterDecision.Retained, result.Decision);
-        Assert.Contains("high-FRP", result.Reason);
+        Assert.Contains("high-FRP", result.Reason, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Evaluate_HonorsExplicitMultiSatelliteVegetationException()
+    public void EvaluateHonorsExplicitMultiSatelliteVegetationException()
     {
-        var first = Detection("first", 100, "Suomi-NPP");
-        var second = Detection("second", 90, "NOAA-20");
-        var options = DefaultOptions() with { KeepMultiSatelliteVegetation = true };
+        Anomaly first = Detection(id: "first", frpMegawatts: 100, satellite: "Suomi-NPP");
+        Anomaly second = Detection(id: "second", frpMegawatts: 90, satellite: "NOAA-20");
+        TelegramLandCoverOptions options = DefaultOptions() with { KeepMultiSatelliteVegetation = true };
 
-        var result = TelegramLandCoverFilter.Evaluate(
-            new("cluster", first, [first, second]),
+        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+            new(Id: "cluster", first, [first, second]),
             options,
             AvailableLandCover([1]));
 
         Assert.Equal(LandCoverFilterDecision.Retained, result.Decision);
-        Assert.Contains("multi-satellite", result.Reason);
+        Assert.Contains("multi-satellite", result.Reason, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -126,15 +126,15 @@ public sealed class TelegramLandCoverFilterTests
     [InlineData(true, null, new byte[] { 1 })]
     [InlineData(true, 2024, new byte[] { })]
     [InlineData(true, 2024, new byte[] { 254 })]
-    public void Evaluate_FailsOpenOnlyForUnavailableOrInvalidLandCover(
+    public void EvaluateFailsOpenOnlyForUnavailableOrInvalidLandCover(
         bool isAvailable,
         int? year,
         byte[] sampledClasses)
     {
-        var detection = Detection("unavailable", 100, "Suomi-NPP");
+        Anomaly detection = Detection(id: "unavailable", frpMegawatts: 100, satellite: "Suomi-NPP");
 
-        var result = TelegramLandCoverFilter.Evaluate(
-            new("cluster", detection, [detection]),
+        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+            new(Id: "cluster", detection, [detection]),
             DefaultOptions(),
             new(isAvailable, year, [.. sampledClasses], false));
 
@@ -147,17 +147,17 @@ public sealed class TelegramLandCoverFilterTests
     private static TelegramLandCoverOptions DefaultOptions(
         double vegetationPercentThreshold = 50) =>
         new(
-            true,
+            Enabled: true,
             vegetationPercentThreshold,
-            2,
-            300,
-            false,
-            false);
+            BuiltUpProximityKilometers: 2,
+            VegetationMaximumFrpMegawatts: 300,
+            KeepHighFrpVegetation: false,
+            KeepMultiSatelliteVegetation: false);
 
     private static GibsLandCoverResult AvailableLandCover(
         byte[] sampledClasses,
         bool hasBuiltUp = false) =>
-        new(true, 2024, [.. sampledClasses], hasBuiltUp);
+        new(IsAvailable: true, Year: 2024, [.. sampledClasses], hasBuiltUp);
 
     private static Anomaly Detection(
         string id,
@@ -165,22 +165,22 @@ public sealed class TelegramLandCoverFilterTests
         string satellite) =>
         new(
             id,
-            "UKR",
-            "VIIRS_SNPP_NRT",
+            CountryCode: "UKR",
+            Source: "VIIRS_SNPP_NRT",
             satellite,
-            "VIIRS",
-            50,
-            30,
-            ObservedAt,
-            "D",
-            330,
-            300,
+            Instrument: "VIIRS",
+            Latitude: 50,
+            Longitude: 30,
+            s_observedAt,
+            DayNight: "D",
+            BrightnessKelvin: 330,
+            SecondaryBrightnessKelvin: 300,
             frpMegawatts,
-            0.4,
-            0.4,
-            "n",
-            null,
-            "nominal",
-            "2.0NRT",
-            $"https://www.google.com/maps?q=50,30&id={id}");
+            ScanKilometers: 0.4,
+            TrackKilometers: 0.4,
+            ConfidenceRaw: "n",
+            ConfidencePercent: null,
+            ConfidenceCategory: "nominal",
+            Version: "2.0NRT",
+            GoogleMapsUrl: $"https://www.google.com/maps?q=50,30&id={id}");
 }

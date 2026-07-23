@@ -11,9 +11,9 @@ internal static class TelegramVisibilityFilter
         if (!options.Enabled)
             return VisibilityFilterResult.Accepted;
 
-        var representative = cluster.Representative;
+        Anomaly representative = cluster.Representative;
 
-        if (options.RequireDaytime && representative.DayNight != "D")
+        if (options.RequireDaytime && !representative.DayNight.Equals(value: "D", StringComparison.Ordinal))
             return VisibilityFilterResult.Reject(VisibilityRejectionReason.Nighttime);
 
         if (cluster.Members.Length < options.MinimumClusterDetections)
@@ -47,7 +47,7 @@ internal static class TelegramVisibilityFilter
         Anomaly anomaly,
         TelegramVisibilityOptions options)
     {
-        if (anomaly.Source == "MODIS_NRT")
+        if (anomaly.Source.Equals(value: "MODIS_NRT", StringComparison.Ordinal))
         {
             if (options.MinimumModisConfidencePercent == 0)
                 return VisibilityFilterResult.Accepted;
@@ -63,7 +63,7 @@ internal static class TelegramVisibilityFilter
         if (anomaly.ConfidenceCategory is not { } category)
             return VisibilityFilterResult.Reject(VisibilityRejectionReason.MissingRequiredValue);
 
-        var viirsConfidence = category.ToLowerInvariant() switch
+        ViirsConfidenceLevel? viirsConfidence = category.ToLowerInvariant() switch
         {
             "l" or "low" => ViirsConfidenceLevel.Low,
             "n" or "nominal" => ViirsConfidenceLevel.Nominal,
@@ -76,24 +76,4 @@ internal static class TelegramVisibilityFilter
             ? VisibilityFilterResult.Accepted
             : VisibilityFilterResult.Reject(VisibilityRejectionReason.LowConfidence);
     }
-}
-
-internal readonly record struct VisibilityFilterResult(
-    bool IsAccepted,
-    VisibilityRejectionReason? RejectionReason)
-{
-    public static VisibilityFilterResult Accepted { get; } = new(true, null);
-
-    public static VisibilityFilterResult Reject(VisibilityRejectionReason reason) => new(false, reason);
-}
-
-internal enum VisibilityRejectionReason
-{
-    Nighttime,
-    InsufficientDetections,
-    LowConfidence,
-    LowFrp,
-    LowThermalContrast,
-    MissingRequiredValue,
-    PreviewUnavailable
 }

@@ -27,7 +27,7 @@ public sealed class AnomalySnapshotStore
             key => new SegmentState(
                 [],
                 new(key.CountryCode, key.Source, null, null, true, null, IngestionModes.None)));
-        _updates = Channel.CreateBounded<AnomalySnapshot>(new BoundedChannelOptions(1)
+        _updates = Channel.CreateBounded<AnomalySnapshot>(new BoundedChannelOptions(capacity: 1)
         {
             FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
@@ -45,9 +45,9 @@ public sealed class AnomalySnapshotStore
     {
         lock (_sync)
         {
-            foreach (var result in results)
+            foreach (SegmentRefreshResult result in results)
             {
-                if (!_segments.TryGetValue(result.Key, out var existing))
+                if (!_segments.TryGetValue(result.Key, out SegmentState? existing))
                     continue;
 
                 _segments[result.Key] = result.Succeeded
@@ -58,8 +58,8 @@ public sealed class AnomalySnapshotStore
                             result.Key.Source,
                             result.AttemptedAtUtc,
                             result.CompletedAtUtc,
-                            false,
-                            null,
+                            Stale: false,
+                            Error: null,
                             result.IngestionMode))
                     : existing with
                     {
@@ -72,7 +72,7 @@ public sealed class AnomalySnapshotStore
                     };
             }
 
-            var snapshot = CreateSnapshot(_timeProvider.GetUtcNow());
+            AnomalySnapshot snapshot = CreateSnapshot(_timeProvider.GetUtcNow());
             Volatile.Write(ref _current, snapshot);
             _updates.Writer.TryWrite(snapshot);
             return snapshot;
@@ -81,7 +81,7 @@ public sealed class AnomalySnapshotStore
 
     private AnomalySnapshot CreateSnapshot(DateTimeOffset now)
     {
-        var cutoff = now - _options.ActiveWindow;
+        DateTimeOffset cutoff = now - _options.ActiveWindow;
         var statuses = _orderedKeys
             .Select(key => _segments[key].Status)
             .ToImmutableArray();
@@ -92,7 +92,7 @@ public sealed class AnomalySnapshotStore
             .OrderByDescending(detection => detection.AcquiredAtUtc)
             .ThenBy(detection => detection.Id, StringComparer.Ordinal)
             .ToImmutableArray();
-        var isReady = statuses.Any(status => status.LastSuccessUtc is not null);
+        bool isReady = statuses.Any(status => status.LastSuccessUtc is not null);
 
         return new(
             now,

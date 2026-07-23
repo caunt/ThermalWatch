@@ -2,7 +2,7 @@
 
 > **Purpose:** Explain ThermalWatch's system boundaries, end-to-end data flow, invariants, and failure isolation.
 > **Scope:** Server projects, browser viewer, in-memory state, HTTP boundaries, and external integrations.
-> **Sources of truth:** [Composition root](../src/ThermalWatch.Api/Program.cs), [solution](../ThermalWatch.slnx), [models](../src/ThermalWatch.Core/Models.cs), and [snapshot store](../src/ThermalWatch.Core/AnomalySnapshotStore.cs).
+> **Sources of truth:** [Composition root](../src/ThermalWatch.Api/Program.cs), [solution](../ThermalWatch.slnx), [anomaly model](../src/ThermalWatch.Core/Anomaly.cs), [snapshot model](../src/ThermalWatch.Core/AnomalySnapshot.cs), and [snapshot store](../src/ThermalWatch.Core/AnomalySnapshotStore.cs).
 > **Update when:** A component boundary, dependency direction, endpoint, state model, integration, or cross-component invariant changes.
 
 ## Boundaries and dependencies
@@ -38,7 +38,7 @@ Google Maps ------------------------------------------------------------------> 
 
 ## HTTP surface
 
-The route definitions and status mappings in [Program.cs](../src/ThermalWatch.Api/Program.cs) are authoritative. Public snapshot and anomaly properties come from [Models.cs](../src/ThermalWatch.Core/Models.cs); query parsing comes from [AnomalyQuery.cs](../src/ThermalWatch.Api/AnomalyQuery.cs). There is no generated OpenAPI artifact.
+The route definitions and status mappings in [Program.cs](../src/ThermalWatch.Api/Program.cs) are authoritative. Public snapshot and anomaly properties come from [AnomalySnapshot.cs](../src/ThermalWatch.Core/AnomalySnapshot.cs) and [Anomaly.cs](../src/ThermalWatch.Core/Anomaly.cs); query parsing comes from [AnomalyQuery.cs](../src/ThermalWatch.Api/AnomalyQuery.cs). There is no generated OpenAPI artifact.
 
 - `GET /` serves the interactive viewer.
 - `GET /api/viewer/config` exposes optional browser map configuration, including the browser-visible Google key when configured.

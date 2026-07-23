@@ -5,7 +5,7 @@ namespace ThermalWatch.Tests;
 public sealed class TelegramOptionsTests
 {
     [Fact]
-    public void FromEnvironment_UsesStrictVegetationDefaults()
+    public void FromEnvironmentUsesStrictVegetationDefaults()
     {
         var options = TelegramOptions.FromEnvironment(_ => null);
 
@@ -18,25 +18,23 @@ public sealed class TelegramOptionsTests
     }
 
     [Fact]
-    public void FromEnvironment_ReadsVegetationSpecificExceptionNames()
+    public void FromEnvironmentReadsVegetationSpecificExceptionNames()
     {
-        var environment = new Dictionary<string, string>
+        var options = TelegramOptions.FromEnvironment(name => name switch
         {
-            ["TELEGRAM_KEEP_HIGH_FRP_VEGETATION"] = "true",
-            ["TELEGRAM_KEEP_MULTI_SATELLITE_VEGETATION"] = "true"
-        };
-
-        var options = TelegramOptions.FromEnvironment(name => environment.GetValueOrDefault(name));
+            "TELEGRAM_KEEP_HIGH_FRP_VEGETATION" => "true",
+            "TELEGRAM_KEEP_MULTI_SATELLITE_VEGETATION" => "true",
+            _ => null
+        });
 
         Assert.True(options.LandCover.KeepHighFrpVegetation);
         Assert.True(options.LandCover.KeepMultiSatelliteVegetation);
     }
 
     [Fact]
-    public void FromEnvironment_DoesNotUseReplacedMultiSatelliteName()
+    public void FromEnvironmentDoesNotUseReplacedMultiSatelliteName()
     {
-        var options = TelegramOptions.FromEnvironment(name =>
-            name == "TELEGRAM_KEEP_MULTI_SATELLITE_CLUSTERS" ? "true" : null);
+        var options = TelegramOptions.FromEnvironment(name => name.Equals(value: "TELEGRAM_KEEP_MULTI_SATELLITE_CLUSTERS", StringComparison.Ordinal) ? "true" : null);
 
         Assert.False(options.LandCover.KeepMultiSatelliteVegetation);
     }

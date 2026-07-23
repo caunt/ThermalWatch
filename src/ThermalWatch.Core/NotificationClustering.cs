@@ -12,11 +12,11 @@ public static class NotificationClustering
         if (detections.Count == 0)
             return [];
 
-        var parents = Enumerable.Range(0, detections.Count).ToArray();
+        int[] parents = [.. Enumerable.Range(start: 0, detections.Count)];
 
-        for (var first = 0; first < detections.Count; first++)
+        for (int first = 0; first < detections.Count; first++)
         {
-            for (var second = first + 1; second < detections.Count; second++)
+            for (int second = first + 1; second < detections.Count; second++)
             {
                 if ((detections[first].AcquiredAtUtc - detections[second].AcquiredAtUtc).Duration() > timeWindow)
                     continue;
@@ -44,7 +44,7 @@ public static class NotificationClustering
             .ThenBy(detection => detection.Id, StringComparer.Ordinal)
             .ToImmutableArray();
 
-        var representative = members
+        Anomaly representative = members
             .OrderByDescending(detection => detection.FrpMegawatts ?? double.NegativeInfinity)
             .ThenByDescending(detection => detection.AcquiredAtUtc)
             .ThenBy(detection => detection.Id, StringComparer.Ordinal)
@@ -66,8 +66,8 @@ public static class NotificationClustering
 
     private static void Union(int[] parents, int first, int second)
     {
-        var firstRoot = Find(parents, first);
-        var secondRoot = Find(parents, second);
+        int firstRoot = Find(parents, first);
+        int secondRoot = Find(parents, second);
 
         if (firstRoot != secondRoot)
             parents[secondRoot] = firstRoot;

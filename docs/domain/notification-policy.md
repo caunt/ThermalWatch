@@ -2,7 +2,7 @@
 
 > **Purpose:** Define the non-obvious domain rules that distinguish raw thermal observations from Telegram notification candidates.
 > **Scope:** Anomaly meaning and identity, clustering, automatic selection, visibility and land-cover filters, imagery, and manual sends.
-> **Sources of truth:** [Models](../../src/ThermalWatch.Core/Models.cs), [generic clustering](../../src/ThermalWatch.Core/NotificationClustering.cs), [notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [automatic state](../../src/ThermalWatch.Telegram/TelegramAutomaticNotificationState.cs), [visibility filter](../../src/ThermalWatch.Telegram/TelegramVisibilityFilter.cs), and [land-cover filter](../../src/ThermalWatch.Telegram/TelegramLandCoverFilter.cs).
+> **Sources of truth:** [Anomaly model](../../src/ThermalWatch.Core/Anomaly.cs), [notification cluster](../../src/ThermalWatch.Core/NotificationCluster.cs), [generic clustering](../../src/ThermalWatch.Core/NotificationClustering.cs), [notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [automatic state](../../src/ThermalWatch.Telegram/TelegramAutomaticNotificationState.cs), [visibility filter](../../src/ThermalWatch.Telegram/TelegramVisibilityFilter.cs), and [land-cover filter](../../src/ThermalWatch.Telegram/TelegramLandCoverFilter.cs).
 > **Update when:** Observation identity, clustering, representative choice, eligibility, filtering order, imagery policy, or manual-send semantics change.
 
 ## Observation meaning and API boundary
@@ -15,7 +15,7 @@ The HTTP API is the raw-observation boundary:
 - It may apply only caller-requested query filters from [AnomalyQuery.cs](../../src/ThermalWatch.Api/AnomalyQuery.cs).
 - Telegram visibility, land-cover, preview, deduplication, and clustering state never remove or annotate API items.
 
-An anomaly ID is a deterministic truncated SHA-256 hash of country, source, satellite, UTC acquisition second, latitude, and longitude. Thermal contrast is primary brightness minus secondary/background brightness only when both values exist. [AnomalyId.cs](../../src/ThermalWatch.Core/AnomalyId.cs) and [Models.cs](../../src/ThermalWatch.Core/Models.cs) define these contracts.
+An anomaly ID is a deterministic truncated SHA-256 hash of country, source, satellite, UTC acquisition second, latitude, and longitude. Thermal contrast is primary brightness minus secondary/background brightness only when both values exist. [AnomalyId.cs](../../src/ThermalWatch.Core/AnomalyId.cs) and [Anomaly.cs](../../src/ThermalWatch.Core/Anomaly.cs) define these contracts.
 
 ## Clustering and representative selection
 

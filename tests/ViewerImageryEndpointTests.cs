@@ -15,14 +15,14 @@ namespace ThermalWatch.Tests;
 public sealed class ViewerImageryEndpointTests
 {
     [Fact]
-    public async Task Endpoint_ReturnsCompletePngWithCoverageAndCacheHeaders()
+    public async Task EndpointReturnsCompletePngWithCoverageAndCacheHeaders()
     {
-        var handler = new SolidTileHandler(CreateJpeg(45, 75, 105));
-        await using var app = await CreateAppAsync(handler);
-        using var client = app.GetTestClient();
+        var handler = new SolidTileHandler(CreateJpeg(red: 45, green: 75, blue: 105));
+        await using WebApplication app = await CreateAppAsync(handler);
+        using HttpClient client = app.GetTestClient();
 
-        using var response = await client.GetAsync(
-            "/api/viewer/imagery/gibs/0/0/0.png",
+        using HttpResponseMessage response = await client.GetAsync(
+            requestUri: "/api/viewer/imagery/gibs/0/0/0.png",
             TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -31,21 +31,21 @@ public sealed class ViewerImageryEndpointTests
             "complete",
             Assert.Single(response.Headers.GetValues(ViewerEndpoints.ImageryCoverageHeader)));
         Assert.True(response.Headers.CacheControl?.Public);
-        Assert.Equal(TimeSpan.FromMinutes(5), response.Headers.CacheControl?.MaxAge);
+        Assert.Equal(TimeSpan.FromMinutes(minutes: 5), response.Headers.CacheControl?.MaxAge);
         Assert.NotEmpty(await response.Content.ReadAsByteArrayAsync(
             TestContext.Current.CancellationToken));
         Assert.Equal(1, handler.RequestCount);
     }
 
     [Fact]
-    public async Task Endpoint_ReturnsNoStoreTransparentTileForUnavailableCoverage()
+    public async Task EndpointReturnsNoStoreTransparentTileForUnavailableCoverage()
     {
-        var handler = new SolidTileHandler(CreateJpeg(0, 0, 0));
-        await using var app = await CreateAppAsync(handler);
-        using var client = app.GetTestClient();
+        var handler = new SolidTileHandler(CreateJpeg(red: 0, green: 0, blue: 0));
+        await using WebApplication app = await CreateAppAsync(handler);
+        using HttpClient client = app.GetTestClient();
 
-        using var response = await client.GetAsync(
-            "/api/viewer/imagery/gibs/0/0/0.png",
+        using HttpResponseMessage response = await client.GetAsync(
+            requestUri: "/api/viewer/imagery/gibs/0/0/0.png",
             TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -57,16 +57,16 @@ public sealed class ViewerImageryEndpointTests
     }
 
     [Fact]
-    public async Task Endpoint_RejectsCoordinatesOutsideTheZoomMatrixWithoutCallingGibs()
+    public async Task EndpointRejectsCoordinatesOutsideTheZoomMatrixWithoutCallingGibs()
     {
-        var handler = new SolidTileHandler(CreateJpeg(45, 75, 105));
-        await using var app = await CreateAppAsync(handler);
-        using var client = app.GetTestClient();
+        var handler = new SolidTileHandler(CreateJpeg(red: 45, green: 75, blue: 105));
+        await using WebApplication app = await CreateAppAsync(handler);
+        using HttpClient client = app.GetTestClient();
 
-        using var response = await client.GetAsync(
-            "/api/viewer/imagery/gibs/2/4/0.png",
+        using HttpResponseMessage response = await client.GetAsync(
+            requestUri: "/api/viewer/imagery/gibs/2/4/0.png",
             TestContext.Current.CancellationToken);
-        var body = await response.Content.ReadAsStringAsync(
+        string body = await response.Content.ReadAsStringAsync(
             TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -76,29 +76,29 @@ public sealed class ViewerImageryEndpointTests
 
     private static async Task<WebApplication> CreateAppAsync(HttpMessageHandler handler)
     {
-        var builder = WebApplication.CreateBuilder();
+        WebApplicationBuilder builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Services.AddMemoryCache(options => options.SizeLimit = 64 * 1024 * 1024);
-        builder.Services.AddSingleton(new ViewerOptions(null));
+        builder.Services.AddSingleton(new ViewerOptions(GoogleMapsApiKey: null));
         builder.Services.AddSingleton(serviceProvider => new GibsMapTileClient(
             new HttpClient(handler)
             {
-                BaseAddress = new("https://gibs.example.test/")
+                BaseAddress = new(uriString: "https://gibs.example.test/")
             },
             serviceProvider.GetRequiredService<IMemoryCache>(),
             NullLogger<GibsMapTileClient>.Instance));
 
-        var app = builder.Build();
+        WebApplication app = builder.Build();
         app.MapThermalWatchViewer();
-        await app.StartAsync(TestContext.Current.CancellationToken);
+        await app.StartAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
         return app;
     }
 
     private static byte[] CreateJpeg(byte red, byte green, byte blue)
     {
         const int size = 256;
-        var bytes = new byte[size * size * 3];
-        for (var offset = 0; offset < bytes.Length; offset += 3)
+        byte[] bytes = new byte[size * size * 3];
+        for (int offset = 0; offset < bytes.Length; offset += 3)
         {
             bytes[offset] = red;
             bytes[offset + 1] = green;
@@ -112,7 +112,7 @@ public sealed class ViewerImageryEndpointTests
             size,
             StbImageWriteSharp.ColorComponents.RedGreenBlue,
             stream,
-            100);
+            quality: 100);
         return stream.ToArray();
     }
 
@@ -130,7 +130,7 @@ public sealed class ViewerImageryEndpointTests
             {
                 Content = new ByteArrayContent(bytes)
             };
-            response.Content.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+            response.Content.Headers.ContentType = new MediaTypeHeaderValue(mediaType: "image/jpeg");
             return Task.FromResult(response);
         }
     }

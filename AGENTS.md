@@ -46,6 +46,15 @@ node --test tests/viewer-map-support.test.js
 
 See [development guidance](docs/development.md) for prerequisites, safe local setup, container fallback, debugging, and change-specific checks.
 
+## Coding standards
+
+- The repository-root `.editorconfig` is mandatory for every project.
+- Fix analyzer and style errors; do not suppress them.
+- Use named arguments for unclear string, numeric, Boolean, `null`, and `default` literal arguments.
+- Preserve existing code style, comments, project structure, and unrelated code.
+- Prefer the smallest coherent change.
+- Before finishing, run the complete repository verification sequence in [development guidance](docs/development.md#restore-build-test-and-format).
+
 ## Engineering constraints
 
 - Application-specific configuration uses exact uppercase environment names; do not add `appsettings` or commit credentials.

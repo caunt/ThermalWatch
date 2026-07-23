@@ -1,0 +1,146 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.cs]
+indent_style = space
+indent_size = 4
+tab_width = 4
+
+################################################################################
+# Deterministic formatting
+################################################################################
+dotnet_diagnostic.IDE0055.severity = error
+
+################################################################################
+# Naming conventions
+################################################################################
+dotnet_diagnostic.IDE1006.severity = error
+
+dotnet_naming_symbols.interfaces.applicable_kinds = interface
+dotnet_naming_symbols.interfaces.applicable_accessibilities = *
+
+dotnet_naming_symbols.types.applicable_kinds = class, struct, enum, delegate
+dotnet_naming_symbols.types.applicable_accessibilities = *
+
+dotnet_naming_symbols.members.applicable_kinds = property, event, method, local_function
+dotnet_naming_symbols.members.applicable_accessibilities = *
+
+dotnet_naming_symbols.parameters_and_locals.applicable_kinds = parameter, type_parameter, local
+dotnet_naming_symbols.parameters_and_locals.applicable_accessibilities = *
+
+dotnet_naming_symbols.non_public_instance_fields.applicable_kinds = field
+dotnet_naming_symbols.non_public_instance_fields.applicable_accessibilities = private, internal, private_protected
+dotnet_naming_symbols.non_public_instance_fields.forbidden_modifiers = static, const
+
+dotnet_naming_symbols.non_public_static_fields.applicable_kinds = field
+dotnet_naming_symbols.non_public_static_fields.applicable_accessibilities = private, internal, private_protected
+dotnet_naming_symbols.non_public_static_fields.required_modifiers = static
+
+dotnet_naming_symbols.non_public_constants.applicable_kinds = field
+dotnet_naming_symbols.non_public_constants.applicable_accessibilities = private, internal, private_protected
+dotnet_naming_symbols.non_public_constants.required_modifiers = const
+
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+dotnet_naming_style.camel_case.capitalization = camel_case
+dotnet_naming_style.interface_style.required_prefix = I
+dotnet_naming_style.interface_style.capitalization = pascal_case
+dotnet_naming_style.instance_field_style.required_prefix = _
+dotnet_naming_style.instance_field_style.capitalization = camel_case
+dotnet_naming_style.static_field_style.required_prefix = s_
+dotnet_naming_style.static_field_style.capitalization = camel_case
+
+dotnet_naming_rule.interfaces_use_i_prefix.symbols = interfaces
+dotnet_naming_rule.interfaces_use_i_prefix.style = interface_style
+dotnet_naming_rule.interfaces_use_i_prefix.severity = error
+
+dotnet_naming_rule.types_use_pascal_case.symbols = types
+dotnet_naming_rule.types_use_pascal_case.style = pascal_case
+dotnet_naming_rule.types_use_pascal_case.severity = error
+
+dotnet_naming_rule.members_use_pascal_case.symbols = members
+dotnet_naming_rule.members_use_pascal_case.style = pascal_case
+dotnet_naming_rule.members_use_pascal_case.severity = error
+
+dotnet_naming_rule.parameters_and_locals_use_camel_case.symbols = parameters_and_locals
+dotnet_naming_rule.parameters_and_locals_use_camel_case.style = camel_case
+dotnet_naming_rule.parameters_and_locals_use_camel_case.severity = error
+
+dotnet_naming_rule.non_public_instance_fields_use_underscore.symbols = non_public_instance_fields
+dotnet_naming_rule.non_public_instance_fields_use_underscore.style = instance_field_style
+dotnet_naming_rule.non_public_instance_fields_use_underscore.severity = error
+
+dotnet_naming_rule.non_public_static_fields_use_s_prefix.symbols = non_public_static_fields
+dotnet_naming_rule.non_public_static_fields_use_s_prefix.style = static_field_style
+dotnet_naming_rule.non_public_static_fields_use_s_prefix.severity = error
+
+dotnet_naming_rule.non_public_constants_use_pascal_case.symbols = non_public_constants
+dotnet_naming_rule.non_public_constants_use_pascal_case.style = pascal_case
+dotnet_naming_rule.non_public_constants_use_pascal_case.severity = error
+
+################################################################################
+# Require names for unclear literal arguments
+################################################################################
+dotnet_diagnostic.MA0003.severity = error
+MA0003.minimum_method_parameters = 1
+MA0003.expression_kinds = Null, Boolean, Numeric, String, Default
+
+################################################################################
+# Reject unused scaffolding
+################################################################################
+dotnet_code_quality_unused_parameters = all
+dotnet_diagnostic.IDE0060.severity = error
+dotnet_diagnostic.IDE0051.severity = error
+dotnet_diagnostic.IDE0052.severity = error
+
+################################################################################
+# Explicit API boundaries
+################################################################################
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:error
+
+################################################################################
+# Prefer immutable state
+################################################################################
+dotnet_style_readonly_field = true:error
+csharp_style_prefer_readonly_struct = true:error
+csharp_style_prefer_readonly_struct_member = true:error
+
+################################################################################
+# Controlled var usage
+################################################################################
+csharp_style_var_for_built_in_types = false:error
+csharp_style_var_when_type_is_apparent = true:error
+csharp_style_var_elsewhere = false:error
+
+################################################################################
+# Braces for multiline control flow
+################################################################################
+csharp_prefer_braces = when_multiline:error
+
+################################################################################
+# Prevent accidental captures
+################################################################################
+csharp_prefer_static_local_function = true:error
+csharp_prefer_static_anonymous_function = true:error
+
+################################################################################
+# Namespace consistency
+################################################################################
+csharp_style_namespace_declarations = file_scoped:error
+dotnet_style_namespace_match_folder = true:error
+
+################################################################################
+# Preferred modern C# syntax
+################################################################################
+csharp_style_prefer_switch_expression = true:error
+csharp_style_prefer_top_level_statements = true:error
+dotnet_style_collection_initializer = true:error
+dotnet_style_prefer_collection_expression = when_types_exactly_match:error
+csharp_style_expression_bodied_methods = when_on_single_line:error
+csharp_style_expression_bodied_local_functions = when_on_single_line:error
+csharp_style_expression_bodied_properties = true:error
+csharp_style_expression_bodied_accessors = true:error

@@ -6,35 +6,35 @@ namespace ThermalWatch.Tests;
 public sealed class TelegramAutomaticNotificationStateTests
 {
     private const double RadiusKilometers = 5;
-    private static readonly DateTimeOffset ObservedAt = new(2026, 7, 23, 8, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan TimeWindow = TimeSpan.FromMinutes(90);
-    private static readonly TimeSpan Retention = TimeSpan.FromHours(48);
-    private static readonly TelegramPreviewSelection PreviewSelection = new(
-        new(30, 20, 900, 600),
-        0);
+    private static readonly DateTimeOffset s_observedAt = new(year: 2026, month: 7, day: 23, hour: 8, minute: 0, second: 0, TimeSpan.Zero);
+    private static readonly TimeSpan s_timeWindow = TimeSpan.FromMinutes(minutes: 90);
+    private static readonly TimeSpan s_retention = TimeSpan.FromHours(hours: 48);
+    private static readonly TelegramPreviewSelection s_previewSelection = new(
+        new(WidthKilometers: 30, HeightKilometers: 20, PixelWidth: 900, PixelHeight: 600),
+        ClusterDiameterKilometers: 0);
 
     [Fact]
-    public void PrepareCandidate_SuppressesDifferentSatelliteInDeliveredEpisode()
+    public void PrepareCandidateSuppressesDifferentSatelliteInDeliveredEpisode()
     {
-        var state = CreateState();
-        var delivered = Cluster(Detection(
-            "noaa20",
-            ObservedAt,
-            57.94608,
-            60.06142,
+        TelegramAutomaticNotificationState state = CreateState();
+        NotificationCluster delivered = Cluster(Detection(
+            id: "noaa20",
+            s_observedAt,
+            latitude: 57.94608,
+            longitude: 60.06142,
             source: "VIIRS_NOAA20_NRT",
             satellite: "N20"));
-        var laterSatellite = Cluster(Detection(
-            "snpp",
-            ObservedAt.AddMinutes(53),
-            57.947,
-            60.062,
+        NotificationCluster laterSatellite = Cluster(Detection(
+            id: "snpp",
+            s_observedAt.AddMinutes(53),
+            latitude: 57.947,
+            longitude: 60.062,
             source: "VIIRS_SNPP_NRT",
             satellite: "N"));
 
-        state.RecordDelivered(delivered, ObservedAt.AddHours(1));
+        state.RecordDelivered(delivered, s_observedAt.AddHours(1));
 
-        var preparation = state.PrepareCandidate(laterSatellite, ObservedAt.AddHours(2));
+        TelegramCandidatePreparation preparation = state.PrepareCandidate(laterSatellite, s_observedAt.AddHours(2));
 
         Assert.True(preparation.ContinuesDeliveredEpisode);
         Assert.Equal(laterSatellite.Id, preparation.Cluster.Id);
@@ -42,18 +42,18 @@ public sealed class TelegramAutomaticNotificationStateTests
     }
 
     [Fact]
-    public void PrepareCandidate_ExtendsDeliveredEpisodeTransitively()
+    public void PrepareCandidateExtendsDeliveredEpisodeTransitively()
     {
-        var state = CreateState();
-        var first = Cluster(Detection("first", ObservedAt, 0, 0));
-        var bridge = Cluster(Detection("bridge", ObservedAt.AddMinutes(60), 0, 0.04));
-        var continuation = Cluster(Detection("continuation", ObservedAt.AddMinutes(120), 0, 0.08));
-        state.RecordDelivered(first, ObservedAt);
+        TelegramAutomaticNotificationState state = CreateState();
+        NotificationCluster first = Cluster(Detection(id: "first", s_observedAt, latitude: 0, longitude: 0));
+        NotificationCluster bridge = Cluster(Detection(id: "bridge", s_observedAt.AddMinutes(60), latitude: 0, longitude: 0.04));
+        NotificationCluster continuation = Cluster(Detection(id: "continuation", s_observedAt.AddMinutes(120), latitude: 0, longitude: 0.08));
+        state.RecordDelivered(first, s_observedAt);
 
-        var bridgePreparation = state.PrepareCandidate(bridge, ObservedAt.AddMinutes(60));
-        var continuationPreparation = state.PrepareCandidate(
+        TelegramCandidatePreparation bridgePreparation = state.PrepareCandidate(bridge, s_observedAt.AddMinutes(60));
+        TelegramCandidatePreparation continuationPreparation = state.PrepareCandidate(
             continuation,
-            ObservedAt.AddMinutes(120));
+            s_observedAt.AddMinutes(120));
 
         Assert.True(bridgePreparation.ContinuesDeliveredEpisode);
         Assert.True(continuationPreparation.ContinuesDeliveredEpisode);
@@ -61,93 +61,93 @@ public sealed class TelegramAutomaticNotificationStateTests
             first,
             continuation,
             RadiusKilometers,
-            TimeWindow));
+            s_timeWindow));
     }
 
     [Fact]
-    public void PrepareCandidate_AllowsNewEpisodeOutsideTimeWindow()
+    public void PrepareCandidateAllowsNewEpisodeOutsideTimeWindow()
     {
-        var state = CreateState();
-        var delivered = Cluster(Detection("delivered", ObservedAt, 50, 30));
-        var later = Cluster(Detection("later", ObservedAt.AddMinutes(91), 50, 30));
-        state.RecordDelivered(delivered, ObservedAt);
+        TelegramAutomaticNotificationState state = CreateState();
+        NotificationCluster delivered = Cluster(Detection(id: "delivered", s_observedAt, latitude: 50, longitude: 30));
+        NotificationCluster later = Cluster(Detection(id: "later", s_observedAt.AddMinutes(91), latitude: 50, longitude: 30));
+        state.RecordDelivered(delivered, s_observedAt);
 
-        var preparation = state.PrepareCandidate(later, ObservedAt.AddMinutes(91));
+        TelegramCandidatePreparation preparation = state.PrepareCandidate(later, s_observedAt.AddMinutes(91));
 
         Assert.False(preparation.ContinuesDeliveredEpisode);
     }
 
     [Fact]
-    public void PrepareCandidate_AllowsNewEpisodeOutsideRadius()
+    public void PrepareCandidateAllowsNewEpisodeOutsideRadius()
     {
-        var state = CreateState();
-        var delivered = Cluster(Detection("delivered", ObservedAt, 0, 0));
-        var distant = Cluster(Detection("distant", ObservedAt.AddMinutes(5), 0, 0.05));
-        state.RecordDelivered(delivered, ObservedAt);
+        TelegramAutomaticNotificationState state = CreateState();
+        NotificationCluster delivered = Cluster(Detection(id: "delivered", s_observedAt, latitude: 0, longitude: 0));
+        NotificationCluster distant = Cluster(Detection(id: "distant", s_observedAt.AddMinutes(5), latitude: 0, longitude: 0.05));
+        state.RecordDelivered(delivered, s_observedAt);
 
-        var preparation = state.PrepareCandidate(distant, ObservedAt.AddMinutes(5));
+        TelegramCandidatePreparation preparation = state.PrepareCandidate(distant, s_observedAt.AddMinutes(5));
 
         Assert.False(preparation.ContinuesDeliveredEpisode);
     }
 
     [Fact]
-    public void PrepareCandidate_AllowsRelatedDetectionAfterHistoryExpires()
+    public void PrepareCandidateAllowsRelatedDetectionAfterHistoryExpires()
     {
-        var state = CreateState();
-        var delivered = Cluster(Detection("delivered", ObservedAt, 50, 30));
-        var related = Cluster(Detection("related", ObservedAt.AddMinutes(5), 50, 30));
-        state.RecordDelivered(delivered, ObservedAt);
+        TelegramAutomaticNotificationState state = CreateState();
+        NotificationCluster delivered = Cluster(Detection(id: "delivered", s_observedAt, latitude: 50, longitude: 30));
+        NotificationCluster related = Cluster(Detection(id: "related", s_observedAt.AddMinutes(5), latitude: 50, longitude: 30));
+        state.RecordDelivered(delivered, s_observedAt);
 
-        var preparation = state.PrepareCandidate(
+        TelegramCandidatePreparation preparation = state.PrepareCandidate(
             related,
-            ObservedAt.Add(Retention).AddMinutes(1));
+            s_observedAt.Add(s_retention).AddMinutes(1));
 
         Assert.False(preparation.ContinuesDeliveredEpisode);
     }
 
     [Fact]
-    public void PrepareCandidate_CoalescesPendingClusterAndPreservesRetryStart()
+    public void PrepareCandidateCoalescesPendingClusterAndPreservesRetryStart()
     {
-        var state = CreateState();
-        var firstSeenUtc = ObservedAt.AddMinutes(10);
-        var first = Cluster(Detection("first", ObservedAt, 50, 30, frpMegawatts: 100));
-        var later = Cluster(Detection(
-            "later",
-            ObservedAt.AddMinutes(5),
-            50.01,
-            30.01,
+        TelegramAutomaticNotificationState state = CreateState();
+        DateTimeOffset firstSeenUtc = s_observedAt.AddMinutes(10);
+        NotificationCluster first = Cluster(Detection(id: "first", s_observedAt, latitude: 50, longitude: 30, frpMegawatts: 100));
+        NotificationCluster later = Cluster(Detection(
+            id: "later",
+            s_observedAt.AddMinutes(5),
+            latitude: 50.01,
+            longitude: 30.01,
             frpMegawatts: 200));
-        state.AddPending(new(first, firstSeenUtc, PreviewSelection, "first summary"));
+        state.AddPending(new(first, firstSeenUtc, s_previewSelection, "first summary"));
 
-        var preparation = state.PrepareCandidate(later, firstSeenUtc.AddMinutes(20));
+        TelegramCandidatePreparation preparation = state.PrepareCandidate(later, firstSeenUtc.AddMinutes(20));
 
         Assert.False(preparation.ContinuesDeliveredEpisode);
         Assert.Equal(firstSeenUtc, preparation.FirstSeenUtc);
         Assert.Equal(0, state.PendingCount);
         Assert.Equal(2, preparation.Cluster.Members.Length);
         Assert.Equal("later", preparation.Cluster.Representative.Id);
-        Assert.Contains(preparation.Cluster.Members, member => member.Id == "first");
-        Assert.Contains(preparation.Cluster.Members, member => member.Id == "later");
+        Assert.Contains(preparation.Cluster.Members, member => "first".Equals(member.Id, StringComparison.Ordinal));
+        Assert.Contains(preparation.Cluster.Members, member => "later".Equals(member.Id, StringComparison.Ordinal));
     }
 
     [Fact]
-    public void TrySuppressPending_RemovesAndExtendsDeliveredEpisode()
+    public void TrySuppressPendingRemovesAndExtendsDeliveredEpisode()
     {
-        var state = CreateState();
-        var delivered = Cluster(Detection("delivered", ObservedAt, 0, 0));
-        var pending = Cluster(Detection("pending", ObservedAt.AddMinutes(60), 0, 0.04));
-        var continuation = Cluster(Detection(
-            "continuation",
-            ObservedAt.AddMinutes(120),
-            0,
-            0.08));
-        state.AddPending(new(pending, ObservedAt, PreviewSelection, null));
-        state.RecordDelivered(delivered, ObservedAt);
+        TelegramAutomaticNotificationState state = CreateState();
+        NotificationCluster delivered = Cluster(Detection(id: "delivered", s_observedAt, latitude: 0, longitude: 0));
+        NotificationCluster pending = Cluster(Detection(id: "pending", s_observedAt.AddMinutes(60), latitude: 0, longitude: 0.04));
+        NotificationCluster continuation = Cluster(Detection(
+            id: "continuation",
+            s_observedAt.AddMinutes(120),
+            latitude: 0,
+            longitude: 0.08));
+        state.AddPending(new(pending, s_observedAt, s_previewSelection, null));
+        state.RecordDelivered(delivered, s_observedAt);
 
-        var suppressedPending = state.TrySuppressPending(0, ObservedAt.AddMinutes(60));
-        var preparation = state.PrepareCandidate(
+        bool suppressedPending = state.TrySuppressPending(index: 0, s_observedAt.AddMinutes(60));
+        TelegramCandidatePreparation preparation = state.PrepareCandidate(
             continuation,
-            ObservedAt.AddMinutes(120));
+            s_observedAt.AddMinutes(120));
 
         Assert.True(suppressedPending);
         Assert.Equal(0, state.PendingCount);
@@ -157,19 +157,19 @@ public sealed class TelegramAutomaticNotificationStateTests
     [Fact]
     public void RemovingUndeliveredPendingDoesNotEstablishEpisode()
     {
-        var state = CreateState();
-        var pending = Cluster(Detection("pending", ObservedAt, 50, 30));
-        var continuation = Cluster(Detection(
-            "continuation",
-            ObservedAt.AddMinutes(5),
-            50.01,
-            30.01));
-        state.AddPending(new(pending, ObservedAt, PreviewSelection, null));
+        TelegramAutomaticNotificationState state = CreateState();
+        NotificationCluster pending = Cluster(Detection(id: "pending", s_observedAt, latitude: 50, longitude: 30));
+        NotificationCluster continuation = Cluster(Detection(
+            id: "continuation",
+            s_observedAt.AddMinutes(5),
+            latitude: 50.01,
+            longitude: 30.01));
+        state.AddPending(new(pending, s_observedAt, s_previewSelection, null));
 
         state.RemovePendingAt(0);
-        var preparation = state.PrepareCandidate(
+        TelegramCandidatePreparation preparation = state.PrepareCandidate(
             continuation,
-            ObservedAt.AddMinutes(5));
+            s_observedAt.AddMinutes(5));
 
         Assert.False(preparation.ContinuesDeliveredEpisode);
     }
@@ -177,25 +177,25 @@ public sealed class TelegramAutomaticNotificationStateTests
     [Fact]
     public void UndeliveredPendingRemainsEligibleForRetry()
     {
-        var state = CreateState();
-        var pending = Cluster(Detection("pending", ObservedAt, 50, 30));
-        state.AddPending(new(pending, ObservedAt, PreviewSelection, null));
+        TelegramAutomaticNotificationState state = CreateState();
+        NotificationCluster pending = Cluster(Detection(id: "pending", s_observedAt, latitude: 50, longitude: 30));
+        state.AddPending(new(pending, s_observedAt, s_previewSelection, null));
 
-        var suppressed = state.TrySuppressPending(0, ObservedAt.AddMinutes(5));
+        bool suppressed = state.TrySuppressPending(index: 0, s_observedAt.AddMinutes(5));
 
         Assert.False(suppressed);
         Assert.Equal(1, state.PendingCount);
-        Assert.Equal(pending.Id, state.GetPending(0).Cluster.Id);
+        Assert.Equal(pending.Id, state.GetPending(index: 0).Cluster.Id);
     }
 
     private static TelegramAutomaticNotificationState CreateState() =>
-        new(RadiusKilometers, TimeWindow, Retention);
+        new(RadiusKilometers, s_timeWindow, s_retention);
 
     private static NotificationCluster Cluster(params Anomaly[] detections) =>
         Assert.Single(NotificationClustering.Create(
             detections,
             RadiusKilometers,
-            TimeWindow));
+            s_timeWindow));
 
     private static Anomaly Detection(
         string id,
@@ -207,22 +207,22 @@ public sealed class TelegramAutomaticNotificationStateTests
         string satellite = "N") =>
         new(
             id,
-            "RUS",
+            CountryCode: "RUS",
             source,
             satellite,
-            "VIIRS",
+            Instrument: "VIIRS",
             latitude,
             longitude,
             acquiredAtUtc,
-            "D",
-            350,
-            300,
+            DayNight: "D",
+            BrightnessKelvin: 350,
+            SecondaryBrightnessKelvin: 300,
             frpMegawatts,
-            0.4,
-            0.4,
-            "n",
-            null,
-            "nominal",
-            "2.0NRT",
-            $"https://example.test/{id}");
+            ScanKilometers: 0.4,
+            TrackKilometers: 0.4,
+            ConfidenceRaw: "n",
+            ConfidencePercent: null,
+            ConfidenceCategory: "nominal",
+            Version: "2.0NRT",
+            GoogleMapsUrl: $"https://example.test/{id}");
 }

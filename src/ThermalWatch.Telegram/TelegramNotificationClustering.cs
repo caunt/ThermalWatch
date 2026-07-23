@@ -18,19 +18,16 @@ internal static class TelegramNotificationClustering
         var newIds = newDetections
             .Select(detection => detection.Id)
             .ToHashSet(StringComparer.Ordinal);
-        var clusteringDetections = includeActiveContext
-            ? activeDetections
+        Anomaly[] clusteringDetections = includeActiveContext
+            ? [.. activeDetections
                 .Where(detection => newIds.Contains(detection.Id)
                     || newDetections.Any(newDetection => AreRelated(
                         detection,
                         newDetection,
                         radiusKilometers,
                         timeWindow)))
-                .DistinctBy(detection => detection.Id)
-                .ToArray()
-            : newDetections
-                .DistinctBy(detection => detection.Id)
-                .ToArray();
+                .DistinctBy(detection => detection.Id)]
+            : [.. newDetections.DistinctBy(detection => detection.Id)];
 
         return
         [
@@ -68,12 +65,12 @@ internal static class TelegramNotificationClustering
         TimeSpan timeWindow)
     {
         if (clusters.Count == 0)
-            throw new ArgumentException("At least one cluster is required.", nameof(clusters));
+            throw new ArgumentException(message: "At least one cluster is required.", nameof(clusters));
 
         if (clusters.Count == 1)
             return clusters[0];
 
-        var components = NotificationClustering.Create(
+        ImmutableArray<NotificationCluster> components = NotificationClustering.Create(
             clusters
                 .SelectMany(cluster => cluster.Members)
                 .DistinctBy(detection => detection.Id)
@@ -83,6 +80,6 @@ internal static class TelegramNotificationClustering
 
         return components.Length == 1
             ? components[0]
-            : throw new InvalidOperationException("Only connected Telegram clusters can be merged.");
+            : throw new InvalidOperationException(message: "Only connected Telegram clusters can be merged.");
     }
 }
