@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      - run: node --check src/ThermalWatch.Api/wwwroot/map-support.js
-      - run: node --check src/ThermalWatch.Api/wwwroot/app.js
+      - run: node --check src/ThermalWatch.Viewer/wwwroot/map-support.js
+      - run: node --check src/ThermalWatch.Viewer/wwwroot/app.js
       - run: node --test tests/viewer-map-support.test.js
       - run: dotnet test ThermalWatch.slnx -c Release --nologo

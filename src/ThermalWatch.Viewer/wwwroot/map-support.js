@@ -9,212 +9,107 @@
 })(typeof globalThis === "object" ? globalThis : this, () => {
   "use strict";
 
-  const gibsProducts = Object.freeze([
-    Object.freeze({
-      id: "modis-terra",
-      label: "MODIS Terra",
-      layer: "MODIS_Terra_CorrectedReflectance_TrueColor"
-    }),
-    Object.freeze({
-      id: "modis-aqua",
-      label: "MODIS Aqua",
-      layer: "MODIS_Aqua_CorrectedReflectance_TrueColor"
-    }),
-    Object.freeze({
-      id: "viirs-noaa21",
-      label: "VIIRS NOAA-21",
-      layer: "VIIRS_NOAA21_CorrectedReflectance_TrueColor"
-    }),
-    Object.freeze({
-      id: "viirs-noaa20",
-      label: "VIIRS NOAA-20",
-      layer: "VIIRS_NOAA20_CorrectedReflectance_TrueColor"
-    }),
-    Object.freeze({
-      id: "viirs-snpp",
-      label: "VIIRS Suomi-NPP",
-      layer: "VIIRS_SNPP_CorrectedReflectance_TrueColor"
-    })
-  ]);
+  const imageryCoverageHeader = "X-ThermalWatch-Imagery-Coverage";
+  const imageryCoverageValues = new Set(["complete", "partial", "none"]);
 
-  const gibsTileSize = 256;
-  const gibsNoDataMaximum = 12;
-
-  function gibsTileUrl(product, coordinates) {
-    if (!product?.layer)
-      throw new Error("A NASA GIBS product layer is required.");
+  function gibsTileApiUrl(coordinates) {
     if (!coordinates
         || !Number.isInteger(coordinates.x)
         || !Number.isInteger(coordinates.y)
         || !Number.isInteger(coordinates.z)) {
-      throw new Error("Integer NASA GIBS tile coordinates are required.");
+      throw new Error("Integer map tile coordinates are required.");
     }
 
-    return "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/"
-      + `${encodeURIComponent(product.layer)}/default/default/`
-      + `GoogleMapsCompatible_Level9/${coordinates.z}/${coordinates.y}/${coordinates.x}.jpeg`;
+    return `/api/viewer/imagery/gibs/${coordinates.z}/${coordinates.x}/${coordinates.y}.png`;
   }
 
-  function isGibsNoDataPixel(pixels, offset, maximum = gibsNoDataMaximum) {
-    return pixels[offset + 3] === 0
-      || (pixels[offset] <= maximum
-        && pixels[offset + 1] <= maximum
-        && pixels[offset + 2] <= maximum);
-  }
+  function loadGibsTile(image, coordinates, options = {}) {
+    if (!image)
+      throw new Error("An image element is required to load a map tile.");
 
-  function mergeGibsPixels(destination, source, maximum = gibsNoDataMaximum) {
-    if (!destination
-        || !source
-        || destination.length !== source.length
-        || destination.length % 4 !== 0) {
-      throw new Error("Equal RGBA pixel buffers are required for NASA GIBS compositing.");
-    }
-
-    let filledPixels = 0;
-    for (let offset = 0; offset < destination.length; offset += 4) {
-      if (destination[offset + 3] !== 0 || isGibsNoDataPixel(source, offset, maximum))
-        continue;
-
-      destination[offset] = source[offset];
-      destination[offset + 1] = source[offset + 1];
-      destination[offset + 2] = source[offset + 2];
-      destination[offset + 3] = source[offset + 3];
-      filledPixels += 1;
-    }
-
-    return filledPixels;
-  }
-
-  function readGibsImagePixels(image, canvas) {
-    canvas.width = gibsTileSize;
-    canvas.height = gibsTileSize;
-    const context = canvas.getContext("2d", { willReadFrequently: true });
-    if (!context)
-      throw new Error("A 2D canvas context is required for NASA GIBS compositing.");
-
-    context.clearRect(0, 0, gibsTileSize, gibsTileSize);
-    context.drawImage(image, 0, 0, gibsTileSize, gibsTileSize);
-    return context.getImageData(0, 0, gibsTileSize, gibsTileSize).data;
-  }
-
-  function writeGibsPixels(canvas, pixels) {
-    const context = canvas.getContext("2d");
-    if (!context)
-      throw new Error("A 2D canvas context is required for NASA GIBS compositing.");
-
-    const imageData = context.createImageData(gibsTileSize, gibsTileSize);
-    imageData.data.set(pixels);
-    context.putImageData(imageData, 0, 0);
-  }
-
-  function loadGibsTile(canvas, coordinates, options = {}) {
-    if (!canvas)
-      throw new Error("A canvas element is required to load a NASA GIBS tile.");
-
-    const products = options.products ?? gibsProducts;
-    const buildUrl = options.buildUrl ?? gibsTileUrl;
-    const createImage = options.createImage ?? (() => new globalThis.Image());
-    const createCanvas = options.createCanvas
-      ?? (() => globalThis.document.createElement("canvas"));
-    let scratchCanvas = null;
-    const readPixels = options.readPixels ?? (image => {
-      scratchCanvas ??= createCanvas();
-      return readGibsImagePixels(image, scratchCanvas);
-    });
-    const writePixels = options.writePixels ?? writeGibsPixels;
+    const fetchFunction = options.fetchFunction ?? globalThis.fetch;
+    const createObjectUrl = options.createObjectUrl ?? (blob => globalThis.URL.createObjectURL(blob));
+    const revokeObjectUrl = options.revokeObjectUrl ?? (url => globalThis.URL.revokeObjectURL(url));
+    const createAbortController = options.createAbortController ?? (() => new globalThis.AbortController());
     const onComplete = options.onComplete ?? (() => {});
-    const totalPixels = gibsTileSize * gibsTileSize;
-    const output = new Uint8ClampedArray(totalPixels * 4);
-    const usedProducts = [];
-    let remainingPixels = totalPixels;
-    let productIndex = 0;
+    const onError = options.onError ?? (() => {});
+    const controller = createAbortController();
     let active = true;
-    let image = null;
-
-    canvas.width = gibsTileSize;
-    canvas.height = gibsTileSize;
+    let objectUrl = null;
 
     const clearImageHandlers = () => {
-      if (!image)
-        return;
-
       image.onload = null;
       image.onerror = null;
     };
 
-    const complete = () => {
+    const releaseObjectUrl = () => {
+      if (objectUrl) {
+        revokeObjectUrl(objectUrl);
+        objectUrl = null;
+      }
+    };
+
+    void (async () => {
+      try {
+        const response = await fetchFunction(gibsTileApiUrl(coordinates), {
+          cache: "default",
+          headers: { Accept: "image/png" },
+          signal: controller.signal
+        });
+        if (!response.ok)
+          throw new Error(`The imagery API returned HTTP ${response.status}.`);
+
+        const mediaType = response.headers.get("content-type")?.split(";", 1)[0]?.trim();
+        if (mediaType?.toLowerCase() !== "image/png")
+          throw new Error("The imagery API returned an unsupported response.");
+
+        const coverageHeader = response.headers.get(imageryCoverageHeader)?.toLowerCase();
+        const coverage = imageryCoverageValues.has(coverageHeader) ? coverageHeader : "none";
+        const blob = await response.blob();
+        if (!active)
+          return;
+
+        objectUrl = createObjectUrl(blob);
+        image.decoding = "async";
+        image.onload = () => {
+          if (!active)
+            return;
+
+          active = false;
+          clearImageHandlers();
+          releaseObjectUrl();
+          onComplete({ coverage });
+        };
+        image.onerror = () => {
+          if (!active)
+            return;
+
+          active = false;
+          clearImageHandlers();
+          releaseObjectUrl();
+          onError(new Error("The imagery API returned an unreadable PNG tile."));
+        };
+        image.src = objectUrl;
+      } catch (error) {
+        if (!active)
+          return;
+
+        active = false;
+        clearImageHandlers();
+        releaseObjectUrl();
+        onError(error);
+      }
+    })();
+
+    return () => {
       if (!active)
         return;
 
       active = false;
+      controller.abort();
       clearImageHandlers();
-      writePixels(canvas, output);
-      onComplete({
-        available: remainingPixels < totalPixels,
-        complete: remainingPixels === 0,
-        unresolvedPixels: remainingPixels,
-        usedProducts: [...usedProducts]
-      });
-    };
-
-    const attempt = () => {
-      const product = products[productIndex];
-      if (!product) {
-        complete();
-        return;
-      }
-
-      image = createImage();
-      image.crossOrigin = "anonymous";
-      image.decoding = "async";
-      image.onload = () => {
-        if (!active)
-          return;
-
-        clearImageHandlers();
-        let source;
-        try {
-          source = readPixels(image);
-        } catch {
-          productIndex += 1;
-          attempt();
-          return;
-        }
-
-        const filledPixels = mergeGibsPixels(output, source);
-        if (filledPixels > 0) {
-          usedProducts.push({ product, productIndex, filledPixels });
-          remainingPixels -= filledPixels;
-        }
-
-        if (remainingPixels === 0) {
-          complete();
-          return;
-        }
-
-        productIndex += 1;
-        attempt();
-      };
-      image.onerror = () => {
-        if (!active)
-          return;
-
-        clearImageHandlers();
-        productIndex += 1;
-        attempt();
-      };
-      image.src = buildUrl(product, coordinates);
-    };
-
-    attempt();
-    return () => {
-      if (!active) {
-        return;
-      }
-
-      active = false;
-      clearImageHandlers();
-      image?.removeAttribute?.("src");
+      image.removeAttribute?.("src");
+      releaseObjectUrl();
     };
   }
 
@@ -222,7 +117,7 @@
     let reportedUnresolvedCoverage = false;
 
     return result => {
-      if (result.complete || reportedUnresolvedCoverage)
+      if (result.coverage === "complete" || reportedUnresolvedCoverage)
         return;
 
       reportedUnresolvedCoverage = true;
@@ -365,12 +260,8 @@
   }
 
   return Object.freeze({
-    gibsProducts,
-    gibsTileSize,
-    gibsNoDataMaximum,
-    gibsTileUrl,
-    isGibsNoDataPixel,
-    mergeGibsPixels,
+    imageryCoverageHeader,
+    gibsTileApiUrl,
     loadGibsTile,
     createGibsWarningReporter,
     createGoogleMapsLoader

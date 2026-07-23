@@ -5,6 +5,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
+    <PackageReference Include="StbImageSharp" />
+    <PackageReference Include="StbImageWriteSharp" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Data/ne_50m_admin_0_countries.geojson.gz" />

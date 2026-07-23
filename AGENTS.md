@@ -4,10 +4,11 @@ ThermalWatch is a deliberately small .NET 10 service that polls NASA FIRMS near-
 
 ## Repository map
 
-- `src/ThermalWatch.Api/` — executable host, polling service, HTTP routes, environment configuration, and plain-JavaScript viewer.
+- `src/ThermalWatch.Api/` — sole executable host, polling service, application configuration, public anomaly/Telegram routes, and runtime composition.
 - `src/ThermalWatch.Core/` — FIRMS/GIBS clients, immutable models and snapshots, geography, country boundaries, and clustering.
 - `src/ThermalWatch.Telegram/` — Telegram validation, selection, filtering, formatting, and delivery.
-- `tests/` — xUnit v3 tests for all three projects plus documentation drift checks.
+- `src/ThermalWatch.Viewer/` — viewer routes, configuration, root-mounted static assets, and plain-JavaScript provider adapters.
+- `tests/` — xUnit v3 tests for all four projects, Node viewer tests, and documentation drift checks.
 - `docs/` — routed architecture, development, operations, domain, component, and decision documentation.
 - `.agent/PLANS.md` — ExecPlan requirements and format.
 - `.agents/skills/` — reusable repository-local Codex procedures.
@@ -38,8 +39,8 @@ dotnet test tests/ThermalWatch.Tests.csproj -c Release --nologo --filter FullyQu
 Viewer JavaScript validation:
 
 ```bash
-node --check src/ThermalWatch.Api/wwwroot/map-support.js
-node --check src/ThermalWatch.Api/wwwroot/app.js
+node --check src/ThermalWatch.Viewer/wwwroot/map-support.js
+node --check src/ThermalWatch.Viewer/wwwroot/app.js
 node --test tests/viewer-map-support.test.js
 ```
 
@@ -55,7 +56,7 @@ See [development guidance](docs/development.md) for prerequisites, safe local se
 - Country ingestion is primary. Area fallback is enabled only for a verified country-feature outage and succeeds atomically across all required tiles.
 - Telegram land-cover unavailability fails open; an exact preview requirement fails closed after its retry window.
 - The browser viewer consumes existing API contracts. Keep provider-specific map code behind its current adapter boundary and preserve common marker behavior.
-- Keep dependency direction `Api -> Telegram -> Core` and `Api -> Core`; do not make Core depend on host or Telegram concerns.
+- Keep dependency direction `Api -> Viewer -> Core`, `Api -> Telegram -> Core`, and `Api -> Core`; do not make Core depend on host, viewer, or Telegram concerns.
 - Keep the frontend framework-free unless the repository deliberately adopts a frontend toolchain.
 - Treat warnings as errors and preserve deterministic, nullable-enabled builds.
 

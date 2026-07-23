@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#081216">
   <title>ThermalWatch</title>
   <link
     rel="stylesheet"
@@ -20,17 +21,22 @@
   <script src="/app.js" defer></script>
 </head>
 <body>
+  <a class="skip-link" href="#details-panel">Skip to anomaly details</a>
+
   <main class="app-shell">
     <header class="toolbar">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true"></span>
+      <div class="brand" aria-label="ThermalWatch">
+        <span class="brand-mark" aria-hidden="true"><span></span></span>
         <div>
-          <h1>ThermalWatch</h1>
-          <p>Current FIRMS heat anomalies</p>
+          <div class="brand-title-row">
+            <h1>ThermalWatch</h1>
+            <span class="live-label">Near real time</span>
+          </div>
+          <p>Satellite thermal anomaly monitor</p>
         </div>
       </div>
 
-      <div class="toolbar-controls">
+      <div class="toolbar-controls" aria-label="Viewer controls">
         <label class="provider-control" for="provider-select">
           <span>Map imagery</span>
           <select id="provider-select" disabled>
@@ -39,21 +45,36 @@
           </select>
         </label>
         <button id="refresh-button" class="secondary-button" type="button" disabled>
-          Refresh data
+          <span class="refresh-icon" aria-hidden="true">↻</span>
+          <span id="refresh-button-label">Refresh data</span>
         </button>
       </div>
     </header>
 
     <section id="notice" class="notice" aria-live="polite" hidden></section>
 
-    <section class="snapshot-bar" aria-live="polite">
-      <span id="count-summary">Loading anomalies…</span>
-      <span id="health-summary"></span>
-      <span id="generated-summary"></span>
+    <section class="snapshot-bar" aria-label="Snapshot status" aria-live="polite">
+      <div class="status-chip">
+        <span class="status-label">Observations</span>
+        <strong id="count-summary" class="status-value">Loading anomalies…</strong>
+      </div>
+      <div class="status-chip">
+        <span class="status-label">Data health</span>
+        <strong id="health-summary" class="status-value">Checking sources…</strong>
+      </div>
+      <div class="status-chip status-chip-wide">
+        <span class="status-label">Snapshot</span>
+        <strong id="generated-summary" class="status-value">Waiting for API…</strong>
+      </div>
+      <p class="context-note">Observations indicate heat, not confirmed wildfire activity.</p>
     </section>
 
     <section class="workspace">
       <div class="map-panel">
+        <div class="map-heading" aria-hidden="true">
+          <span class="map-heading-kicker">Active window</span>
+          <span>Geographic overview</span>
+        </div>
         <div id="map" aria-label="Interactive anomaly map"></div>
         <div id="map-loading" class="map-loading" role="status">
           <span class="spinner" aria-hidden="true"></span>
@@ -62,9 +83,10 @@
         <div id="provider-caption" class="provider-caption"></div>
       </div>
 
-      <aside id="details-panel" class="details-panel" aria-live="polite">
+      <aside id="details-panel" class="details-panel" aria-label="Anomaly inspector" aria-live="polite" tabindex="-1">
         <div class="details-empty">
-          <p class="eyebrow">Anomaly details</p>
+          <span class="empty-orbit" aria-hidden="true"><span></span></span>
+          <p class="eyebrow">Anomaly inspector</p>
           <h2>Loading observations…</h2>
           <p>Select a marker to inspect its complete FIRMS record and source diagnostics.</p>
         </div>
@@ -72,8 +94,8 @@
     </section>
 
     <footer>
-      Thermal anomalies can represent fires, industrial heat, gas flares, or other hot surfaces.
-      Imagery is contextual and may not match the exact detection time.
+      <span>Thermal anomalies can represent fires, industrial heat, gas flares, or other hot surfaces.</span>
+      <span>Imagery is contextual and may not match the exact detection time.</span>
     </footer>
   </main>
 

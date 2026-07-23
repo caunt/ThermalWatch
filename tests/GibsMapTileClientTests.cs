@@ -1,0 +1,313 @@
+using System.Net;
+using System.Net.Http.Headers;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
+using StbImageSharp;
+using StbImageWriteSharp;
+using ThermalWatch.Core;
+
+namespace ThermalWatch.Tests;
+
+public sealed class GibsMapTileClientTests
+{
+    [Theory]
+    [InlineData(0, 0, 0, true)]
+    [InlineData(9, 511, 511, true)]
+    [InlineData(-1, 0, 0, false)]
+    [InlineData(10, 0, 0, false)]
+    [InlineData(2, -1, 0, false)]
+    [InlineData(2, 4, 0, false)]
+    [InlineData(2, 0, 4, false)]
+    public void TryCreate_ValidatesWebMercatorTileCoordinates(
+        int zoom,
+        int x,
+        int y,
+        bool expected)
+    {
+        Assert.Equal(expected, GibsMapTileCoordinates.TryCreate(zoom, x, y, out _));
+    }
+
+    [Fact]
+    public async Task GetMapTileAsync_StopsAfterCompleteTerraCoverage()
+    {
+        var handler = new TileHandler(_ => JpegResponse(SolidJpeg(42, 72, 112)));
+        using var cache = CreateCache();
+        var client = CreateClient(handler, cache);
+
+        var tile = await client.GetMapTileAsync(
+            Coordinates(6, 37, 21),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(GibsMapTileCoverage.Complete, tile.Coverage);
+        Assert.Equal(
+            "https://gibs.example.test/wmts/epsg3857/best/"
+            + "MODIS_Terra_CorrectedReflectance_TrueColor/default/default/"
+            + "GoogleMapsCompatible_Level9/6/21/37.jpeg",
+            Assert.Single(handler.Requests).AbsoluteUri);
+        AssertPixelNear(tile.PngBytes, 0, 42, 72, 112, byte.MaxValue);
+    }
+
+    [Fact]
+    public async Task GetMapTileAsync_FillsTerraHolesFromAquaWithoutReplacingTerra()
+    {
+        var terra = CreateJpeg((x, _) => x < 128
+            ? ((byte)82, (byte)46, (byte)34)
+            : ((byte)0, (byte)0, (byte)0));
+        var aqua = SolidJpeg(31, 91, 43);
+        var handler = new TileHandler(index => JpegResponse(index == 0 ? terra : aqua));
+        using var cache = CreateCache();
+        var client = CreateClient(handler, cache);
+
+        var tile = await client.GetMapTileAsync(
+            Coordinates(3, 1, 2),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(GibsMapTileCoverage.Complete, tile.Coverage);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Contains("MODIS_Terra", handler.Requests[0].AbsoluteUri, StringComparison.Ordinal);
+        Assert.Contains("MODIS_Aqua", handler.Requests[1].AbsoluteUri, StringComparison.Ordinal);
+        AssertPixelNear(tile.PngBytes, 20, 82, 46, 34, byte.MaxValue);
+        AssertPixelNear(tile.PngBytes, 230, 31, 91, 43, byte.MaxValue);
+    }
+
+    [Fact]
+    public async Task GetMapTileAsync_ContinuesThroughRequestMediaAndDecodeFailuresInOrder()
+    {
+        var valid = SolidJpeg(55, 85, 115);
+        var handler = new TileHandler(index => index switch
+        {
+            0 => new(HttpStatusCode.BadGateway),
+            1 => BytesResponse(valid, "image/png"),
+            2 => JpegResponse([1, 2, 3, 4]),
+            _ => JpegResponse(valid)
+        });
+        using var cache = CreateCache();
+        var client = CreateClient(handler, cache);
+
+        var tile = await client.GetMapTileAsync(
+            Coordinates(2, 1, 1),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(GibsMapTileCoverage.Complete, tile.Coverage);
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Contains("MODIS_Terra", handler.Requests[0].AbsoluteUri, StringComparison.Ordinal);
+        Assert.Contains("MODIS_Aqua", handler.Requests[1].AbsoluteUri, StringComparison.Ordinal);
+        Assert.Contains("VIIRS_NOAA21", handler.Requests[2].AbsoluteUri, StringComparison.Ordinal);
+        Assert.Contains("VIIRS_NOAA20", handler.Requests[3].AbsoluteUri, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetMapTileAsync_RejectsOversizedSourceBeforeReadingIt()
+    {
+        var valid = SolidJpeg(44, 74, 104);
+        var handler = new TileHandler(index =>
+        {
+            if (index > 0)
+                return JpegResponse(valid);
+
+            var response = JpegResponse([1]);
+            response.Content.Headers.ContentLength = 1024 * 1024 + 1;
+            return response;
+        });
+        using var cache = CreateCache();
+        var client = CreateClient(handler, cache);
+
+        var tile = await client.GetMapTileAsync(
+            Coordinates(1, 0, 0),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(GibsMapTileCoverage.Complete, tile.Coverage);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task GetMapTileAsync_ReturnsTransparentPngWhenEveryProductIsNoData()
+    {
+        var handler = new TileHandler(_ => JpegResponse(SolidJpeg(0, 0, 0)));
+        using var cache = CreateCache();
+        var client = CreateClient(handler, cache);
+
+        var tile = await client.GetMapTileAsync(
+            Coordinates(2, 1, 1),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(GibsMapTileCoverage.None, tile.Coverage);
+        Assert.Equal(5, handler.Requests.Count);
+        AssertPixelNear(tile.PngBytes, 0, 0, 0, 0, 0);
+    }
+
+    [Fact]
+    public async Task GetMapTileAsync_ReturnsPartialCoverageAfterEveryProduct()
+    {
+        var partial = CreateJpeg((x, _) => x < 128
+            ? ((byte)65, (byte)95, (byte)125)
+            : ((byte)0, (byte)0, (byte)0));
+        var black = SolidJpeg(0, 0, 0);
+        var handler = new TileHandler(index => JpegResponse(index == 4 ? partial : black));
+        using var cache = CreateCache();
+        var client = CreateClient(handler, cache);
+
+        var tile = await client.GetMapTileAsync(
+            Coordinates(2, 1, 1),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(GibsMapTileCoverage.Partial, tile.Coverage);
+        Assert.Equal(5, handler.Requests.Count);
+        AssertPixelNear(tile.PngBytes, 20, 65, 95, 125, byte.MaxValue);
+        AssertPixelNear(tile.PngBytes, 230, 0, 0, 0, 0);
+    }
+
+    [Fact]
+    public async Task GetMapTileAsync_CachesOnlyCompleteTiles()
+    {
+        using var completeCache = CreateCache();
+        var completeHandler = new TileHandler(_ => JpegResponse(SolidJpeg(40, 70, 100)));
+        var completeClient = CreateClient(completeHandler, completeCache);
+        var coordinates = Coordinates(2, 1, 1);
+
+        var firstComplete = await completeClient.GetMapTileAsync(
+            coordinates,
+            TestContext.Current.CancellationToken);
+        var secondComplete = await completeClient.GetMapTileAsync(
+            coordinates,
+            TestContext.Current.CancellationToken);
+
+        Assert.Same(firstComplete, secondComplete);
+        Assert.Single(completeHandler.Requests);
+
+        using var emptyCache = CreateCache();
+        var emptyHandler = new TileHandler(_ => JpegResponse(SolidJpeg(0, 0, 0)));
+        var emptyClient = CreateClient(emptyHandler, emptyCache);
+        await emptyClient.GetMapTileAsync(coordinates, TestContext.Current.CancellationToken);
+        await emptyClient.GetMapTileAsync(coordinates, TestContext.Current.CancellationToken);
+
+        Assert.Equal(10, emptyHandler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task GetMapTileAsync_PropagatesCallerCancellation()
+    {
+        var handler = new BlockingHandler();
+        using var cache = CreateCache();
+        var client = CreateClient(handler, cache);
+        using var cancellation = new CancellationTokenSource();
+
+        var loading = client.GetMapTileAsync(Coordinates(2, 1, 1), cancellation.Token);
+        await handler.Started.Task.WaitAsync(
+            TimeSpan.FromSeconds(2),
+            TestContext.Current.CancellationToken);
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => loading);
+    }
+
+    private static GibsMapTileClient CreateClient(HttpMessageHandler handler, IMemoryCache cache) =>
+        new(
+            new HttpClient(handler)
+            {
+                BaseAddress = new("https://gibs.example.test/")
+            },
+            cache,
+            NullLogger<GibsMapTileClient>.Instance);
+
+    private static MemoryCache CreateCache() =>
+        new(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+
+    private static GibsMapTileCoordinates Coordinates(int zoom, int x, int y)
+    {
+        Assert.True(GibsMapTileCoordinates.TryCreate(zoom, x, y, out var coordinates));
+        return coordinates;
+    }
+
+    private static HttpResponseMessage JpegResponse(byte[] bytes) =>
+        BytesResponse(bytes, "image/jpeg");
+
+    private static HttpResponseMessage BytesResponse(byte[] bytes, string mediaType)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(bytes)
+        };
+        response.Content.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+        return response;
+    }
+
+    private static byte[] SolidJpeg(byte red, byte green, byte blue) =>
+        CreateJpeg((_, _) => (red, green, blue));
+
+    private static byte[] CreateJpeg(Func<int, int, (byte Red, byte Green, byte Blue)> pixel)
+    {
+        const int size = 256;
+        var bytes = new byte[size * size * 3];
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                var color = pixel(x, y);
+                var offset = (y * size + x) * 3;
+                bytes[offset] = color.Red;
+                bytes[offset + 1] = color.Green;
+                bytes[offset + 2] = color.Blue;
+            }
+        }
+
+        using var stream = new MemoryStream();
+        new ImageWriter().WriteJpg(
+            bytes,
+            size,
+            size,
+            StbImageWriteSharp.ColorComponents.RedGreenBlue,
+            stream,
+            100);
+        return stream.ToArray();
+    }
+
+    private static void AssertPixelNear(
+        byte[] png,
+        int x,
+        byte red,
+        byte green,
+        byte blue,
+        byte alpha)
+    {
+        var image = ImageResult.FromMemory(
+            png,
+            StbImageSharp.ColorComponents.RedGreenBlueAlpha);
+        Assert.Equal(256, image.Width);
+        Assert.Equal(256, image.Height);
+        var offset = x * 4;
+        Assert.InRange(image.Data[offset], Math.Max(0, red - 4), Math.Min(255, red + 4));
+        Assert.InRange(image.Data[offset + 1], Math.Max(0, green - 4), Math.Min(255, green + 4));
+        Assert.InRange(image.Data[offset + 2], Math.Max(0, blue - 4), Math.Min(255, blue + 4));
+        Assert.Equal(alpha, image.Data[offset + 3]);
+    }
+
+    private sealed class TileHandler(Func<int, HttpResponseMessage> responseFactory) : HttpMessageHandler
+    {
+        public List<Uri> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(request.RequestUri!);
+            return Task.FromResult(responseFactory(Requests.Count - 1));
+        }
+    }
+
+    private sealed class BlockingHandler : HttpMessageHandler
+    {
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("The blocking handler should be cancelled.");
+        }
+    }
+}

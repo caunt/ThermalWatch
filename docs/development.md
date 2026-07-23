@@ -9,7 +9,7 @@
 
 - .NET 10 SDK. The repository has no `global.json`; the target framework and C# version are set in [Directory.Build.props](../Directory.Build.props).
 - A valid NASA FIRMS MAP_KEY and internet access to run the service against FIRMS.
-- Node.js 22 only when changing the plain JavaScript viewer and running its syntax checks and dependency-free unit tests.
+- Node.js 24 only when changing the plain JavaScript viewer and running its syntax checks and dependency-free unit tests.
 - Docker is optional and can supply the official .NET SDK when it is not installed locally.
 
 Do not store credentials in shell history, tracked files, plans, logs, or documentation. A user-authorized, ignored repository-root `.env` is the only local file exception for live development credentials.
@@ -27,11 +27,11 @@ dotnet format ThermalWatch.slnx --verify-no-changes --no-restore
 
 Builds are deterministic, nullable-enabled, and treat warnings as errors. `dotnet format` uses the SDK defaults because the repository has no separate formatter configuration.
 
-The pull-request workflow configures Node.js 22, validates the viewer, and then runs the independently restorable .NET test command:
+The pull-request workflow configures Node.js 24, validates the Viewer project's static assets, and then runs the independently restorable .NET test command:
 
 ```bash
-node --check src/ThermalWatch.Api/wwwroot/map-support.js
-node --check src/ThermalWatch.Api/wwwroot/app.js
+node --check src/ThermalWatch.Viewer/wwwroot/map-support.js
+node --check src/ThermalWatch.Viewer/wwwroot/app.js
 node --test tests/viewer-map-support.test.js
 dotnet test ThermalWatch.slnx -c Release --nologo
 ```
@@ -100,7 +100,7 @@ Sourcing all variables can enable Telegram's hosted service. Viewer and read-onl
 
 ## Static-asset publish and smoke check
 
-After the normal restore, publish the host and verify that the framework-dependent output contains the viewer entry point:
+After the normal restore, publish the sole executable host and verify that the referenced Viewer project's root-mounted assets are in the same output:
 
 ```bash
 dotnet publish src/ThermalWatch.Api/ThermalWatch.Api.csproj -c Release --no-restore --nologo
@@ -110,8 +110,10 @@ test -f src/ThermalWatch.Api/bin/Release/net10.0/publish/wwwroot/index.html
 To exercise static-file middleware, keep a valid `FIRMS_MAP_KEY` exported, start the published host, and stop it with Ctrl+C after the check:
 
 ```bash
-FIRMS_COUNTRIES=UKR,RUS \
-dotnet src/ThermalWatch.Api/bin/Release/net10.0/publish/ThermalWatch.Api.dll
+(
+  cd src/ThermalWatch.Api/bin/Release/net10.0/publish
+  FIRMS_COUNTRIES=UKR,RUS dotnet ThermalWatch.Api.dll
+)
 ```
 
 From another shell:
@@ -132,14 +134,16 @@ Use a clean disposable browser profile against the real local application. For p
 - NASA and Google at a 390×844 narrow viewport.
 - The initial provider again after switching to the other provider and back.
 
-Open every captured image rather than merely checking that the file exists. Verify current imagery has no opaque no-data swaths, controls and markers are visible, marker selection works, every desktop workspace reaches the same content-sized footer with height differences explained only by visible notice rows, and the narrow layout has no horizontal overflow. Inspect any task-specific loading, empty, warning, or failure states too. Save transient screenshots outside the repository, report their paths and visual findings, and do not save HAR files or browser logs that expose a Google key.
+Open every captured image rather than merely checking that the file exists. Verify current imagery has no opaque no-data swaths, controls and markers are visible, marker selection works, the desktop map and inspector remain usable within the footer boundary, and the stacked narrow layout has no horizontal overflow. Inspect any task-specific loading, empty, warning, or failure states too. For imagery-boundary work, observe requests without saving a key-bearing archive and verify that GIBS/FIRMS hosts never appear in browser traffic; NASA tiles must use `/api/viewer/imagery/gibs/...`. Save transient screenshots outside the repository, report their paths and visual findings, and do not save HAR files or browser logs that expose a Google key.
 
 For a viewer-only run, source `.env` but suppress Telegram in the application process:
 
 ```bash
 source ./.env
-env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHANNEL_ID \
-  dotnet src/ThermalWatch.Api/bin/Release/net10.0/publish/ThermalWatch.Api.dll
+(
+  cd src/ThermalWatch.Api/bin/Release/net10.0/publish
+  env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHANNEL_ID dotnet ThermalWatch.Api.dll
+)
 ```
 
 Stop the browser and server normally after inspection. Preserve `.env`.

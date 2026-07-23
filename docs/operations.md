@@ -9,7 +9,7 @@
 
 The process binds plain HTTP to `0.0.0.0:8080`, starts one immediate FIRMS refresh, then runs non-overlapping polling cycles. Application options are parsed once at startup and are not reloaded.
 
-All application state is in memory: source segments, the published snapshot, GIBS cache entries, Telegram seen IDs, delivered-episode history, and pending preview notifications. The service has no database, durable queue, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
+All application state is in memory: source segments, the published snapshot, GIBS preview/land-cover/viewer-tile cache entries, Telegram seen IDs, delivered-episode history, and pending preview notifications. The service has no database, durable queue, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
 
 The application-specific options below use exact uppercase environment names. Framework hosting still uses ASP.NET Core's normal host configuration, but .NET-style nested names such as `Firms__MapKey` do not configure ThermalWatch options.
 
@@ -79,24 +79,26 @@ No credentials disables Telegram without affecting the API. Supplying only one c
 | Service | Server-side use | Failure boundary |
 | --- | --- | --- |
 | NASA FIRMS | Country and area CSV plus MAP_KEY status. | Isolated by country/source segment; stale data is retained where available. |
-| NASA GIBS | Exact-date previews, spatial base-image probes, availability domains, annual land-cover domains, and tiles. | Preview/land-cover results become unavailable; FIRMS and HTTP API continue. |
+| NASA GIBS | Exact-date Telegram previews, spatial base-image probes, availability domains, annual land-cover domains, and latest viewer map tiles. | Preview/land-cover results become unavailable; viewer tiles become partial or transparent; FIRMS and the anomaly API continue. |
 | Telegram Bot API | Startup validation and outbound channel messages. | Notifier can disable or defer; polling and HTTP API continue. |
 | Natural Earth | Embedded boundary data loaded from Core. | Missing or unusable geometry for a configured country is a fatal startup error. |
-| unpkg, GIBS tiles, Google Maps | Browser-only viewer resources. | Viewer provider can fail while server APIs and polling continue. |
+| unpkg and Google Maps | Approved browser-only viewer resources. NASA/FIRMS data is same-origin through ThermalWatch. | A browser provider can fail while server APIs and polling continue. |
 
 Configured HTTP clients use bounded total and attempt timeouts, exponential retry delay with jitter, and `Retry-After` handling. FIRMS uses its configured request timeout; GIBS and Telegram use fixed 30-second total policies. See [Program.cs](../src/ThermalWatch.Api/Program.cs) for retry counts and attempt-timeout calculation.
+
+Viewer tile composition admits at most eight concurrent Core operations. Each upstream tile must be a bounded 256×256 JPEG; complete composed PNGs use the shared 64 MiB memory cache for five minutes, while partial and unavailable results are not cached so transient coverage can recover. The HTTP response advertises the same five-minute cache only for complete tiles.
 
 Live provider availability, data ranges, and error bodies change independently of this repository. Durable behavior is the client's verified handling logic, not a particular response observed on one date.
 
 ## Observability and security
 
-Serilog writes structured console events. `LOGGING_MINIMUM_LEVEL` controls the application minimum while the host suppresses noisy ASP.NET, HTTP-client, and resilience categories. Logs report safe error summaries, segment refreshes, snapshot publication, notification filtering, preview state, and sends; they must never include credential values.
+Serilog writes structured console events. `LOGGING_MINIMUM_LEVEL` controls the application minimum while the host suppresses noisy ASP.NET, HTTP-client, and resilience categories. Successful viewer imagery requests are Debug-level to keep map navigation from flooding normal logs; other request summaries remain Information unless they fail. Logs report safe error summaries, segment refreshes, snapshot publication, notification filtering, preview state, and sends; they must never include credential values.
 
 There is no health/readiness route, metrics endpoint, tracing, external log sink, alert, or dashboard. `/api/anomalies` source statuses are the only built-in structured operational diagnostics. A viewer refresh rereads the snapshot and does not force an upstream poll.
 
 All current HTTP endpoints are unauthenticated. Cross-origin `GET` is allowed:
 
-- `/api/anomalies` and `/api/viewer/config` are read-only.
+- `/api/anomalies`, `/api/viewer/config`, and `/api/viewer/imagery/gibs/{z}/{x}/{y}.png` are read-only. The imagery route can cause bounded backend GIBS requests for uncached valid coordinates.
 - `/api/viewer/config` intentionally exposes a browser API key when configured.
 - `/api/telegram/send-top` sends Telegram messages and must sit behind an appropriate network access boundary. Its use is not safe as a health check.
 
@@ -147,4 +149,5 @@ The repository contains no production deployment manifests, immutable release ta
 | Telegram automatic send returns `400`, `401`, or `403` | Disable automatic notifier processing for the process lifetime. | Correct the permanent condition and restart. |
 | Telegram transient send failure | Keep the pending item and return to the snapshot loop. | A later snapshot update retries it. |
 | Process restart | Lose snapshots, deduplication, pending notifications, and caches; run an immediate poll. | Expected stateless recovery; monitor startup and first ready snapshot. |
-| Browser map dependency failure | Show provider/UI error; server polling and APIs remain available. | Restore browser network/key/provider access and refresh. |
+| Viewer GIBS tile is partial or unavailable | Return a partial or transparent PNG without caching the degraded result and show one coverage warning. | Later tile requests retry GIBS; FIRMS polling and anomaly responses remain available. |
+| Browser map dependency failure | Show provider/UI error; server polling and APIs remain available. | Restore unpkg/Google browser access or backend GIBS access as applicable, then refresh. |

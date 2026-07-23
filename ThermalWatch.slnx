@@ -3,6 +3,7 @@
     <Project Path="src/ThermalWatch.Api/ThermalWatch.Api.csproj" />
     <Project Path="src/ThermalWatch.Core/ThermalWatch.Core.csproj" />
     <Project Path="src/ThermalWatch.Telegram/ThermalWatch.Telegram.csproj" />
+    <Project Path="src/ThermalWatch.Viewer/ThermalWatch.Viewer.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ThermalWatch.Tests.csproj" />

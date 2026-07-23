@@ -1,80 +1,64 @@
 # Web viewer
 
-> **Purpose:** Explain the framework-free browser viewer, provider boundary, API consumption, and browser-specific failure behavior.
-> **Scope:** Static assets at `/`, viewer state, anomaly details, NASA GIBS and Google adapters, and change validation.
-> **Sources of truth:** [HTML entry point](../../src/ThermalWatch.Api/wwwroot/index.html), [viewer controller](../../src/ThermalWatch.Api/wwwroot/app.js), [map support](../../src/ThermalWatch.Api/wwwroot/map-support.js), [styles](../../src/ThermalWatch.Api/wwwroot/styles.css), and [host routes](../../src/ThermalWatch.Api/Program.cs).
-> **Update when:** Viewer inputs, state, map-provider contract, marker behavior, diagnostics, browser dependencies, layout, or static hosting changes.
+> **Purpose:** Explain the Viewer project boundary, framework-free interface, same-origin NASA imagery, provider adapters, and browser-specific failure behavior.
+> **Scope:** Root-mounted static assets, viewer routes and state, Core GIBS map tiles, Google Maps, markers, diagnostics, responsive layout, and validation.
+> **Sources of truth:** [Viewer project](../../src/ThermalWatch.Viewer/ThermalWatch.Viewer.csproj), [viewer endpoints](../../src/ThermalWatch.Viewer/ViewerEndpoints.cs), [controller](../../src/ThermalWatch.Viewer/wwwroot/app.js), [map support](../../src/ThermalWatch.Viewer/wwwroot/map-support.js), [Core tile client](../../src/ThermalWatch.Core/GibsMapTileClient.cs), and [composition root](../../src/ThermalWatch.Api/Program.cs).
+> **Update when:** Viewer inputs, project/static-asset boundaries, imagery composition, provider contracts, browser dependencies, marker behavior, diagnostics, layout, or validation changes.
 
-## Hosting and inputs
+## Project, hosting, and inputs
 
-ASP.NET Core default-file and static-file middleware serve the plain HTML, CSS, and JavaScript viewer at `/`. Local static responses require browser revalidation so a previously cached controller cannot retain obsolete map behavior after deployment. There is no frontend framework, package manifest, bundler, transpiler, or generated client. The map-support script exposes a small browser global before the controller loads and exports the same functions to dependency-free Node tests.
+`ThermalWatch.Viewer` is a Razor/static-web-assets library, not a service. It depends on Core and is referenced by the sole `ThermalWatch.Api` executable. Its assets publish into that host's root `wwwroot`, so the same process, image, listener, and port `8080` serve `/`, the public APIs, polling, and Telegram. Local static responses require revalidation so obsolete controllers do not survive deployment.
 
-On load and refresh, the controller fetches these same-origin resources concurrently:
+The UI remains plain HTML, CSS, and JavaScript with no package manifest, bundler, transpiler, generated client, or frontend framework. It loads pinned Leaflet CSS/JavaScript from unpkg. On initial load and Refresh, the controller reads these same-origin JSON resources concurrently:
 
-- `/api/viewer/config` to decide whether Google Maps is available and obtain its browser key.
-- `/api/anomalies` to obtain the complete current snapshot and source diagnostics.
+- `/api/viewer/config` for optional Google Maps availability and its browser key.
+- `/api/anomalies` for the complete current snapshot and source diagnostics.
 
-The viewer does not duplicate ingestion or notification selection logic. A Refresh action rereads those APIs and never triggers a FIRMS poll.
+The NASA adapter additionally requests visible same-origin PNGs from `/api/viewer/imagery/gibs/{z}/{x}/{y}.png`. No browser asset contains a FIRMS or GIBS request host. Refresh rereads APIs and never starts a FIRMS poll.
 
-## Shared state and provider contract
+## Provider contract and shared behavior
 
-The controller owns configuration, snapshot, validated point models, malformed-coordinate count, selected anomaly, current provider, notices, and asynchronous version guards. Map providers do not fetch anomaly data or render the details panel.
+The controller owns configuration, snapshot, validated points, malformed-coordinate count, selected anomaly, provider, notices, and asynchronous version guards. Each provider implements `mount`, `renderAnomalies`, `setSelected`, `fitToAnomalies`, and `destroy`; providers neither fetch anomaly records nor render the inspector.
 
-Each provider adapter implements the same lifecycle used by `activateProvider`:
+NASA and Google receive the same validated points, point keys, marker colors, selected state, tooltips, click callback, and fit rules. Empty data uses a world view, one point uses bounded zoom 8, and multiple points use padded bounds capped at zoom 10. Selection survives successful refreshes and provider switches while the observation exists, clears when it disappears, and does not toggle off on repeated marker or map-background clicks.
 
-1. `mount(container, context)` initializes provider resources and callbacks.
-2. `renderAnomalies(points)` renders every validated point with the shared marker semantics.
-3. `setSelected(key)` updates selected-marker appearance.
-4. `fitToAnomalies(points)` shows a world view, a bounded single-point zoom, or padded multi-point bounds.
-5. `destroy()` removes provider listeners, markers, and map resources.
+The browser defensively accepts only finite in-range coordinates. Malformed observations are omitted with a visible count rather than failing the snapshot. The inspector still renders every anomaly property, snapshot readiness/staleness metadata, matching country/source status, and raw JSON. Dynamic values use text nodes, and only HTTP(S) Google URLs become links.
 
-To add a provider, register one definition, implement that lifecycle, reuse the controller's point key and selection callback, report provider failures through the supplied context, and preserve the same anomaly set and details behavior. Provider-specific code must not move anomaly interpretation into the adapter.
+## NASA GIBS through Core
 
-## Provider behavior
+The Core map-tile client is intentionally separate from Telegram's exact-date preview path. Viewer tiles represent each product's latest GIBS default corrected-reflectance date, independently of FIRMS acquisition dates. Core requests 256×256 Web Mercator JPEGs in Terra, Aqua, NOAA-21, NOAA-20, and Suomi-NPP order. Valid Terra pixels remain authoritative; later products fill only transparent or near-black pixels whose RGB channels are all at most 12.
 
-### NASA GIBS
+Each upstream response is size, media-type, and dimension checked before decode. A failed request or malformed product is isolated and composition continues. Fully resolved tiles stop early. Remaining holes are encoded transparent, never replaced with a historical basemap, and classified as partial or unavailable. The API returns that classification in `X-ThermalWatch-Imagery-Coverage`; the browser shows one deduplicated warning for any degraded tile. Complete PNGs use five-minute server and HTTP caching; degraded tiles are immediately retryable. Caller cancellation propagates when Leaflet unloads a tile.
 
-Leaflet 1.9.4 is loaded from unpkg with pinned URLs and Subresource Integrity hashes. Each displayed tile requests the products' latest GIBS default dates, independently of FIRMS acquisition dates. The adapter composes a transparent canvas in MODIS Terra, MODIS Aqua, VIIRS NOAA-21, VIIRS NOAA-20, and VIIRS Suomi-NPP order. Valid Terra pixels remain authoritative; later products fill only transparent or near-black JPEG no-data pixels.
+The caption avoids claiming one exact date or satellite for the complete mosaic. This contextual map differs from Telegram's representative-sensor, day/night-matched exact-date previews.
 
-Composition is pixel-aware because GIBS can return an HTTP-successful JPEG whose uncovered orbital regions are opaque black. Normal Aqua/VIIRS supplementation is not a warning. Pixels unresolved after every current product remain transparent over the neutral map background and produce one deduplicated warning; the viewer never substitutes Blue Marble or another historical basemap. Because products can have different current defaults and multiple products can appear at once, the caption does not claim one exact imagery date or satellite for the complete map.
+## Google and external-browser boundary
 
-This map imagery is contextual and differs from Telegram's representative-sensor, day/night-matched preview composition.
+Google Maps JavaScript remains an explicit exception to the same-origin data rule. It loads only when selected and only when `GOOGLE_MAPS_API_KEY` is available from viewer configuration. The option stays visible but disabled otherwise. Loading has a 15-second timeout; download/callback failures clean up for retry, and authentication failures are reported without breaking NASA or server processing. The key remains browser-visible by design and requires Google API and HTTP-referrer restrictions.
 
-### Google Satellite
+Consequently, browser external requests are limited by design to pinned unpkg assets and optional Google Maps. NASA/FIRMS data and imagery always cross the ThermalWatch HTTP boundary first.
 
-Google Maps JavaScript loads only when selected and only when `GOOGLE_MAPS_API_KEY` is present. The option remains visible but disabled when unavailable. Script loading has a 15-second timeout; download and callback failures are cleaned up so a later provider selection can retry. Google authentication failures are surfaced to the controller. The key is browser-visible by design and must be restricted outside the application.
+## Interface and failure states
 
-Both adapters use the same marker colors, selected state, click callback, fit rules, and source point collection. The application shell assigns every major child to an explicit grid area, so notice visibility and provider switching cannot move the workspace or footer into a different row.
+The refined dark interface is map-first: header controls, compact snapshot-status cards, dominant map, and a complete anomaly inspector. Desktop uses a bounded map/inspector workspace. At narrow widths, controls and status cards reflow, the map receives a bounded viewport, and the inspector stacks below it without horizontal overflow. Focus indicators, touch targets, live regions, semantic details, and reduced-motion preferences remain usable.
 
-## Data validation and details
-
-The API owns valid server-side observations, but the browser defensively requires numeric, finite coordinates inside latitude and longitude ranges before mapping. Malformed observations are omitted from providers and counted in a visible warning. They do not cause the entire snapshot to fail.
-
-Selecting a marker renders every anomaly property returned by the API, snapshot readiness/staleness metadata, the matching country/source status, and raw anomaly JSON. Dynamic values are inserted through DOM text nodes; HTTP(S) is required before rendering the supplied Google URL as a link.
-
-Only one anomaly is selected at a time. Its stable point key preserves selection across provider switches and successful refreshes while that observation remains present; selection clears when it disappears. Clicking the selected marker again or the map background does not toggle it off.
-
-## Loading and failure states
-
-- Initial data and provider loading use a map overlay and disabled controls.
-- Missing Google configuration leaves NASA available and explains why Google is disabled.
-- Viewer-configuration failure degrades to NASA-only operation.
-- Initial anomaly API failure shows an unavailable state and retry action.
-- A failed refresh preserves the last usable snapshot and markers.
-- Empty results show the world map and an empty details state.
-- Provider/script/authentication failure leaves the selector available so another provider can be chosen.
-- Partial FIRMS staleness and GIBS pixels unresolved after every current product are visible warnings rather than fatal viewer errors.
+- Initial API/provider work uses a blocking map overlay and disabled controls.
+- Configuration failure degrades to NASA-only operation; a missing key explains the disabled Google option.
+- Initial anomaly failure shows an unavailable state; refresh failure retains the last usable snapshot and markers.
+- Empty results retain the world map and an explanatory inspector state.
+- Provider/script/authentication failure leaves provider selection available for recovery.
+- Partial FIRMS staleness, malformed coordinates, and unresolved GIBS coverage are warnings, not fatal map failures.
 
 ## Validation
 
-Run the static syntax checks and dependency-free viewer unit tests for every JavaScript change:
+Run the dependency-free browser checks after every JavaScript change:
 
 ```bash
-node --check src/ThermalWatch.Api/wwwroot/map-support.js
-node --check src/ThermalWatch.Api/wwwroot/app.js
+node --check src/ThermalWatch.Viewer/wwwroot/map-support.js
+node --check src/ThermalWatch.Viewer/wwwroot/app.js
 node --test tests/viewer-map-support.test.js
 ```
 
-The Node suite covers current GIBS product order, URL construction, no-data classification, Terra-authoritative pixel composition, request/read failures, unresolved transparency, cancellation, warning state, and Google loader success/failure/retry/authentication behavior. Then run the .NET tests and publish/smoke checks described in [development](../development.md).
+The Node suite covers same-origin tile URLs, coverage propagation, warning deduplication, failed loads, cancellation/object-URL cleanup, absence of direct NASA request hosts, and Google success/failure/retry/authentication behavior. The .NET suite owns GIBS product order, response validation, pixel composition, coverage, cache, cancellation, and endpoint headers. Then run the complete build, test, format, documentation, and publish checks from [development](../development.md).
 
-Every viewer task must also follow the documented [live screenshot workflow](../development.md#live-viewer-screenshot-verification). Capture desktop and narrow states for every affected provider, open the images with visual inspection, and reject visible layout or imagery defects even when browser automation reports successful requests and DOM state. Exercise loading, empty, refresh failure, malformed coordinates, marker selection, provider switching, missing Google key, and changed failure paths as applicable. The repository intentionally has no committed browser-test harness or daily-imagery baselines; screenshots are transient evidence because external imagery changes continuously.
+Every viewer task also requires the [live screenshot workflow](../development.md#live-viewer-screenshot-verification). Capture and open NASA and Google desktop/narrow states plus a provider round trip. Treat imagery defects, missing markers/controls, unreadable details, unstable desktop bounds, or narrow overflow as failures. For imagery-boundary work, observe that browser NASA tiles use only the same-origin imagery API; do not save archives or logs containing a Google key.

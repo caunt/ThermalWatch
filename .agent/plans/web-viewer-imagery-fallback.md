@@ -50,8 +50,8 @@ The framework-free viewer is served from `src/ThermalWatch.Api/wwwroot/`. `app.j
 Run from the repository root:
 
 ```bash
-node --check src/ThermalWatch.Api/wwwroot/map-support.js
-node --check src/ThermalWatch.Api/wwwroot/app.js
+node --check src/ThermalWatch.Viewer/wwwroot/map-support.js
+node --check src/ThermalWatch.Viewer/wwwroot/app.js
 node --test tests/viewer-map-support.test.js
 dotnet restore ThermalWatch.slnx
 dotnet build ThermalWatch.slnx -c Release --no-restore --nologo

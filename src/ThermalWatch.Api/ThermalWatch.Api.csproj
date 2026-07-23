@@ -2,6 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="../ThermalWatch.Core/ThermalWatch.Core.csproj" />
     <ProjectReference Include="../ThermalWatch.Telegram/ThermalWatch.Telegram.csproj" />
+    <ProjectReference Include="../ThermalWatch.Viewer/ThermalWatch.Viewer.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />

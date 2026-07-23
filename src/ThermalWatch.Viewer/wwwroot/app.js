@@ -14,6 +14,7 @@
     providerSelect: document.querySelector("#provider-select"),
     googleOption: document.querySelector('#provider-select option[value="google"]'),
     refreshButton: document.querySelector("#refresh-button"),
+    refreshButtonLabel: document.querySelector("#refresh-button-label"),
     notice: document.querySelector("#notice"),
     countSummary: document.querySelector("#count-summary"),
     healthSummary: document.querySelector("#health-summary"),
@@ -41,7 +42,7 @@
   const providerDefinitions = new Map([
     ["gibs", {
       create: () => new GibsMapProvider(),
-      caption: () => "NASA GIBS latest corrected reflectance · Terra supplemented by Aqua/VIIRS"
+      caption: () => "NASA GIBS latest corrected reflectance · composed and served by ThermalWatch"
     }],
     ["google", {
       create: () => new GoogleMapProvider(),
@@ -376,13 +377,13 @@
       : `${returnedCount} ${plural(returnedCount, "anomaly", "anomalies")}`;
 
     if (state.snapshot.isPartiallyStale === true) {
-      elements.healthSummary.className = "health-stale";
+      elements.healthSummary.className = "status-value health-stale";
       elements.healthSummary.textContent = "Partial upstream data";
     } else if (state.snapshot.isReady === true) {
-      elements.healthSummary.className = "health-ready";
+      elements.healthSummary.className = "status-value health-ready";
       elements.healthSummary.textContent = "Snapshot ready";
     } else {
-      elements.healthSummary.className = "";
+      elements.healthSummary.className = "status-value";
       elements.healthSummary.textContent = "Snapshot warming up";
     }
 
@@ -393,16 +394,17 @@
 
   function renderUnavailableSummary() {
     elements.countSummary.textContent = "Anomalies unavailable";
-    elements.healthSummary.className = "";
-    elements.healthSummary.textContent = "";
-    elements.generatedSummary.textContent = "";
+    elements.healthSummary.className = "status-value";
+    elements.healthSummary.textContent = "Unavailable";
+    elements.generatedSummary.textContent = "No usable snapshot";
   }
 
   function renderEmptyDetails(title, message) {
     const wrapper = document.createElement("div");
     wrapper.className = "details-empty";
     wrapper.append(
-      textElement("p", "Anomaly details", "eyebrow"),
+      createEmptyOrbit(),
+      textElement("p", "Anomaly inspector", "eyebrow"),
       textElement("h2", title),
       textElement("p", message)
     );
@@ -416,7 +418,9 @@
     const anomaly = point.anomaly;
     const wrapper = document.createElement("div");
     wrapper.className = "details-content";
-    wrapper.append(
+    const heading = document.createElement("header");
+    heading.className = "details-heading";
+    heading.append(
       textElement("p", "Selected anomaly", "eyebrow"),
       textElement("h2", anomaly.countryCode || "Heat anomaly"),
       textElement(
@@ -424,8 +428,10 @@
         [anomaly.source, anomaly.satellite, formatDateTime(anomaly.acquiredAtUtc)]
           .filter(Boolean)
           .join(" · "),
-        "details-subtitle")
+        "details-subtitle"),
+      detailsSummary(anomaly)
     );
+    wrapper.append(heading);
 
     const observationSection = section("Observation data");
     observationSection.append(fieldList(Object.entries(anomaly)));
@@ -471,6 +477,36 @@
     element.className = "details-section";
     element.append(textElement("h3", title));
     return element;
+  }
+
+  function createEmptyOrbit() {
+    const orbit = document.createElement("span");
+    orbit.className = "empty-orbit";
+    orbit.setAttribute("aria-hidden", "true");
+    orbit.append(document.createElement("span"));
+    return orbit;
+  }
+
+  function detailsSummary(anomaly) {
+    const summary = document.createElement("div");
+    summary.className = "details-summary";
+    summary.append(
+      summaryItem("Satellite", anomaly.satellite || "Not available"),
+      summaryItem("FRP", typeof anomaly.frpMegawatts === "number"
+        ? `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(anomaly.frpMegawatts)} MW`
+        : "Not available"),
+      summaryItem("Pass", anomaly.dayNight === "D"
+        ? "Daytime"
+        : anomaly.dayNight === "N" ? "Nighttime" : "Not available")
+    );
+    return summary;
+  }
+
+  function summaryItem(label, value) {
+    const item = document.createElement("div");
+    item.className = "summary-item";
+    item.append(textElement("span", label), textElement("strong", value));
+    return item;
   }
 
   function fieldList(entries) {
@@ -573,7 +609,7 @@
 
   function setBusy(busy, message) {
     elements.refreshButton.disabled = busy;
-    elements.refreshButton.textContent = busy ? "Loading…" : "Refresh data";
+    elements.refreshButtonLabel.textContent = busy ? "Loading…" : "Refresh data";
     elements.providerSelect.disabled = busy;
     if (busy)
       setMapLoading(true, message);
@@ -666,7 +702,7 @@
         noWrap: false
       });
       this.imageryLayer.createTile = (coordinates, done) => {
-        const tile = document.createElement("canvas");
+        const tile = document.createElement("img");
         tile.setAttribute("role", "presentation");
         tile.setAttribute("aria-hidden", "true");
         tile.cancelGibsLoad = mapSupport.loadGibsTile(tile, coordinates, {
@@ -674,6 +710,11 @@
             reportImageryResult(result);
             delete tile.cancelGibsLoad;
             done(null, tile);
+          },
+          onError: error => {
+            reportImageryResult({ coverage: "none" });
+            delete tile.cancelGibsLoad;
+            done(error, tile);
           }
         });
         return tile;

@@ -5,23 +5,18 @@ const assert = require("node:assert/strict");
 const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 const {
-  gibsProducts,
-  gibsTileSize,
-  gibsNoDataMaximum,
-  gibsTileUrl,
-  isGibsNoDataPixel,
-  mergeGibsPixels,
+  imageryCoverageHeader,
+  gibsTileApiUrl,
   loadGibsTile,
   createGibsWarningReporter,
   createGoogleMapsLoader
-} = require("../src/ThermalWatch.Api/wwwroot/map-support.js");
+} = require("../src/ThermalWatch.Viewer/wwwroot/map-support.js");
 
 class FakeImage {
   constructor() {
     this.onload = null;
     this.onerror = null;
     this.requests = [];
-    this.pixels = null;
     this.sourceRemoved = false;
   }
 
@@ -29,8 +24,7 @@ class FakeImage {
     this.requests.push(value);
   }
 
-  succeed(pixels) {
-    this.pixels = pixels;
+  succeed() {
     this.onload?.();
   }
 
@@ -44,47 +38,37 @@ class FakeImage {
   }
 }
 
-const gibsPixelCount = gibsTileSize * gibsTileSize;
-
-function pixelsWith(red, green, blue, alpha = 255) {
-  const pixels = new Uint8ClampedArray(gibsPixelCount * 4);
-  for (let offset = 0; offset < pixels.length; offset += 4) {
-    pixels[offset] = red;
-    pixels[offset + 1] = green;
-    pixels[offset + 2] = blue;
-    pixels[offset + 3] = alpha;
+class FakeAbortController {
+  constructor() {
+    this.signal = { aborted: false };
   }
-  return pixels;
+
+  abort() {
+    this.signal.aborted = true;
+  }
 }
 
-function setPixel(pixels, index, red, green, blue, alpha = 255) {
-  const offset = index * 4;
-  pixels[offset] = red;
-  pixels[offset + 1] = green;
-  pixels[offset + 2] = blue;
-  pixels[offset + 3] = alpha;
+function imageryResponse({ status = 200, mediaType = "image/png", coverage = "complete" } = {}) {
+  const headers = new Map([
+    ["content-type", mediaType],
+    [imageryCoverageHeader.toLowerCase(), coverage]
+  ]);
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get(name) {
+        return headers.get(name.toLowerCase()) ?? null;
+      }
+    },
+    async blob() {
+      return { type: mediaType };
+    }
+  };
 }
 
-function gibsComposition() {
-  const images = [];
-  const canvas = { width: 0, height: 0, pixels: null };
-  let result = null;
-  const cancel = loadGibsTile(canvas, { z: 3, y: 2, x: 1 }, {
-    createImage: () => {
-      const image = new FakeImage();
-      images.push(image);
-      return image;
-    },
-    readPixels: image => {
-      if (!image.pixels)
-        throw new Error("The fake image has no readable pixels.");
-      return image.pixels;
-    },
-    writePixels: (target, pixels) => { target.pixels = pixels.slice(); },
-    onComplete: value => { result = value; }
-  });
-
-  return { canvas, images, cancel, result: () => result };
+function flushAsyncWork() {
+  return new Promise(resolve => setImmediate(resolve));
 }
 
 function googleEnvironment() {
@@ -148,161 +132,125 @@ function createLoader(environment) {
   });
 }
 
-test("GIBS products prefer Terra and contain only current corrected-reflectance sources", () => {
-  assert.deepEqual(
-    gibsProducts.map(product => product.id),
-    ["modis-terra", "modis-aqua", "viirs-noaa21", "viirs-noaa20", "viirs-snpp"]);
-  assert.ok(gibsProducts.every(product =>
-    product.layer.endsWith("_CorrectedReflectance_TrueColor")));
-  assert.ok(gibsProducts.every(product => !product.layer.includes("BlueMarble")));
-});
-
-test("GIBS tile URLs request each product's latest default date", () => {
+test("GIBS tile URLs use only the same-origin viewer API", () => {
   assert.equal(
-    gibsTileUrl(gibsProducts[0], { z: 6, y: 21, x: 37 }),
-    "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/"
-      + "MODIS_Terra_CorrectedReflectance_TrueColor/default/default/"
-      + "GoogleMapsCompatible_Level9/6/21/37.jpeg");
+    gibsTileApiUrl({ z: 6, x: 37, y: 21 }),
+    "/api/viewer/imagery/gibs/6/37/21.png");
+  assert.throws(() => gibsTileApiUrl({ z: 6, x: 37.5, y: 21 }), /Integer map tile/);
 });
 
-test("GIBS no-data detection recognizes transparent and near-black JPEG pixels", () => {
-  const pixels = new Uint8ClampedArray([
-    0, 0, 0, 255,
-    gibsNoDataMaximum, gibsNoDataMaximum, gibsNoDataMaximum, 255,
-    gibsNoDataMaximum + 1, gibsNoDataMaximum, gibsNoDataMaximum, 255,
-    80, 90, 100, 0
-  ]);
+test("GIBS tiles load API PNGs and expose complete coverage", async () => {
+  const image = new FakeImage();
+  const requests = [];
+  const revoked = [];
+  let completed = null;
+  const controller = new FakeAbortController();
+  loadGibsTile(image, { z: 3, x: 1, y: 2 }, {
+    fetchFunction: async (url, options) => {
+      requests.push({ url, options });
+      return imageryResponse();
+    },
+    createObjectUrl: () => "blob:complete-tile",
+    revokeObjectUrl: url => revoked.push(url),
+    createAbortController: () => controller,
+    onComplete: result => { completed = result; }
+  });
 
-  assert.equal(isGibsNoDataPixel(pixels, 0), true);
-  assert.equal(isGibsNoDataPixel(pixels, 4), true);
-  assert.equal(isGibsNoDataPixel(pixels, 8), false);
-  assert.equal(isGibsNoDataPixel(pixels, 12), true);
+  await flushAsyncWork();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "/api/viewer/imagery/gibs/3/1/2.png");
+  assert.equal(requests[0].options.headers.Accept, "image/png");
+  assert.equal(requests[0].options.signal, controller.signal);
+  assert.deepEqual(image.requests, ["blob:complete-tile"]);
+
+  image.succeed();
+  assert.deepEqual(completed, { coverage: "complete" });
+  assert.deepEqual(revoked, ["blob:complete-tile"]);
 });
 
-test("GIBS pixel merging fills only destination holes", () => {
-  const destination = new Uint8ClampedArray([
-    90, 91, 92, 255,
-    0, 0, 0, 0,
-    0, 0, 0, 0
-  ]);
-  const source = new Uint8ClampedArray([
-    140, 141, 142, 255,
-    60, 61, 62, 255,
-    3, 4, 5, 255
-  ]);
+test("GIBS tiles pass partial coverage to the warning boundary", async () => {
+  const image = new FakeImage();
+  let completed = null;
+  loadGibsTile(image, { z: 2, x: 1, y: 1 }, {
+    fetchFunction: async () => imageryResponse({ coverage: "partial" }),
+    createObjectUrl: () => "blob:partial-tile",
+    revokeObjectUrl: () => {},
+    onComplete: result => { completed = result; }
+  });
 
-  assert.equal(mergeGibsPixels(destination, source), 1);
-  assert.deepEqual(
-    [...destination],
-    [90, 91, 92, 255, 60, 61, 62, 255, 0, 0, 0, 0]);
+  await flushAsyncWork();
+  image.succeed();
+  assert.deepEqual(completed, { coverage: "partial" });
 });
 
-test("GIBS compositing stops after complete Terra coverage", () => {
-  const composition = gibsComposition();
-  assert.equal(composition.images.length, 1);
-  assert.match(composition.images[0].requests[0], /MODIS_Terra/);
+test("GIBS tile cancellation aborts fetch and ignores late completion", async () => {
+  const image = new FakeImage();
+  const controller = new FakeAbortController();
+  let resolveRequest;
+  let completed = false;
+  const request = new Promise(resolve => { resolveRequest = resolve; });
+  const cancel = loadGibsTile(image, { z: 2, x: 1, y: 1 }, {
+    fetchFunction: () => request,
+    createAbortController: () => controller,
+    onComplete: () => { completed = true; }
+  });
 
-  composition.images[0].succeed(pixelsWith(40, 70, 110));
-
-  assert.equal(composition.images.length, 1);
-  assert.equal(composition.result().available, true);
-  assert.equal(composition.result().complete, true);
-  assert.equal(composition.result().unresolvedPixels, 0);
-  assert.deepEqual(
-    composition.result().usedProducts.map(entry => entry.product.id),
-    ["modis-terra"]);
-  assert.deepEqual([...composition.canvas.pixels.slice(0, 4)], [40, 70, 110, 255]);
+  cancel();
+  resolveRequest(imageryResponse());
+  await flushAsyncWork();
+  assert.equal(controller.signal.aborted, true);
+  assert.equal(image.sourceRemoved, true);
+  assert.equal(image.requests.length, 0);
+  assert.equal(completed, false);
 });
 
-test("GIBS compositing fills Terra no-data pixels from Aqua without replacing Terra", () => {
-  const composition = gibsComposition();
-  const terra = pixelsWith(42, 72, 112);
-  setPixel(terra, 17, 0, 0, 0);
-  composition.images[0].succeed(terra);
+test("GIBS tile cancellation revokes a prepared object URL", async () => {
+  const image = new FakeImage();
+  const revoked = [];
+  const cancel = loadGibsTile(image, { z: 2, x: 1, y: 1 }, {
+    fetchFunction: async () => imageryResponse(),
+    createObjectUrl: () => "blob:pending-tile",
+    revokeObjectUrl: url => revoked.push(url)
+  });
 
-  assert.equal(composition.images.length, 2);
-  assert.match(composition.images[1].requests[0], /MODIS_Aqua/);
-  composition.images[1].succeed(pixelsWith(82, 92, 102));
-
-  const result = composition.result();
-  assert.equal(result.complete, true);
-  assert.deepEqual(
-    result.usedProducts.map(entry => [entry.product.id, entry.filledPixels]),
-    [["modis-terra", gibsPixelCount - 1], ["modis-aqua", 1]]);
-  assert.deepEqual([...composition.canvas.pixels.slice(0, 4)], [42, 72, 112, 255]);
-  assert.deepEqual(
-    [...composition.canvas.pixels.slice(17 * 4, (17 * 4) + 4)],
-    [82, 92, 102, 255]);
+  await flushAsyncWork();
+  cancel();
+  assert.equal(image.sourceRemoved, true);
+  assert.deepEqual(revoked, ["blob:pending-tile"]);
 });
 
-test("GIBS compositing continues after request and pixel-read failures", () => {
-  const composition = gibsComposition();
-  composition.images[0].fail();
-  assert.match(composition.images[1].requests[0], /MODIS_Aqua/);
+test("GIBS tile failures do not produce image content", async () => {
+  const image = new FakeImage();
+  let error = null;
+  loadGibsTile(image, { z: 2, x: 1, y: 1 }, {
+    fetchFunction: async () => imageryResponse({ status: 502 }),
+    onError: value => { error = value; }
+  });
 
-  composition.images[1].succeed(null);
-  assert.match(composition.images[2].requests[0], /VIIRS_NOAA21/);
-  composition.images[2].succeed(pixelsWith(55, 85, 115));
-
-  assert.equal(composition.result().complete, true);
-  assert.deepEqual(
-    composition.result().usedProducts.map(entry => entry.product.id),
-    ["viirs-noaa21"]);
+  await flushAsyncWork();
+  assert.match(error.message, /HTTP 502/);
+  assert.equal(image.requests.length, 0);
 });
 
-test("GIBS compositing leaves unresolved pixels transparent after every source", () => {
-  const composition = gibsComposition();
-  for (let index = 0; index < gibsProducts.length; index += 1)
-    composition.images[index].succeed(pixelsWith(0, 0, 0));
+test("GIBS warning reporter ignores complete tiles and deduplicates degraded coverage", () => {
+  const messages = [];
+  const report = createGibsWarningReporter(message => messages.push(message));
 
-  const result = composition.result();
-  assert.equal(result.available, false);
-  assert.equal(result.complete, false);
-  assert.equal(result.unresolvedPixels, gibsPixelCount);
-  assert.deepEqual(result.usedProducts, []);
-  assert.ok(composition.canvas.pixels.every(value => value === 0));
-  assert.deepEqual(
-    composition.images.map(image =>
-      gibsProducts.find(product => image.requests[0].includes(product.layer)).id),
-    gibsProducts.map(product => product.id));
+  report({ coverage: "complete" });
+  report({ coverage: "partial" });
+  report({ coverage: "none" });
+
+  assert.equal(messages.length, 1);
+  assert.match(messages[0], /unresolved pixels use the neutral map background/);
 });
 
-test("GIBS tile cancellation ignores late image completion", () => {
-  const composition = gibsComposition();
-  composition.cancel();
-  assert.equal(composition.images[0].sourceRemoved, true);
-
-  composition.images[0].succeed(pixelsWith(60, 70, 80));
-  assert.equal(composition.images.length, 1);
-  assert.equal(composition.result(), null);
-  assert.equal(composition.canvas.pixels, null);
-});
-
-test("GIBS warnings ignore successful supplementation and deduplicate unresolved coverage", () => {
-  const warnings = [];
-  const report = createGibsWarningReporter(message => warnings.push(message));
-  const complete = { complete: true, unresolvedPixels: 0 };
-  const unresolved = { complete: false, unresolvedPixels: 27 };
-
-  report(complete);
-  report(complete);
-  assert.deepEqual(warnings, []);
-
-  report(unresolved);
-  report(unresolved);
-  report(complete);
-  assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /neutral map background/);
-  assert.doesNotMatch(warnings[0], /historical|fallback/i);
-});
-
-test("Runtime viewer assets contain no Blue Marble behavior or warning", () => {
-  const viewerRoot = join(__dirname, "../src/ThermalWatch.Api/wwwroot");
+test("browser runtime contains no direct FIRMS or GIBS request host", () => {
+  const viewerRoot = join(__dirname, "../src/ThermalWatch.Viewer/wwwroot");
   const runtime = ["index.html", "app.js", "map-support.js"]
     .map(file => readFileSync(join(viewerRoot, file), "utf8"))
     .join("\n");
 
-  assert.doesNotMatch(runtime, /Blue Marble|BlueMarble/i);
+  assert.doesNotMatch(runtime, /gibs\.earthdata\.nasa\.gov|firms\.modaps/i);
 });
 
 test("Google loader resolves immediately when the map API is already present", async () => {

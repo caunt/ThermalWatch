@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Http.Resilience;
 using Polly;
 using Serilog;
@@ -7,6 +8,7 @@ using Serilog.Events;
 using ThermalWatch.Api;
 using ThermalWatch.Core;
 using ThermalWatch.Telegram;
+using ThermalWatch.Viewer;
 
 ApplicationConfiguration configuration;
 CountryBoundaryCatalog countryBoundaries;
@@ -39,6 +41,7 @@ Log.Logger = new LoggerConfiguration()
 try
 {
     var builder = WebApplication.CreateBuilder(args);
+    builder.WebHost.UseStaticWebAssets();
     builder.WebHost.UseUrls("http://0.0.0.0:8080");
     builder.Host.UseSerilog(Log.Logger, dispose: false);
 
@@ -82,6 +85,22 @@ try
             2));
 
     builder.Services
+        .AddHttpClient("GibsMapTiles", client =>
+        {
+            client.BaseAddress = new("https://gibs.earthdata.nasa.gov/");
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        })
+        .AddStandardResilienceHandler(options => ConfigureResilience(
+            options,
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(10),
+            2));
+    builder.Services.AddSingleton(serviceProvider => new GibsMapTileClient(
+        serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient("GibsMapTiles"),
+        serviceProvider.GetRequiredService<IMemoryCache>(),
+        serviceProvider.GetRequiredService<ILogger<GibsMapTileClient>>()));
+
+    builder.Services
         .AddHttpClient("Telegram", client => client.Timeout = Timeout.InfiniteTimeSpan)
         .AddStandardResilienceHandler(options => ConfigureResilience(
             options,
@@ -106,7 +125,12 @@ try
     }
 
     var app = builder.Build();
-    app.UseSerilogRequestLogging();
+    app.UseSerilogRequestLogging(options => options.GetLevel =
+        (httpContext, _, exception) => exception is not null
+            ? LogEventLevel.Error
+            : httpContext.Request.Path.StartsWithSegments("/api/viewer/imagery/gibs")
+                ? LogEventLevel.Debug
+                : LogEventLevel.Information);
     app.UseCors();
     app.UseDefaultFiles();
     app.UseStaticFiles(new StaticFileOptions
@@ -115,14 +139,7 @@ try
             context.Context.Response.Headers.CacheControl = "no-cache, must-revalidate"
     });
 
-    app.MapGet("/api/viewer/config", (ViewerOptions viewerOptions) => Results.Ok(new
-    {
-        googleMaps = new
-        {
-            available = viewerOptions.GoogleMapsApiKey is not null,
-            apiKey = viewerOptions.GoogleMapsApiKey
-        }
-    }));
+    app.MapThermalWatchViewer();
 
     app.MapGet("/api/anomalies", (HttpRequest request, AnomalySnapshotStore store, FirmsOptions firmsOptions) =>
     {

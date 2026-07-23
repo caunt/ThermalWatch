@@ -1,4 +1,4 @@
-using ThermalWatch.Api;
+using ThermalWatch.Viewer;
 
 namespace ThermalWatch.Tests;
 

@@ -3,6 +3,7 @@ using System.Globalization;
 using Serilog.Events;
 using ThermalWatch.Core;
 using ThermalWatch.Telegram;
+using ThermalWatch.Viewer;
 
 namespace ThermalWatch.Api;
 
@@ -118,15 +119,6 @@ public sealed record ApplicationConfiguration(
             : throw new ApplicationConfigurationException(
                 "LOGGING_MINIMUM_LEVEL must be Verbose, Debug, Information, Warning, Error, or Fatal.");
     }
-
-    private static string? Normalize(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-}
-
-public sealed record ViewerOptions(string? GoogleMapsApiKey)
-{
-    public static ViewerOptions FromEnvironment(Func<string, string?> getEnvironmentVariable) =>
-        new(Normalize(getEnvironmentVariable("GOOGLE_MAPS_API_KEY")));
 
     private static string? Normalize(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
