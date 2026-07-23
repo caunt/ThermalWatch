@@ -33,6 +33,10 @@ public sealed class TelegramMessageFormatterTests
             "Automated satellite detection; event type is not confirmed.",
             caption,
             StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Satellite-detected thermal anomaly; not a confirmed fire.",
+            caption,
+            StringComparison.Ordinal);
     }
 
     [Fact]
