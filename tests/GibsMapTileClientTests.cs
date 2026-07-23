@@ -118,6 +118,26 @@ public sealed class GibsMapTileClientTests
     }
 
     [Fact]
+    public async Task GetMapTileAsyncRejectsOversizedSourceWhileReadingIt()
+    {
+        byte[] valid = SolidJpeg(red: 44, green: 74, blue: 104);
+        var handler = new TileHandler(index => index == 0
+            ? BytesResponse(
+                new UnknownLengthContent(new byte[1024 * 1024 + 1]),
+                mediaType: "image/jpeg")
+            : JpegResponse(valid));
+        using MemoryCache cache = CreateCache();
+        using GibsMapTileClient client = CreateClient(handler, cache);
+
+        GibsMapTileResult tile = await client.GetMapTileAsync(
+            Coordinates(zoom: 1, x: 0, y: 0),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(GibsMapTileCoverage.Complete, tile.Coverage);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
     public async Task GetMapTileAsyncReturnsTransparentPngWhenEveryProductIsNoData()
     {
         var handler = new TileHandler(_ => JpegResponse(SolidJpeg(red: 0, green: 0, blue: 0)));
@@ -220,10 +240,13 @@ public sealed class GibsMapTileClientTests
         BytesResponse(bytes, mediaType: "image/jpeg");
 
     private static HttpResponseMessage BytesResponse(byte[] bytes, string mediaType)
+        => BytesResponse(new ByteArrayContent(bytes), mediaType);
+
+    private static HttpResponseMessage BytesResponse(HttpContent content, string mediaType)
     {
         var response = new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new ByteArrayContent(bytes)
+            Content = content
         };
         response.Content.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
         return response;
@@ -305,6 +328,18 @@ public sealed class GibsMapTileClientTests
             Started.TrySetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException(message: "The blocking handler should be cancelled.");
+        }
+    }
+
+    private sealed class UnknownLengthContent(byte[] bytes) : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            stream.WriteAsync(bytes).AsTask();
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
         }
     }
 }

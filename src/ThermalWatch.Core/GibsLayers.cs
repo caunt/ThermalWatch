@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 
 namespace ThermalWatch.Core;
 
-public static class GibsLayers
+internal static class GibsLayers
 {
     private static readonly GibsSourceDefinition s_terra = new(
         FirmsSource: "MODIS_NRT",
@@ -39,24 +39,8 @@ public static class GibsLayers
     private static readonly ImmutableArray<GibsSourceDefinition> s_modisSources = [s_terra, s_aqua];
     private static readonly ImmutableArray<GibsSourceDefinition> s_viirsSources =
         [s_noaa21, s_noaa20, s_suomiNpp];
-
-    public static bool TryGet(Anomaly anomaly, out GibsLayerPair layers)
-    {
-        ImmutableArray<GibsLayerCandidate> candidates = GetCandidates(anomaly);
-        if (!candidates.IsDefaultOrEmpty)
-        {
-            GibsLayerCandidate candidate = candidates[0];
-            layers = new(
-                candidate.BaseLayer,
-                candidate.BaseTileMatrixSet,
-                candidate.OverlayLayer,
-                candidate.OverlayTileMatrixSet);
-            return true;
-        }
-
-        layers = default;
-        return false;
-    }
+    internal static ImmutableArray<string> MapBaseLayers { get; } =
+        [.. s_modisSources.Concat(s_viirsSources).Select(source => source.DayBaseLayer)];
 
     internal static ImmutableArray<GibsLayerCandidate> GetCandidates(Anomaly anomaly)
     {

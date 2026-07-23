@@ -2,7 +2,7 @@ namespace ThermalWatch.Core;
 
 public static class Geography
 {
-    private const double EarthRadiusKilometers = 6371.0088;
+    internal const double EarthRadiusKilometers = 6371.0088;
     private const double SquareExponent = 2;
 
     public static double HaversineKilometers(Anomaly first, Anomaly second) =>

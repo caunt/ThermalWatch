@@ -7,4 +7,15 @@ public sealed record NotificationCriterionResult(
     string ActualValue,
     string Requirement,
     string Explanation,
-    bool IsBlocking);
+    bool IsBlocking)
+{
+    internal static NotificationCriterionResult Disabled(string code, string label) =>
+        new(
+            code,
+            label,
+            NotificationCriterionOutcomes.Disabled,
+            ActualValue: "Not evaluated",
+            Requirement: "Disabled by configuration",
+            Explanation: "This criterion is disabled.",
+            IsBlocking: false);
+}

@@ -1,5 +1,3 @@
-using System.Buffers.Binary;
-using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -14,7 +12,12 @@ public sealed class GibsClientLandCoverTests
     [Fact]
     public async Task GetLandCoverAsyncSamplesNearbyPixelsAndReusesCachedTiles()
     {
-        var handler = new LandCoverHandler(CreateUniformIndexedPng(red: 33, green: 138, blue: 33));
+        var handler = new LandCoverHandler(PngTestData.CreateIndexedSolid(
+            width: 512,
+            height: 512,
+            red: 33,
+            green: 138,
+            blue: 33));
         using var httpClient = new HttpClient(handler)
         {
             BaseAddress = new(uriString: "https://gibs.example.test/")
@@ -42,7 +45,12 @@ public sealed class GibsClientLandCoverTests
     [Fact]
     public async Task GetLandCoverAsyncReportsBuiltUpFromNearbySampleSet()
     {
-        var handler = new LandCoverHandler(CreateUniformIndexedPng(red: 255, green: 0, blue: 0));
+        var handler = new LandCoverHandler(PngTestData.CreateIndexedSolid(
+            width: 512,
+            height: 512,
+            red: 255,
+            green: 0,
+            blue: 0));
         using var httpClient = new HttpClient(handler)
         {
             BaseAddress = new(uriString: "https://gibs.example.test/")
@@ -59,6 +67,66 @@ public sealed class GibsClientLandCoverTests
         Assert.True(result.SampledClasses.Length > 1);
         Assert.All(result.SampledClasses, landCoverClass => Assert.Equal(13, landCoverClass));
         Assert.True(result.HasBuiltUpWithinProximity);
+    }
+
+    [Theory]
+    [InlineData("rgba")]
+    [InlineData("wrong-size")]
+    [InlineData("transparent")]
+    [InlineData("unknown-color")]
+    [InlineData("truncated")]
+    public async Task GetLandCoverAsyncRejectsInvalidTilePng(string variant)
+    {
+        byte[] png = variant switch
+        {
+            "rgba" => PngTestData.CreateSolidRgba(
+                width: 512,
+                height: 512,
+                red: 33,
+                green: 138,
+                blue: 33,
+                alpha: 255),
+            "wrong-size" => PngTestData.CreateIndexedSolid(
+                width: 256,
+                height: 512,
+                red: 33,
+                green: 138,
+                blue: 33),
+            "transparent" => PngTestData.CreateIndexedSolid(
+                width: 512,
+                height: 512,
+                red: 33,
+                green: 138,
+                blue: 33,
+                alpha: 0),
+            "unknown-color" => PngTestData.CreateIndexedSolid(
+                width: 512,
+                height: 512,
+                red: 1,
+                green: 2,
+                blue: 3),
+            "truncated" => PngTestData.CreateIndexedSolid(
+                width: 512,
+                height: 512,
+                red: 33,
+                green: 138,
+                blue: 33)[..^12],
+            _ => throw new ArgumentOutOfRangeException(nameof(variant), variant, message: "Unknown PNG variant.")
+        };
+        var handler = new LandCoverHandler(png);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new(uriString: "https://gibs.example.test/")
+        };
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        var client = new GibsClient(httpClient, cache, NullLogger<GibsClient>.Instance);
+
+        GibsLandCoverResult result = await client.GetLandCoverAsync(
+            [Detection(latitude: 55.737840, longitude: 38.421440)],
+            builtUpProximityKilometers: 2,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsAvailable);
     }
 
     private static Anomaly Detection(double latitude, double longitude) =>
@@ -82,53 +150,6 @@ public sealed class GibsClientLandCoverTests
             ConfidenceCategory: "nominal",
             Version: "2.0NRT",
             GoogleMapsUrl: $"https://www.google.com/maps?q={latitude},{longitude}");
-
-    private static byte[] CreateUniformIndexedPng(byte red, byte green, byte blue)
-    {
-        const int size = 512;
-        byte[] raw = new byte[(size + 1) * size];
-        using var compressed = new MemoryStream();
-        using (var zlib = new ZLibStream(compressed, CompressionLevel.SmallestSize, leaveOpen: true))
-            zlib.Write(raw);
-
-        using var png = new MemoryStream();
-        png.Write([137, 80, 78, 71, 13, 10, 26, 10]);
-        Span<byte> header = stackalloc byte[13];
-        BinaryPrimitives.WriteUInt32BigEndian(header[..4], size);
-        BinaryPrimitives.WriteUInt32BigEndian(header.Slice(start: 4, length: 4), size);
-        header[8] = 8;
-        header[9] = 3;
-        WriteChunk(png, "IHDR"u8, header);
-        WriteChunk(png, "PLTE"u8, [red, green, blue]);
-        WriteChunk(png, "IDAT"u8, compressed.ToArray());
-        WriteChunk(png, "IEND"u8, []);
-        return png.ToArray();
-    }
-
-    private static void WriteChunk(Stream stream, ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)
-    {
-        Span<byte> value = stackalloc byte[4];
-        BinaryPrimitives.WriteUInt32BigEndian(value, (uint)data.Length);
-        stream.Write(value);
-        stream.Write(type);
-        stream.Write(data);
-
-        uint crc = uint.MaxValue;
-        UpdateCrc(ref crc, type);
-        UpdateCrc(ref crc, data);
-        BinaryPrimitives.WriteUInt32BigEndian(value, ~crc);
-        stream.Write(value);
-    }
-
-    private static void UpdateCrc(ref uint crc, ReadOnlySpan<byte> data)
-    {
-        foreach (byte item in data)
-        {
-            crc ^= item;
-            for (int bit = 0; bit < 8; bit++)
-                crc = (crc >> 1) ^ (0xedb88320u & (uint)-(int)(crc & 1));
-        }
-    }
 
     private sealed class LandCoverHandler(byte[] pngBytes) : HttpMessageHandler
     {

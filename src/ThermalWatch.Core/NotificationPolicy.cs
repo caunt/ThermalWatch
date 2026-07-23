@@ -12,33 +12,25 @@ public static class NotificationPolicy
         if (!options.Enabled)
             return NotificationMetadataEvaluation.Accepted;
 
-        Anomaly representative = cluster.Representative;
+        if (EvaluateDaytime(cluster.Representative, options) is { IsAccepted: false } daytimeResult)
+            return daytimeResult;
 
-        if (options.RequireDaytime && !representative.DayNight.Equals(value: "D", StringComparison.Ordinal))
-            return NotificationMetadataEvaluation.Reject(NotificationRejectionReason.Nighttime);
+        if (EvaluateDetectionCount(cluster, options) is { IsAccepted: false } detectionCountResult)
+            return detectionCountResult;
 
-        if (cluster.Members.Length < options.MinimumClusterDetections)
-            return NotificationMetadataEvaluation.Reject(NotificationRejectionReason.InsufficientDetections);
-
-        if (EvaluateConfidence(representative, options) is { IsAccepted: false } confidenceResult)
+        if (EvaluateConfidence(cluster.Representative, options) is { IsAccepted: false } confidenceResult)
             return confidenceResult;
 
-        if (options.MinimumFrpMegawatts > 0)
+        if (options.MinimumFrpMegawatts > 0
+            && EvaluateFrp(cluster.Representative, options) is { IsAccepted: false } frpResult)
         {
-            if (representative.FrpMegawatts is not { } frp)
-                return NotificationMetadataEvaluation.Reject(NotificationRejectionReason.MissingRequiredValue);
-
-            if (frp < options.MinimumFrpMegawatts)
-                return NotificationMetadataEvaluation.Reject(NotificationRejectionReason.LowFrp);
+            return frpResult;
         }
 
-        if (options.MinimumThermalContrastKelvin > 0)
+        if (options.MinimumThermalContrastKelvin > 0
+            && EvaluateThermalContrast(cluster.Representative, options) is { IsAccepted: false } thermalContrastResult)
         {
-            if (representative.ThermalContrastKelvin is not { } thermalContrast)
-                return NotificationMetadataEvaluation.Reject(NotificationRejectionReason.MissingRequiredValue);
-
-            if (thermalContrast < options.MinimumThermalContrastKelvin)
-                return NotificationMetadataEvaluation.Reject(NotificationRejectionReason.LowThermalContrast);
+            return thermalContrastResult;
         }
 
         return NotificationMetadataEvaluation.Accepted;
@@ -52,11 +44,11 @@ public static class NotificationPolicy
         {
             return
             [
-                DisabledCriterion(code: "daytime", label: "Daytime pass"),
-                DisabledCriterion(code: "cluster-detections", label: "Cluster detections"),
-                DisabledCriterion(code: "confidence", label: "Representative confidence"),
-                DisabledCriterion(code: "frp", label: "Representative FRP"),
-                DisabledCriterion(code: "thermal-contrast", label: "Thermal contrast")
+                NotificationCriterionResult.Disabled(code: "daytime", label: "Daytime pass"),
+                NotificationCriterionResult.Disabled(code: "cluster-detections", label: "Cluster detections"),
+                NotificationCriterionResult.Disabled(code: "confidence", label: "Representative confidence"),
+                NotificationCriterionResult.Disabled(code: "frp", label: "Representative FRP"),
+                NotificationCriterionResult.Disabled(code: "thermal-contrast", label: "Thermal contrast")
             ];
         }
 
@@ -98,14 +90,57 @@ public static class NotificationPolicy
                 : NotificationMetadataEvaluation.Reject(NotificationRejectionReason.LowConfidence);
     }
 
+    private static NotificationMetadataEvaluation EvaluateDaytime(
+        Anomaly anomaly,
+        NotificationVisibilityOptions options) =>
+        !options.RequireDaytime || anomaly.DayNight.Equals(value: "D", StringComparison.Ordinal)
+            ? NotificationMetadataEvaluation.Accepted
+            : NotificationMetadataEvaluation.Reject(NotificationRejectionReason.Nighttime);
+
+    private static NotificationMetadataEvaluation EvaluateDetectionCount(
+        NotificationCluster cluster,
+        NotificationVisibilityOptions options) =>
+        cluster.Members.Length >= options.MinimumClusterDetections
+            ? NotificationMetadataEvaluation.Accepted
+            : NotificationMetadataEvaluation.Reject(NotificationRejectionReason.InsufficientDetections);
+
+    private static NotificationMetadataEvaluation EvaluateFrp(
+        Anomaly anomaly,
+        NotificationVisibilityOptions options) =>
+        EvaluateMinimumRequiredValue(
+            anomaly.FrpMegawatts,
+            options.MinimumFrpMegawatts,
+            NotificationRejectionReason.LowFrp);
+
+    private static NotificationMetadataEvaluation EvaluateThermalContrast(
+        Anomaly anomaly,
+        NotificationVisibilityOptions options) =>
+        EvaluateMinimumRequiredValue(
+            anomaly.ThermalContrastKelvin,
+            options.MinimumThermalContrastKelvin,
+            NotificationRejectionReason.LowThermalContrast);
+
+    private static NotificationMetadataEvaluation EvaluateMinimumRequiredValue(
+        double? actual,
+        double minimum,
+        NotificationRejectionReason lowValueReason)
+    {
+        if (actual is not { } value)
+            return NotificationMetadataEvaluation.Reject(NotificationRejectionReason.MissingRequiredValue);
+
+        return value >= minimum
+            ? NotificationMetadataEvaluation.Accepted
+            : NotificationMetadataEvaluation.Reject(lowValueReason);
+    }
+
     private static NotificationCriterionResult ExplainDaytime(
         Anomaly representative,
         NotificationVisibilityOptions options)
     {
         if (!options.RequireDaytime)
-            return DisabledCriterion(code: "daytime", label: "Daytime pass");
+            return NotificationCriterionResult.Disabled(code: "daytime", label: "Daytime pass");
 
-        bool passed = representative.DayNight.Equals(value: "D", StringComparison.Ordinal);
+        bool passed = EvaluateDaytime(representative, options).IsAccepted;
         string actual = representative.DayNight switch
         {
             "D" => "Daytime",
@@ -127,7 +162,7 @@ public static class NotificationPolicy
         NotificationCluster cluster,
         NotificationVisibilityOptions options)
     {
-        bool passed = cluster.Members.Length >= options.MinimumClusterDetections;
+        bool passed = EvaluateDetectionCount(cluster, options).IsAccepted;
         return Criterion(
             code: "cluster-detections",
             label: "Cluster detections",
@@ -146,10 +181,9 @@ public static class NotificationPolicy
         if (representative.Source.Equals(value: "MODIS_NRT", StringComparison.Ordinal))
         {
             if (options.MinimumModisConfidencePercent == 0)
-                return DisabledCriterion(code: "confidence", label: "Representative confidence");
+                return NotificationCriterionResult.Disabled(code: "confidence", label: "Representative confidence");
 
-            bool passed = representative.ConfidencePercent is { } confidence
-                && confidence >= options.MinimumModisConfidencePercent;
+            bool passed = EvaluateConfidence(representative, options).IsAccepted;
             return Criterion(
                 code: "confidence",
                 label: "Representative confidence",
@@ -168,8 +202,7 @@ public static class NotificationPolicy
         NotificationViirsConfidenceLevel? actualLevel = representative.ConfidenceCategory is { } category
             ? ParseViirsConfidence(category)
             : null;
-        bool viirsPassed = actualLevel is { } viirsLevel
-            && (int)viirsLevel >= (int)options.MinimumViirsConfidence;
+        bool viirsPassed = EvaluateConfidence(representative, options).IsAccepted;
         return Criterion(
             code: "confidence",
             label: "Representative confidence",
@@ -188,10 +221,9 @@ public static class NotificationPolicy
         NotificationVisibilityOptions options)
     {
         if (options.MinimumFrpMegawatts == 0)
-            return DisabledCriterion(code: "frp", label: "Representative FRP");
+            return NotificationCriterionResult.Disabled(code: "frp", label: "Representative FRP");
 
-        bool passed = representative.FrpMegawatts is { } frp
-            && frp >= options.MinimumFrpMegawatts;
+        bool passed = EvaluateFrp(representative, options).IsAccepted;
         return Criterion(
             code: "frp",
             label: "Representative FRP",
@@ -212,10 +244,9 @@ public static class NotificationPolicy
         NotificationVisibilityOptions options)
     {
         if (options.MinimumThermalContrastKelvin == 0)
-            return DisabledCriterion(code: "thermal-contrast", label: "Thermal contrast");
+            return NotificationCriterionResult.Disabled(code: "thermal-contrast", label: "Thermal contrast");
 
-        bool passed = representative.ThermalContrastKelvin is { } contrast
-            && contrast >= options.MinimumThermalContrastKelvin;
+        bool passed = EvaluateThermalContrast(representative, options).IsAccepted;
         return Criterion(
             code: "thermal-contrast",
             label: "Thermal contrast",
@@ -246,16 +277,6 @@ public static class NotificationPolicy
             requirement,
             explanation,
             IsBlocking: !passed);
-
-    private static NotificationCriterionResult DisabledCriterion(string code, string label) =>
-        new(
-            code,
-            label,
-            NotificationCriterionOutcomes.Disabled,
-            ActualValue: "Not evaluated",
-            Requirement: "Disabled by configuration",
-            Explanation: "This criterion is disabled.",
-            IsBlocking: false);
 
     private static NotificationViirsConfidenceLevel? ParseViirsConfidence(string category) =>
         category.ToLowerInvariant() switch

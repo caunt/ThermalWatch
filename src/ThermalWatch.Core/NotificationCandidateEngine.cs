@@ -181,7 +181,7 @@ public sealed class NotificationCandidateEngine(
         NotificationLandCoverResult? landCover = null;
         if (!options.LandCover.Enabled)
         {
-            criteria.Add(DisabledCriterion(
+            criteria.Add(NotificationCriterionResult.Disabled(
                 code: "land-cover",
                 label: "Land-cover filter"));
         }
@@ -199,7 +199,7 @@ public sealed class NotificationCandidateEngine(
         GibsPreviewSource? previewBaseSource = null;
         if (!IsPreviewRequired)
         {
-            criteria.Add(DisabledCriterion(
+            criteria.Add(NotificationCriterionResult.Disabled(
                 code: "exact-preview",
                 label: "Exact-date preview"));
         }
@@ -397,16 +397,6 @@ public sealed class NotificationCandidateEngine(
             Explanation: "An exact-date preview is currently available.",
             IsBlocking: false);
     }
-
-    private static NotificationCriterionResult DisabledCriterion(string code, string label) =>
-        new(
-            code,
-            label,
-            NotificationCriterionOutcomes.Disabled,
-            ActualValue: "Not evaluated",
-            Requirement: "Disabled by configuration",
-            Explanation: "This criterion is disabled.",
-            IsBlocking: false);
 
     private void ExpireSeen(DateTimeOffset now)
     {

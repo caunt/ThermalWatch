@@ -17,15 +17,6 @@ public sealed partial class GibsMapTileClient(
     private const int MaximumTileBytes = 1024 * 1024;
     private const byte NoDataMaximumChannel = 12;
     private static readonly TimeSpan s_completeTileCacheDuration = TimeSpan.FromMinutes(minutes: 5);
-    private static readonly GibsMapProduct[] s_products =
-    [
-        new(Layer: "MODIS_Terra_CorrectedReflectance_TrueColor"),
-        new(Layer: "MODIS_Aqua_CorrectedReflectance_TrueColor"),
-        new(Layer: "VIIRS_NOAA21_CorrectedReflectance_TrueColor"),
-        new(Layer: "VIIRS_NOAA20_CorrectedReflectance_TrueColor"),
-        new(Layer: "VIIRS_SNPP_CorrectedReflectance_TrueColor")
-    ];
-
     private readonly SemaphoreSlim _compositionSlots = new(initialCount: 8, maxCount: 8);
 
     public async Task<GibsMapTileResult> GetMapTileAsync(
@@ -76,9 +67,9 @@ public sealed partial class GibsMapTileClient(
         byte[] pixels = new byte[TileSize * TileSize * 4];
         int remainingPixels = TileSize * TileSize;
 
-        foreach (GibsMapProduct product in s_products)
+        foreach (string layer in GibsLayers.MapBaseLayers)
         {
-            byte[]? source = await GetTilePixelsAsync(product, coordinates, cancellationToken).ConfigureAwait(false);
+            byte[]? source = await GetTilePixelsAsync(layer, coordinates, cancellationToken).ConfigureAwait(false);
             if (source is null)
                 continue;
 
@@ -128,13 +119,13 @@ public sealed partial class GibsMapTileClient(
     }
 
     private async Task<byte[]?> GetTilePixelsAsync(
-        GibsMapProduct product,
+        string layer,
         GibsMapTileCoordinates coordinates,
         CancellationToken cancellationToken)
     {
         try
         {
-            Uri requestUri = BuildTileUri(product, coordinates);
+            Uri requestUri = BuildTileUri(layer, coordinates);
             using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
             using HttpResponseMessage response = await httpClient.SendAsync(
                 request,
@@ -149,7 +140,7 @@ public sealed partial class GibsMapTileClient(
                 return null;
             }
 
-            byte[]? bytes = await ReadLimitedBytesAsync(
+            byte[]? bytes = await HttpContentReader.ReadLimitedBytesAsync(
                 response.Content,
                 MaximumTileBytes,
                 cancellationToken).ConfigureAwait(false);
@@ -175,7 +166,7 @@ public sealed partial class GibsMapTileClient(
             LogProductUnavailable(
                 logger,
                 exception,
-                product.Layer,
+                layer,
                 coordinates.Zoom,
                 coordinates.X,
                 coordinates.Y);
@@ -183,13 +174,13 @@ public sealed partial class GibsMapTileClient(
         }
     }
 
-    private Uri BuildTileUri(GibsMapProduct product, GibsMapTileCoordinates coordinates)
+    private Uri BuildTileUri(string layer, GibsMapTileCoordinates coordinates)
     {
         Uri baseAddress = httpClient.BaseAddress
             ?? throw new InvalidOperationException(message: "The GIBS HTTP client requires a base address.");
         string path = string.Create(
             CultureInfo.InvariantCulture,
-            handler: $"wmts/epsg3857/best/{product.Layer}/default/default/GoogleMapsCompatible_Level9/{coordinates.Zoom}/{coordinates.Y}/{coordinates.X}.jpeg");
+            handler: $"wmts/epsg3857/best/{layer}/default/default/GoogleMapsCompatible_Level9/{coordinates.Zoom}/{coordinates.Y}/{coordinates.X}.jpeg");
         return new(baseAddress, path);
     }
 
@@ -198,30 +189,6 @@ public sealed partial class GibsMapTileClient(
         || pixels[offset] <= NoDataMaximumChannel
             && pixels[offset + 1] <= NoDataMaximumChannel
             && pixels[offset + 2] <= NoDataMaximumChannel;
-
-    private static async Task<byte[]?> ReadLimitedBytesAsync(
-        HttpContent content,
-        int maximumBytes,
-        CancellationToken cancellationToken)
-    {
-        Stream stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        await using (stream.ConfigureAwait(false))
-        {
-            using var result = new MemoryStream();
-            byte[] buffer = new byte[8192];
-            while (true)
-            {
-                int read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-                if (read == 0)
-                    return result.ToArray();
-
-                if (result.Length + read > maximumBytes)
-                    return null;
-
-                result.Write(buffer, offset: 0, read);
-            }
-        }
-    }
 
     public void Dispose()
     {
@@ -251,6 +218,4 @@ public sealed partial class GibsMapTileClient(
         int zoom,
         int x,
         int y);
-
-    private sealed record GibsMapProduct(string Layer);
 }

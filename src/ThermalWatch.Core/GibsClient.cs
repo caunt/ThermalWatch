@@ -1,11 +1,11 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Globalization;
-using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Xml.Linq;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using StbImageSharp;
 
 namespace ThermalWatch.Core;
 
@@ -25,7 +25,6 @@ public sealed partial class GibsClient(
     private const int LandCoverTotalPixelWidth = LandCoverTileSize * LandCoverMatrixWidth;
     private const int LandCoverTotalPixelHeight = LandCoverTileSize * LandCoverMatrixHeight;
     private const double LandCoverPixelDegrees = 360d / LandCoverTotalPixelWidth;
-    private const double EarthRadiusKilometers = 6371.0088;
     private const string LandCoverLayer = "MODIS_Combined_L3_IGBP_Land_Cover_Type_Annual";
     private const string LandCoverTileMatrixSet = "500m";
     private const int LandCoverTileMatrix = 7;
@@ -238,7 +237,10 @@ public sealed partial class GibsClient(
             return null;
         }
 
-        return await ReadLimitedBytesAsync(response.Content, maximumBytes, cancellationToken).ConfigureAwait(false);
+        return await HttpContentReader.ReadLimitedBytesAsync(
+            response.Content,
+            maximumBytes,
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<GibsLandCoverResult> GetLandCoverAsync(
@@ -438,7 +440,7 @@ public sealed partial class GibsClient(
                 && response.Content.Headers.ContentType?.MediaType is { } mediaType
                 && mediaType.Equals(value: "image/png", StringComparison.OrdinalIgnoreCase)
                 && response.Content.Headers.ContentLength <= MaximumLandCoverTileBytes
-                && await ReadLimitedBytesAsync(
+                && await HttpContentReader.ReadLimitedBytesAsync(
                     response.Content,
                     MaximumLandCoverTileBytes,
                     cancellationToken).ConfigureAwait(false) is { } pngBytes
@@ -474,49 +476,38 @@ public sealed partial class GibsClient(
         out ImmutableArray<DateOnly> dates)
     {
         dates = [];
-        try
+        if (!TryReadDomain(xml, out string domain))
+            return false;
+
+        var parsedDates = new HashSet<DateOnly>();
+        foreach (string period in domain.Split(
+            ',',
+            StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
         {
-            string? domain = XDocument.Parse(xml, LoadOptions.None)
-                .Descendants()
-                .FirstOrDefault(element => "Domain".Equals(element.Name.LocalName, StringComparison.Ordinal))
-                ?.Value;
-            if (string.IsNullOrWhiteSpace(domain))
+            string[] values = period.Split('/', StringSplitOptions.TrimEntries);
+            if (!TryReadDate(values[0], out DateOnly start))
                 return false;
 
-            var parsedDates = new HashSet<DateOnly>();
-            foreach (string period in domain.Split(
-                ',',
-                StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            if (values.Length == 1)
             {
-                string[] values = period.Split('/', StringSplitOptions.TrimEntries);
-                if (!TryReadDate(values[0], out DateOnly start))
-                    return false;
-
-                if (values.Length == 1)
-                {
-                    parsedDates.Add(start);
-                    continue;
-                }
-
-                if (values.Length != 3
-                    || !TryReadDate(values[1], out DateOnly end)
-                    || !"P1Y".Equals(values[2], StringComparison.Ordinal)
-                    || end < start)
-                {
-                    return false;
-                }
-
-                for (DateOnly date = start; date <= end; date = date.AddYears(1))
-                    parsedDates.Add(date);
+                parsedDates.Add(start);
+                continue;
             }
 
-            dates = [.. parsedDates.Order()];
-            return dates.Length > 0;
+            if (values.Length != 3
+                || !TryReadDate(values[1], out DateOnly end)
+                || !"P1Y".Equals(values[2], StringComparison.Ordinal)
+                || end < start)
+            {
+                return false;
+            }
+
+            for (DateOnly date = start; date <= end; date = date.AddYears(1))
+                parsedDates.Add(date);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.Xml.XmlException)
-        {
-            return false;
-        }
+
+        dates = [.. parsedDates.Order()];
+        return dates.Length > 0;
     }
 
     private static LandCoverPixel ToLandCoverPixel(double latitude, double longitude)
@@ -537,7 +528,7 @@ public sealed partial class GibsClient(
         double longitude,
         double proximityKilometers)
     {
-        double angularRadius = proximityKilometers / EarthRadiusKilometers;
+        double angularRadius = proximityKilometers / Geography.EarthRadiusKilometers;
         double latitudeRadius = angularRadius * 180 / Math.PI;
         bool reachesPole = Math.Abs(latitude) + latitudeRadius >= 90;
         double longitudeRadius = reachesPole
@@ -624,30 +615,6 @@ public sealed partial class GibsClient(
     private static bool IsUnavailableClass(byte landCoverClass) =>
         landCoverClass is UnknownLandCoverClass or 255;
 
-    private static async Task<byte[]?> ReadLimitedBytesAsync(
-        HttpContent content,
-        int maximumBytes,
-        CancellationToken cancellationToken)
-    {
-        Stream stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        await using (stream.ConfigureAwait(false))
-        {
-            using var result = new MemoryStream();
-            byte[] buffer = new byte[8192];
-            while (true)
-            {
-                int read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-                if (read == 0)
-                    return result.ToArray();
-
-                if (result.Length + read > maximumBytes)
-                    return null;
-
-                result.Write(buffer, offset: 0, read);
-            }
-        }
-    }
-
     private static bool HasExpectedPreviewPng(
         byte[] pngBytes,
         int expectedWidth,
@@ -655,16 +622,25 @@ public sealed partial class GibsClient(
     {
         if (expectedWidth <= 0
             || expectedHeight <= 0
-            || !TryReadPreviewPngHeader(
+            || !TryReadPngHeader(
                 pngBytes,
                 out int width,
                 out int height,
-                out _))
+                out byte colorType)
+            || colorType is not (2 or 6))
         {
             return false;
         }
 
         if (width != expectedWidth || height != expectedHeight)
+            return false;
+
+        return HasCompletePngStructure(pngBytes);
+    }
+
+    private static bool HasCompletePngStructure(byte[] pngBytes)
+    {
+        if (!pngBytes.AsSpan().StartsWith(s_pngSignature))
             return false;
 
         int offset = s_pngSignature.Length;
@@ -688,116 +664,44 @@ public sealed partial class GibsClient(
 
     private static bool HasUsablePreviewCoverage(byte[] pngBytes)
     {
-        try
-        {
-            if (!TryReadPreviewPngHeader(
+        if (!HasExpectedPreviewPng(
+            pngBytes,
+            PreviewProbePixelSize,
+            PreviewProbePixelSize)
+            || !TryDecodeRgba(
                 pngBytes,
-                out int width,
-                out int height,
-                out int bytesPerPixel)
-                || width != PreviewProbePixelSize
-                || height != PreviewProbePixelSize)
-            {
-                return false;
-            }
-
-            using var compressed = new MemoryStream();
-            if (!TryCollectPreviewImageData(pngBytes, compressed))
-                return false;
-
-            return HasSufficientUsablePixels(compressed, width, height, bytesPerPixel);
-        }
-        catch (Exception exception) when (exception is
-            IOException or
-            InvalidDataException or
-            ArgumentException or
-            OverflowException)
+                PreviewProbePixelSize,
+                PreviewProbePixelSize,
+                out byte[] pixels))
         {
             return false;
         }
-    }
 
-    private static bool TryCollectPreviewImageData(byte[] pngBytes, MemoryStream compressed)
-    {
-        int offset = s_pngSignature.Length;
-        while (offset <= pngBytes.Length - 12)
-        {
-            uint length = BinaryPrimitives.ReadUInt32BigEndian(pngBytes.AsSpan(offset, length: 4));
-            if (length > int.MaxValue || offset + 12L + length > pngBytes.Length)
-                return false;
-
-            int chunkLength = (int)length;
-            Span<byte> type = pngBytes.AsSpan(offset + 4, length: 4);
-            Span<byte> data = pngBytes.AsSpan(offset + 8, chunkLength);
-            if (type.SequenceEqual("IDAT"u8))
-            {
-                compressed.Write(data);
-                if (compressed.Length > MaximumPreviewProbeBytes)
-                    return false;
-            }
-            else if (type.SequenceEqual("IEND"u8))
-            {
-                return chunkLength == 0 && compressed.Length > 0;
-            }
-
-            offset += chunkLength + 12;
-        }
-
-        return false;
-    }
-
-    private static bool HasSufficientUsablePixels(
-        MemoryStream compressed,
-        int width,
-        int height,
-        int bytesPerPixel)
-    {
-        int rowLength = checked(width * bytesPerPixel);
-        int totalPixels = checked(width * height);
+        int totalPixels = PreviewProbePixelSize * PreviewProbePixelSize;
         int requiredUsablePixels = (totalPixels + 1) / 2;
         int usablePixels = 0;
-        compressed.Position = 0;
-        using var decompressed = new ZLibStream(compressed, CompressionMode.Decompress);
-        byte[] previous = new byte[rowLength];
-        byte[] current = new byte[rowLength];
-
-        for (int row = 0; row < height; row++)
+        for (int offset = 0; offset < pixels.Length; offset += 4)
         {
-            int filter = decompressed.ReadByte();
-            if (filter < 0)
-                return false;
-            decompressed.ReadExactly(current);
-            ApplyPngFilter((byte)filter, current, previous, bytesPerPixel);
-
-            for (int pixel = 0; pixel < width; pixel++)
-            {
-                int pixelOffset = pixel * bytesPerPixel;
-                bool hasAlpha = bytesPerPixel == 4;
-                bool alphaUsable = !hasAlpha
-                    || current[pixelOffset + 3] > PreviewNoDataMaximumChannel;
-                bool colorUsable = current[pixelOffset] > PreviewNoDataMaximumChannel
-                    || current[pixelOffset + 1] > PreviewNoDataMaximumChannel
-                    || current[pixelOffset + 2] > PreviewNoDataMaximumChannel;
-                if (alphaUsable && colorUsable)
-                    usablePixels++;
-            }
-
-            (previous, current) = (current, previous);
+            bool alphaUsable = pixels[offset + 3] > PreviewNoDataMaximumChannel;
+            bool colorUsable = pixels[offset] > PreviewNoDataMaximumChannel
+                || pixels[offset + 1] > PreviewNoDataMaximumChannel
+                || pixels[offset + 2] > PreviewNoDataMaximumChannel;
+            if (alphaUsable && colorUsable)
+                usablePixels++;
         }
 
-        return decompressed.ReadByte() == -1
-            && usablePixels >= requiredUsablePixels;
+        return usablePixels >= requiredUsablePixels;
     }
 
-    private static bool TryReadPreviewPngHeader(
+    private static bool TryReadPngHeader(
         byte[] pngBytes,
         out int width,
         out int height,
-        out int bytesPerPixel)
+        out byte colorType)
     {
         width = 0;
         height = 0;
-        bytesPerPixel = 0;
+        colorType = 0;
         if (!pngBytes.AsSpan().StartsWith(s_pngSignature)
             || pngBytes.Length < s_pngSignature.Length + 25)
         {
@@ -823,195 +727,76 @@ public sealed partial class GibsClient(
         if (unsignedWidth is 0 or > int.MaxValue || unsignedHeight is 0 or > int.MaxValue)
             return false;
 
-        bytesPerPixel = header[9] switch
-        {
-            2 => 3,
-            6 => 4,
-            _ => 0
-        };
-        if (bytesPerPixel == 0)
-            return false;
-
         width = (int)unsignedWidth;
         height = (int)unsignedHeight;
+        colorType = header[9];
         return true;
     }
 
     private static bool TryDecodeLandCoverPng(byte[] pngBytes, out byte[] classes)
     {
         classes = [];
-        try
-        {
-            if (!pngBytes.AsSpan().StartsWith(s_pngSignature))
-                return false;
-
-            using var compressed = new MemoryStream();
-            if (!TryReadLandCoverChunks(
+        if (!TryReadPngHeader(
+            pngBytes,
+            out int width,
+            out int height,
+            out byte colorType)
+            || width != LandCoverTileSize
+            || height != LandCoverTileSize
+            || colorType != 3
+            || !HasCompletePngStructure(pngBytes)
+            || !TryDecodeRgba(
                 pngBytes,
-                compressed,
-                out byte[]? palette,
-                out byte[]? transparency))
-            {
-                return false;
-            }
-
-            return TryDecodeLandCoverClasses(compressed, palette!, transparency, out classes);
-        }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+                LandCoverTileSize,
+                LandCoverTileSize,
+                out byte[] pixels))
         {
-            classes = [];
             return false;
         }
-    }
 
-    private static bool TryReadLandCoverChunks(
-        byte[] pngBytes,
-        MemoryStream compressed,
-        out byte[]? palette,
-        out byte[]? transparency)
-    {
-        palette = null;
-        transparency = null;
-        int offset = s_pngSignature.Length;
-        bool validHeader = false;
-
-        while (offset <= pngBytes.Length - 12)
-        {
-            uint length = BinaryPrimitives.ReadUInt32BigEndian(pngBytes.AsSpan(offset, length: 4));
-            if (length > int.MaxValue || offset + 12L + length > pngBytes.Length)
-                return false;
-
-            int chunkLength = (int)length;
-            Span<byte> type = pngBytes.AsSpan(offset + 4, length: 4);
-            Span<byte> data = pngBytes.AsSpan(offset + 8, chunkLength);
-            if (type.SequenceEqual("IHDR"u8))
-            {
-                validHeader = IsValidLandCoverHeader(data);
-            }
-            else if (type.SequenceEqual("PLTE"u8))
-            {
-                if (chunkLength is 0 or > 768 || chunkLength % 3 != 0)
-                    return false;
-                palette = data.ToArray();
-            }
-            else if (type.SequenceEqual("tRNS"u8))
-            {
-                if (chunkLength > 256)
-                    return false;
-                transparency = data.ToArray();
-            }
-            else if (type.SequenceEqual("IDAT"u8))
-            {
-                compressed.Write(data);
-            }
-            else if (type.SequenceEqual("IEND"u8))
-            {
-                return validHeader && palette is not null && compressed.Length > 0;
-            }
-
-            offset += chunkLength + 12;
-        }
-
-        return false;
-    }
-
-    private static bool IsValidLandCoverHeader(ReadOnlySpan<byte> data) =>
-        data.Length == 13
-        && BinaryPrimitives.ReadUInt32BigEndian(data[..4]) == LandCoverTileSize
-        && BinaryPrimitives.ReadUInt32BigEndian(data.Slice(start: 4, length: 4)) == LandCoverTileSize
-        && data[8] == 8
-        && data[9] == 3
-        && data[10] == 0
-        && data[11] == 0
-        && data[12] == 0;
-
-    private static bool TryDecodeLandCoverClasses(
-        MemoryStream compressed,
-        byte[] palette,
-        byte[]? transparency,
-        out byte[] classes)
-    {
-        compressed.Position = 0;
-        using var decompressed = new ZLibStream(compressed, CompressionMode.Decompress);
-        byte[] previous = new byte[LandCoverTileSize];
-        byte[] current = new byte[LandCoverTileSize];
         classes = new byte[LandCoverTileSize * LandCoverTileSize];
-
-        for (int row = 0; row < LandCoverTileSize; row++)
+        for (int pixel = 0; pixel < classes.Length; pixel++)
         {
-            int filter = decompressed.ReadByte();
-            if (filter < 0)
-                return false;
-            decompressed.ReadExactly(current);
-            ApplyPngFilter((byte)filter, current, previous, bytesPerPixel: 1);
-
-            for (int column = 0; column < LandCoverTileSize; column++)
+            int offset = pixel * 4;
+            if (pixels[offset + 3] != byte.MaxValue)
             {
-                classes[row * LandCoverTileSize + column] = GetLandCoverClass(
-                    current[column],
-                    palette,
-                    transparency);
+                classes[pixel] = UnknownLandCoverClass;
+                continue;
             }
 
-            (previous, current) = (current, previous);
+            int rgb = Rgb(pixels[offset], pixels[offset + 1], pixels[offset + 2]);
+            classes[pixel] = s_landCoverClassesByRgb.GetValueOrDefault(rgb, UnknownLandCoverClass);
         }
 
-        return decompressed.ReadByte() == -1;
+        return true;
     }
 
-    private static byte GetLandCoverClass(
-        byte paletteIndex,
-        byte[] palette,
-        byte[]? transparency)
+    private static bool TryDecodeRgba(
+        byte[] pngBytes,
+        int expectedWidth,
+        int expectedHeight,
+        out byte[] pixels)
     {
-        int paletteOffset = paletteIndex * 3;
-        byte alpha = transparency is not null && paletteIndex < transparency.Length
-            ? transparency[paletteIndex]
-            : byte.MaxValue;
-        if (alpha != byte.MaxValue || paletteOffset + 2 >= palette.Length)
-            return UnknownLandCoverClass;
-
-        int rgb = Rgb(
-            palette[paletteOffset],
-            palette[paletteOffset + 1],
-            palette[paletteOffset + 2]);
-        return s_landCoverClassesByRgb.GetValueOrDefault(rgb, UnknownLandCoverClass);
-    }
-
-    private static void ApplyPngFilter(
-        byte filter,
-        Span<byte> current,
-        ReadOnlySpan<byte> previous,
-        int bytesPerPixel)
-    {
-        for (int index = 0; index < current.Length; index++)
+        pixels = [];
+        try
         {
-            int left = index < bytesPerPixel ? 0 : current[index - bytesPerPixel];
-            byte up = previous[index];
-            int upperLeft = index < bytesPerPixel ? 0 : previous[index - bytesPerPixel];
-            current[index] = filter switch
+            var image = ImageResult.FromMemory(
+                pngBytes,
+                StbImageSharp.ColorComponents.RedGreenBlueAlpha);
+            if (image.Width != expectedWidth
+                || image.Height != expectedHeight
+                || image.Data.Length != checked(expectedWidth * expectedHeight * 4))
             {
-                0 => current[index],
-                1 => unchecked((byte)(current[index] + left)),
-                2 => unchecked((byte)(current[index] + up)),
-                3 => unchecked((byte)(current[index] + (left + up) / 2)),
-                4 => unchecked((byte)(current[index] + PaethPredictor(left, up, upperLeft))),
-                _ => throw new InvalidDataException(message: "Unsupported PNG filter.")
-            };
-        }
-    }
+                return false;
+            }
 
-    private static int PaethPredictor(int left, int up, int upperLeft)
-    {
-        int prediction = left + up - upperLeft;
-        int leftDistance = Math.Abs(prediction - left);
-        int upDistance = Math.Abs(prediction - up);
-        int upperLeftDistance = Math.Abs(prediction - upperLeft);
-        return leftDistance <= upDistance && leftDistance <= upperLeftDistance
-            ? left
-            : upDistance <= upperLeftDistance
-                ? up
-                : upperLeft;
+            pixels = image.Data;
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private static int Modulo(int value, int divisor) =>
@@ -1088,34 +873,42 @@ public sealed partial class GibsClient(
 
     private static bool DomainContainsDate(string xml, DateOnly requestedDate)
     {
+        if (!TryReadDomain(xml, out string domain))
+            return false;
+
+        foreach (string period in domain.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] values = period.Split('/', StringSplitOptions.TrimEntries);
+            if (TryReadDate(values[0], out DateOnly start)
+                && (values.Length == 1 || TryReadDate(values[1], out DateOnly end) && requestedDate <= end)
+                && requestedDate >= start)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryReadDomain(string xml, out string domain)
+    {
+        domain = string.Empty;
         try
         {
-            var document = XDocument.Parse(xml, LoadOptions.None);
-            string? domain = document
+            string? value = XDocument.Parse(xml, LoadOptions.None)
                 .Descendants()
                 .FirstOrDefault(element => "Domain".Equals(element.Name.LocalName, StringComparison.Ordinal))
                 ?.Value;
-
-            if (string.IsNullOrWhiteSpace(domain))
+            if (string.IsNullOrWhiteSpace(value))
                 return false;
 
-            foreach (string period in domain.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
-            {
-                string[] values = period.Split('/', StringSplitOptions.TrimEntries);
-                if (TryReadDate(values[0], out DateOnly start)
-                    && (values.Length == 1 || TryReadDate(values[1], out DateOnly end) && requestedDate <= end)
-                    && requestedDate >= start)
-                {
-                    return true;
-                }
-            }
+            domain = value;
+            return true;
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.Xml.XmlException)
         {
             return false;
         }
-
-        return false;
     }
 
     private static bool TryReadDate(string value, out DateOnly date)

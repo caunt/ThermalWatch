@@ -26,12 +26,6 @@ public sealed partial class FirmsClient(
     private CountryApiCapability _countryCapability;
     private DateTimeOffset _nextCountryProbeUtc = DateTimeOffset.MinValue;
 
-    public async Task<ImmutableArray<Anomaly>> GetDetectionsAsync(
-        string countryCode,
-        string source,
-        CancellationToken cancellationToken) =>
-        (await GetSegmentAsync(countryCode, source, cancellationToken).ConfigureAwait(false)).Detections;
-
     public async Task<FirmsSegmentResult> GetSegmentAsync(
         string countryCode,
         string source,
