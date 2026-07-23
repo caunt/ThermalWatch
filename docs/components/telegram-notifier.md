@@ -34,16 +34,16 @@ Seen IDs are timestamped before evaluation and bounded by both configured retent
 
 The notifier uses one [GibsClient](../../src/ThermalWatch.Core/GibsClient.cs) for two independent purposes:
 
-- Preview composition: verify exact availability for sensor/pass base and thermal layers, then request a bounded PNG WMS composite.
+- Preview composition: verify exact availability for the representative thermal overlay, probe pass-matched same-date base crops for usable pixels, and request a bounded PNG WMS composite with the first usable base. The representative base is preferred; fallback proceeds through its sensor family before the other supported family.
 - Land cover: find the newest annual date common to required tiles, fetch bounded indexed PNG tiles, decode official colors to IGBP classes, and sample the cluster area.
 
-The shared memory cache is limited by the API host to 64 MiB. Successful and unavailable results use different expiration windows so transient GIBS gaps can recover. GIBS cancellation propagates; other failures return unavailable results rather than stopping notification processing.
+The shared memory cache is limited by the API host to 64 MiB. Successful previews include selected-base attribution and expire after two hours. Black or otherwise unusable probes are not cached, while negative global availability and land-cover results use short expirations so transient GIBS gaps can recover. GIBS cancellation propagates; other failures return unavailable results rather than stopping notification processing.
 
 ## Delivery behavior
 
 Messages use Telegram HTML and an inline Google Maps button. The formatter selects a single- or multi-satellite template and progressively compacts it to Telegram's photo-caption limit. It HTML-encodes dynamic values.
 
-When a preview exists, the service sends a photo with caption. When text fallback is allowed, it sends a message with link previews disabled.
+When a preview exists, the service sends a photo with caption. A fallback caption names its contextual base and the representative thermal overlay instead of claiming sensor-matched imagery. When text fallback is allowed, the service sends a message with link previews disabled.
 
 - Telegram `400`, `401`, or `403` during automatic delivery is treated as permanent and disables automatic processing until restart.
 - Other send failures are treated as transient; the current pending entry remains and processing returns to wait for another snapshot update.
@@ -61,6 +61,6 @@ Manual operations do not mutate automatic seen IDs or pending previews. The endp
 
 ## Tests and diagnostics
 
-The existing tests cover option defaults, active-context clustering, land-cover policy, land-cover tile decoding/cache reuse, message link behavior, and formatter output. They do not call Telegram or NASA live.
+The tests cover option defaults, active-context clustering, land-cover policy, land-cover tile decoding/cache reuse, preview no-data detection and fallback ordering, message link behavior, and formatter output. They do not call Telegram or NASA live.
 
 Operational signals are console logs and manual endpoint results. There is no Telegram health endpoint, webhook, inbound update loop, durable outbox, or persisted deduplication state.

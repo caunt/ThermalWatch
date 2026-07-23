@@ -514,7 +514,7 @@ public sealed class TelegramNotificationService(
         var keyboard = CreateLocationKeyboard(cluster);
         var message = TelegramMessageFormatter.Format(
             cluster,
-            preview.IsAvailable,
+            preview,
             previewSelection.Dimensions,
             previewSelection.ClusterDiameterKilometers,
             landCoverSummary);

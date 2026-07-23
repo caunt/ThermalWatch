@@ -79,7 +79,7 @@ No credentials disables Telegram without affecting the API. Supplying only one c
 | Service | Server-side use | Failure boundary |
 | --- | --- | --- |
 | NASA FIRMS | Country and area CSV plus MAP_KEY status. | Isolated by country/source segment; stale data is retained where available. |
-| NASA GIBS | Exact-date previews, availability domains, annual land-cover domains, and tiles. | Preview/land-cover results become unavailable; FIRMS and HTTP API continue. |
+| NASA GIBS | Exact-date previews, spatial base-image probes, availability domains, annual land-cover domains, and tiles. | Preview/land-cover results become unavailable; FIRMS and HTTP API continue. |
 | Telegram Bot API | Startup validation and outbound channel messages. | Notifier can disable or defer; polling and HTTP API continue. |
 | Natural Earth | Embedded boundary data loaded from Core. | Missing or unusable geometry for a configured country is a fatal startup error. |
 | unpkg, GIBS tiles, Google Maps | Browser-only viewer resources. | Viewer provider can fail while server APIs and polling continue. |
@@ -141,7 +141,7 @@ The repository contains no production deployment manifests, immutable release ta
 | Invalid application option or requested country geometry | Process prints a safe startup error and exits with code 1. | Correct environment configuration or embedded data, then restart. |
 | FIRMS segment failure | Retain the previous complete segment, mark it stale, and continue other segments. | Later polls retry automatically. Inspect source statuses and logs. |
 | Verified country-feature outage | Switch globally to polygon-clipped area fallback and probe the country API after one hour. | Automatic when the country API succeeds again. |
-| GIBS preview unavailable | Keep automatic candidate pending until retry expiry; then discard if preview is required or send text-only if allowed. | Later snapshots retry pending work until expiry. |
+| GIBS preview unavailable or base crop is mostly no-data | Try other supported same-date, pass-matched satellite bases; if none is usable, keep the automatic candidate pending until retry expiry, then discard if preview is required or send text-only if allowed. | Later snapshots retry uncached spatial probes until expiry. |
 | GIBS land cover unavailable or invalid | Retain the notification candidate and record fail-open diagnostics. | Later candidates retry after cache expiry. |
 | Telegram startup validation failure | Disable notifier for the process lifetime. | Correct credentials/channel permissions and restart. |
 | Telegram automatic send returns `400`, `401`, or `403` | Disable automatic notifier processing for the process lifetime. | Correct the permanent condition and restart. |

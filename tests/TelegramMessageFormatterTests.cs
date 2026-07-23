@@ -18,7 +18,7 @@ public sealed class TelegramMessageFormatterTests
 
         var caption = TelegramMessageFormatter.Format(
             cluster,
-            true,
+            new GibsPreview([1], new("VIIRS_SNPP_NRT", "Suomi-NPP", "VIIRS")),
             new(30, 20, 900, 600),
             1,
             "Vegetation · 20%");
@@ -43,11 +43,55 @@ public sealed class TelegramMessageFormatterTests
         Assert.Equal(detection.GoogleMapsUrl, button.Url);
     }
 
+    [Theory]
+    [InlineData(false, "🖼 <b>Imagery:</b> Aqua &#183; MODIS base &#183; Suomi-NPP &#183; VIIRS thermal overlay · 2026-07-19")]
+    [InlineData(true, "🖼 <b>Preview:</b> Aqua &#183; MODIS base &#183; Suomi-NPP &#183; VIIRS thermal overlay for 2026-07-19")]
+    public void Format_NamesFallbackBaseAndRepresentativeThermalOverlay(
+        bool multiSatellite,
+        string expectedPreviewLine)
+    {
+        var representative = Detection("first", "Suomi-NPP");
+        var members = multiSatellite
+            ? new[] { representative, Detection("second", "NOAA-20") }
+            : new[] { representative };
+        var cluster = new NotificationCluster("cluster", representative, [.. members]);
+
+        var caption = TelegramMessageFormatter.Format(
+            cluster,
+            new GibsPreview([1], new("MODIS_NRT", "Aqua", "MODIS")),
+            new(30, 20, 900, 600),
+            1,
+            "Vegetation · 20%");
+
+        Assert.Contains(expectedPreviewLine, caption);
+    }
+
+    [Theory]
+    [InlineData(false, "🖼 <b>Imagery:</b> Sensor-matched · 2026-07-19")]
+    [InlineData(true, "🖼 <b>Preview:</b> Suomi-NPP &#183; VIIRS imagery for 2026-07-19")]
+    public void Format_PreservesMatchedPreviewWording(bool multiSatellite, string expectedPreviewLine)
+    {
+        var representative = Detection("first", "Suomi-NPP");
+        var members = multiSatellite
+            ? new[] { representative, Detection("second", "NOAA-20") }
+            : new[] { representative };
+        var cluster = new NotificationCluster("cluster", representative, [.. members]);
+
+        var caption = TelegramMessageFormatter.Format(
+            cluster,
+            new GibsPreview([1], new("VIIRS_SNPP_NRT", "Suomi-NPP", "VIIRS")),
+            new(30, 20, 900, 600),
+            1,
+            "Vegetation · 20%");
+
+        Assert.Contains(expectedPreviewLine, caption);
+    }
+
     private static Anomaly Detection(string id, string satellite) =>
         new(
             id,
             "UKR",
-            "VIIRS_SNPP_NRT",
+            satellite == "NOAA-20" ? "VIIRS_NOAA20_NRT" : "VIIRS_SNPP_NRT",
             satellite,
             "VIIRS",
             50.123456,

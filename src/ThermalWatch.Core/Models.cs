@@ -108,11 +108,23 @@ public readonly record struct GibsPreviewDimensions(
     int PixelWidth,
     int PixelHeight);
 
-public sealed record GibsPreview(byte[]? PngBytes)
+public readonly record struct GibsPreviewSource(
+    string FirmsSource,
+    string Satellite,
+    string Instrument);
+
+public sealed record GibsPreview(
+    byte[]? PngBytes,
+    GibsPreviewSource? BaseSource)
 {
+    public GibsPreview(byte[]? pngBytes)
+        : this(pngBytes, null)
+    {
+    }
+
     public bool IsAvailable => PngBytes is { Length: > 0 };
 
-    public static GibsPreview Unavailable { get; } = new((byte[]?)null);
+    public static GibsPreview Unavailable { get; } = new(null, null);
 }
 
 public sealed record GibsLandCoverResult(

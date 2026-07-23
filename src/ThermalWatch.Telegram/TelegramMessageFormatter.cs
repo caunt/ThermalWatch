@@ -14,11 +14,24 @@ public static class TelegramMessageFormatter
         bool hasPreview,
         GibsPreviewDimensions previewDimensions,
         double? clusterDiameterKilometers,
+        string? landCoverSummary) =>
+        Format(
+            cluster,
+            hasPreview ? new([1]) : GibsPreview.Unavailable,
+            previewDimensions,
+            clusterDiameterKilometers,
+            landCoverSummary);
+
+    public static string Format(
+        NotificationCluster cluster,
+        GibsPreview preview,
+        GibsPreviewDimensions previewDimensions,
+        double? clusterDiameterKilometers,
         string? landCoverSummary)
     {
         var data = CreateTemplateData(
             cluster,
-            hasPreview,
+            preview,
             previewDimensions,
             clusterDiameterKilometers,
             landCoverSummary);
@@ -77,9 +90,12 @@ public static class TelegramMessageFormatter
 
         if (data.HasPreview && compactLevel < 2)
         {
+            var imagery = IsSensorMatchedPreview(representative, data.PreviewBaseSource)
+                ? "Sensor-matched"
+                : FormatFallbackPreview(representative, data.PreviewBaseSource!.Value);
             var preview = new List<string>
             {
-                $"🖼 <b>Imagery:</b> Sensor-matched · {Html(FormatDate(representative.AcquiredAtUtc))}"
+                $"🖼 <b>Imagery:</b> {Html(imagery)} · {Html(FormatDate(representative.AcquiredAtUtc))}"
             };
             if (FormatCoverage(data.PreviewDimensions) is { } coverage)
                 preview.Add($"📏 <b>Coverage:</b> {Html(coverage)} km");
@@ -119,9 +135,12 @@ public static class TelegramMessageFormatter
 
         if (data.HasPreview && compactLevel < 2)
         {
+            var imagery = IsSensorMatchedPreview(representative, data.PreviewBaseSource)
+                ? $"{FormatSatellite(representative)} imagery"
+                : FormatFallbackPreview(representative, data.PreviewBaseSource!.Value);
             var preview = new List<string>
             {
-                $"🖼 <b>Preview:</b> {Html(FormatSatellite(representative))} imagery for {Html(FormatDate(representative.AcquiredAtUtc))}"
+                $"🖼 <b>Preview:</b> {Html(imagery)} for {Html(FormatDate(representative.AcquiredAtUtc))}"
             };
             if (FormatCoverage(data.PreviewDimensions) is { } coverage)
                 preview.Add($"📏 <b>Coverage:</b> {Html(coverage)} km");
@@ -158,7 +177,7 @@ public static class TelegramMessageFormatter
 
     private static TemplateData CreateTemplateData(
         NotificationCluster cluster,
-        bool hasPreview,
+        GibsPreview preview,
         GibsPreviewDimensions previewDimensions,
         double? clusterDiameterKilometers,
         string? landCoverSummary) =>
@@ -171,7 +190,8 @@ public static class TelegramMessageFormatter
             cluster.Members.Max(member => member.AcquiredAtUtc),
             MaximumAvailable(cluster.Members.Select(member => member.FrpMegawatts)),
             MaximumAvailable(cluster.Members.Select(member => member.ThermalContrastKelvin)),
-            hasPreview,
+            preview.IsAvailable,
+            preview.BaseSource,
             previewDimensions,
             clusterDiameterKilometers,
             landCoverSummary);
@@ -259,6 +279,22 @@ public static class TelegramMessageFormatter
         return $"{anomaly.Satellite} · {anomaly.Instrument}";
     }
 
+    private static string FormatSatellite(GibsPreviewSource source) =>
+        $"{source.Satellite} · {source.Instrument}";
+
+    private static bool IsSensorMatchedPreview(
+        Anomaly representative,
+        GibsPreviewSource? baseSource) =>
+        baseSource is null
+        || FormatSatellite(representative).Equals(
+            FormatSatellite(baseSource.Value),
+            StringComparison.Ordinal);
+
+    private static string FormatFallbackPreview(
+        Anomaly representative,
+        GibsPreviewSource baseSource) =>
+        $"{FormatSatellite(baseSource)} base · {FormatSatellite(representative)} thermal overlay";
+
     private static string? FormatConfidence(Anomaly anomaly)
     {
         if (anomaly.ConfidenceCategory is { } category)
@@ -336,6 +372,7 @@ public static class TelegramMessageFormatter
         double? PeakFrpMegawatts,
         double? PeakThermalContrastKelvin,
         bool HasPreview,
+        GibsPreviewSource? PreviewBaseSource,
         GibsPreviewDimensions PreviewDimensions,
         double? ClusterDiameterKilometers,
         string? LandCoverSummary);

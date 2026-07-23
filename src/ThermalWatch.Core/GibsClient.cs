@@ -14,6 +14,7 @@ public sealed class GibsClient(
     ILogger<GibsClient> logger)
 {
     private const int MaximumPreviewBytes = 10 * 1024 * 1024;
+    private const int MaximumPreviewProbeBytes = 256 * 1024;
     private const int MaximumLandCoverTileBytes = 1024 * 1024;
     private const int MaximumLandCoverDomainCharacters = 1024 * 1024;
     private const int MaximumLandCoverPixels = 1_000_000;
@@ -27,6 +28,8 @@ public sealed class GibsClient(
     private const string LandCoverLayer = "MODIS_Combined_L3_IGBP_Land_Cover_Type_Annual";
     private const string LandCoverTileMatrixSet = "500m";
     private const int LandCoverTileMatrix = 7;
+    private const int PreviewProbePixelSize = 64;
+    private const byte PreviewNoDataMaximumChannel = 8;
     private const byte UnknownLandCoverClass = 254;
     private static readonly byte[] PngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
     private static readonly IReadOnlyDictionary<int, byte> LandCoverClassesByRgb =
@@ -57,7 +60,8 @@ public sealed class GibsClient(
         GibsPreviewDimensions dimensions,
         CancellationToken cancellationToken)
     {
-        if (!GibsLayers.TryGet(anomaly, out var layers))
+        var layerCandidates = GibsLayers.GetCandidates(anomaly);
+        if (layerCandidates.IsDefaultOrEmpty)
             return GibsPreview.Unavailable;
 
         var bounds = Geography.CreatePreviewBounds(
@@ -77,58 +81,88 @@ public sealed class GibsClient(
             dimensions.PixelWidth,
             dimensions.PixelHeight);
 
-        if (cache.TryGetValue<byte[]>(previewCacheKey, out var cachedBytes))
-            return new(cachedBytes);
+        if (cache.TryGetValue<GibsPreview>(previewCacheKey, out var cachedPreview)
+            && cachedPreview is not null)
+        {
+            return cachedPreview;
+        }
 
         try
         {
-            var baseAvailable = IsLayerAvailableAsync(
-                layers.BaseLayer,
-                layers.BaseTileMatrixSet,
+            var representativeLayers = layerCandidates[0];
+            if (!await IsLayerAvailableAsync(
+                representativeLayers.OverlayLayer,
+                representativeLayers.OverlayTileMatrixSet,
                 date,
-                cancellationToken);
-            var overlayAvailable = IsLayerAvailableAsync(
-                layers.OverlayLayer,
-                layers.OverlayTileMatrixSet,
-                date,
-                cancellationToken);
-
-            await Task.WhenAll(baseAvailable, overlayAvailable);
-            if (!baseAvailable.Result || !overlayAvailable.Result)
-                return GibsPreview.Unavailable;
-
-            var requestUri = BuildWmsUri(layers, date, bounds.Value, dimensions);
-            using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-            using var response = await httpClient.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
-
-            if (!response.IsSuccessStatusCode
-                || response.Content.Headers.ContentType?.MediaType is not { } mediaType
-                || !mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
-                || response.Content.Headers.ContentLength > MaximumPreviewBytes)
+                cancellationToken))
             {
                 return GibsPreview.Unavailable;
             }
 
-            var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-            if (bytes.Length is 0 or > MaximumPreviewBytes
-                || !bytes.AsSpan().StartsWith(PngSignature))
+            GibsLayerCandidate? selectedLayers = null;
+            foreach (var candidate in layerCandidates)
+            {
+                if (!await IsLayerAvailableAsync(
+                    candidate.BaseLayer,
+                    candidate.BaseTileMatrixSet,
+                    date,
+                    cancellationToken))
+                {
+                    continue;
+                }
+
+                if (!await IsBaseLayerUsableAsync(
+                    candidate,
+                    date,
+                    bounds.Value,
+                    cancellationToken))
+                {
+                    logger.LogDebug(
+                        "GIBS base imagery has insufficient usable coverage for {BaseSatellite} on {Date}",
+                        candidate.BaseSource.Satellite,
+                        date);
+                    continue;
+                }
+
+                selectedLayers = candidate;
+                break;
+            }
+
+            if (selectedLayers is not { } selected)
+                return GibsPreview.Unavailable;
+
+            if (selected.BaseSource != representativeLayers.BaseSource)
+            {
+                logger.LogInformation(
+                    "Selected fallback GIBS base imagery from {BaseSatellite} for {OverlaySatellite} thermal overlay on {Date}",
+                    selected.BaseSource.Satellite,
+                    representativeLayers.BaseSource.Satellite,
+                    date);
+            }
+
+            var requestUri = BuildWmsUri(selected, date, bounds.Value, dimensions);
+            var bytes = await GetPngAsync(requestUri, MaximumPreviewBytes, cancellationToken);
+            if (bytes is null
+                || !HasExpectedPreviewPng(
+                    bytes,
+                    dimensions.PixelWidth,
+                    dimensions.PixelHeight))
             {
                 return GibsPreview.Unavailable;
             }
+
+            var preview = new GibsPreview(bytes, selected.BaseSource);
 
             cache.Set(
                 previewCacheKey,
-                bytes,
+                preview,
                 new MemoryCacheEntryOptions
                 {
                     AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(2),
                     Size = bytes.Length
                 });
 
-            return new(bytes);
+            return preview;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -142,6 +176,44 @@ public sealed class GibsClient(
                 anomaly.AcquiredAtUtc);
             return GibsPreview.Unavailable;
         }
+    }
+
+    private async Task<bool> IsBaseLayerUsableAsync(
+        GibsLayerCandidate layers,
+        DateOnly date,
+        GeographicBounds bounds,
+        CancellationToken cancellationToken)
+    {
+        var dimensions = new GibsPreviewDimensions(
+            0,
+            0,
+            PreviewProbePixelSize,
+            PreviewProbePixelSize);
+        var requestUri = BuildBaseProbeWmsUri(layers, date, bounds, dimensions);
+        var bytes = await GetPngAsync(requestUri, MaximumPreviewProbeBytes, cancellationToken);
+        return bytes is not null && HasUsablePreviewCoverage(bytes);
+    }
+
+    private async Task<byte[]?> GetPngAsync(
+        Uri requestUri,
+        int maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        using var response = await httpClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode
+            || response.Content.Headers.ContentType?.MediaType is not { } mediaType
+            || !mediaType.Equals("image/png", StringComparison.OrdinalIgnoreCase)
+            || response.Content.Headers.ContentLength > maximumBytes)
+        {
+            return null;
+        }
+
+        return await ReadLimitedBytesAsync(response.Content, maximumBytes, cancellationToken);
     }
 
     public async Task<GibsLandCoverResult> GetLandCoverAsync(
@@ -523,6 +595,183 @@ public sealed class GibsClient(
         }
     }
 
+    private static bool HasExpectedPreviewPng(
+        byte[] pngBytes,
+        int expectedWidth,
+        int expectedHeight)
+    {
+        if (expectedWidth <= 0
+            || expectedHeight <= 0
+            || !TryReadPreviewPngHeader(
+                pngBytes,
+                out var width,
+                out var height,
+                out _))
+        {
+            return false;
+        }
+
+        if (width != expectedWidth || height != expectedHeight)
+            return false;
+
+        var offset = PngSignature.Length;
+        var hasImageData = false;
+        while (offset <= pngBytes.Length - 12)
+        {
+            var length = BinaryPrimitives.ReadUInt32BigEndian(pngBytes.AsSpan(offset, 4));
+            if (length > int.MaxValue || offset + 12L + length > pngBytes.Length)
+                return false;
+
+            var chunkLength = (int)length;
+            var type = pngBytes.AsSpan(offset + 4, 4);
+            hasImageData |= type.SequenceEqual("IDAT"u8) && chunkLength > 0;
+            offset += chunkLength + 12;
+            if (type.SequenceEqual("IEND"u8))
+                return chunkLength == 0 && hasImageData && offset == pngBytes.Length;
+        }
+
+        return false;
+    }
+
+    private static bool HasUsablePreviewCoverage(byte[] pngBytes)
+    {
+        try
+        {
+            if (!TryReadPreviewPngHeader(
+                pngBytes,
+                out var width,
+                out var height,
+                out var bytesPerPixel)
+                || width != PreviewProbePixelSize
+                || height != PreviewProbePixelSize)
+            {
+                return false;
+            }
+
+            using var compressed = new MemoryStream();
+            var offset = PngSignature.Length;
+            var reachedEnd = false;
+            while (offset <= pngBytes.Length - 12)
+            {
+                var length = BinaryPrimitives.ReadUInt32BigEndian(pngBytes.AsSpan(offset, 4));
+                if (length > int.MaxValue || offset + 12L + length > pngBytes.Length)
+                    return false;
+
+                var chunkLength = (int)length;
+                var type = pngBytes.AsSpan(offset + 4, 4);
+                var data = pngBytes.AsSpan(offset + 8, chunkLength);
+                if (type.SequenceEqual("IDAT"u8))
+                {
+                    compressed.Write(data);
+                    if (compressed.Length > MaximumPreviewProbeBytes)
+                        return false;
+                }
+                else if (type.SequenceEqual("IEND"u8))
+                {
+                    reachedEnd = chunkLength == 0;
+                    break;
+                }
+
+                offset += chunkLength + 12;
+            }
+
+            if (!reachedEnd || compressed.Length == 0)
+                return false;
+
+            var rowLength = checked(width * bytesPerPixel);
+            var totalPixels = checked(width * height);
+            var requiredUsablePixels = (totalPixels + 1) / 2;
+            var usablePixels = 0;
+            compressed.Position = 0;
+            using var decompressed = new ZLibStream(compressed, CompressionMode.Decompress);
+            var previous = new byte[rowLength];
+            var current = new byte[rowLength];
+
+            for (var row = 0; row < height; row++)
+            {
+                var filter = decompressed.ReadByte();
+                if (filter < 0)
+                    return false;
+                decompressed.ReadExactly(current);
+                ApplyPngFilter((byte)filter, current, previous, bytesPerPixel);
+
+                for (var pixel = 0; pixel < width; pixel++)
+                {
+                    var pixelOffset = pixel * bytesPerPixel;
+                    var hasAlpha = bytesPerPixel == 4;
+                    var alphaUsable = !hasAlpha
+                        || current[pixelOffset + 3] > PreviewNoDataMaximumChannel;
+                    var colorUsable = current[pixelOffset] > PreviewNoDataMaximumChannel
+                        || current[pixelOffset + 1] > PreviewNoDataMaximumChannel
+                        || current[pixelOffset + 2] > PreviewNoDataMaximumChannel;
+                    if (alphaUsable && colorUsable)
+                        usablePixels++;
+                }
+
+                (previous, current) = (current, previous);
+            }
+
+            return decompressed.ReadByte() == -1
+                && usablePixels >= requiredUsablePixels;
+        }
+        catch (Exception exception) when (exception is
+            IOException or
+            InvalidDataException or
+            ArgumentException or
+            OverflowException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryReadPreviewPngHeader(
+        byte[] pngBytes,
+        out int width,
+        out int height,
+        out int bytesPerPixel)
+    {
+        width = 0;
+        height = 0;
+        bytesPerPixel = 0;
+        if (!pngBytes.AsSpan().StartsWith(PngSignature)
+            || pngBytes.Length < PngSignature.Length + 25)
+        {
+            return false;
+        }
+
+        var headerLength = BinaryPrimitives.ReadUInt32BigEndian(
+            pngBytes.AsSpan(PngSignature.Length, 4));
+        var headerType = pngBytes.AsSpan(PngSignature.Length + 4, 4);
+        var header = pngBytes.AsSpan(PngSignature.Length + 8, 13);
+        if (headerLength != 13
+            || !headerType.SequenceEqual("IHDR"u8)
+            || header[8] != 8
+            || header[10] != 0
+            || header[11] != 0
+            || header[12] != 0)
+        {
+            return false;
+        }
+
+        var unsignedWidth = BinaryPrimitives.ReadUInt32BigEndian(header[..4]);
+        var unsignedHeight = BinaryPrimitives.ReadUInt32BigEndian(header.Slice(4, 4));
+        if (unsignedWidth is 0 or > int.MaxValue || unsignedHeight is 0 or > int.MaxValue)
+            return false;
+
+        bytesPerPixel = header[9] switch
+        {
+            2 => 3,
+            6 => 4,
+            _ => 0
+        };
+        if (bytesPerPixel == 0)
+            return false;
+
+        width = (int)unsignedWidth;
+        height = (int)unsignedHeight;
+        return true;
+    }
+
     private static bool TryDecodeLandCoverPng(byte[] pngBytes, out byte[] classes)
     {
         classes = [];
@@ -598,7 +847,7 @@ public sealed class GibsClient(
                 if (filter < 0)
                     return false;
                 decompressed.ReadExactly(current);
-                ApplyPngFilter((byte)filter, current, previous);
+                ApplyPngFilter((byte)filter, current, previous, 1);
 
                 for (var column = 0; column < LandCoverTileSize; column++)
                 {
@@ -633,13 +882,17 @@ public sealed class GibsClient(
         }
     }
 
-    private static void ApplyPngFilter(byte filter, Span<byte> current, ReadOnlySpan<byte> previous)
+    private static void ApplyPngFilter(
+        byte filter,
+        Span<byte> current,
+        ReadOnlySpan<byte> previous,
+        int bytesPerPixel)
     {
         for (var index = 0; index < current.Length; index++)
         {
-            var left = index == 0 ? 0 : current[index - 1];
+            var left = index < bytesPerPixel ? 0 : current[index - bytesPerPixel];
             var up = previous[index];
-            var upperLeft = index == 0 ? 0 : previous[index - 1];
+            var upperLeft = index < bytesPerPixel ? 0 : previous[index - bytesPerPixel];
             current[index] = filter switch
             {
                 0 => current[index],
@@ -781,7 +1034,32 @@ public sealed class GibsClient(
     }
 
     private static Uri BuildWmsUri(
-        GibsLayerPair layers,
+        GibsLayerCandidate layers,
+        DateOnly date,
+        GeographicBounds bounds,
+        GibsPreviewDimensions dimensions) =>
+        BuildWmsUri(
+            $"{layers.BaseLayer},{layers.OverlayLayer}",
+            "default,size5",
+            date,
+            bounds,
+            dimensions);
+
+    private static Uri BuildBaseProbeWmsUri(
+        GibsLayerCandidate layers,
+        DateOnly date,
+        GeographicBounds bounds,
+        GibsPreviewDimensions dimensions) =>
+        BuildWmsUri(
+            layers.BaseLayer,
+            "default",
+            date,
+            bounds,
+            dimensions);
+
+    private static Uri BuildWmsUri(
+        string layerNames,
+        string styles,
         DateOnly date,
         GeographicBounds bounds,
         GibsPreviewDimensions dimensions)
@@ -797,8 +1075,8 @@ public sealed class GibsClient(
             ["HEIGHT"] = dimensions.PixelHeight.ToString(CultureInfo.InvariantCulture),
             ["TIME"] = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ["BBOX"] = bounds.ToInvariantString(),
-            ["LAYERS"] = $"{layers.BaseLayer},{layers.OverlayLayer}",
-            ["STYLES"] = "default,size5"
+            ["LAYERS"] = layerNames,
+            ["STYLES"] = styles
         };
         var query = string.Join('&', parameters.Select(pair =>
             $"{pair.Key}={Uri.EscapeDataString(pair.Value)}"));
@@ -813,65 +1091,149 @@ public readonly record struct GibsLayerPair(
     string OverlayLayer,
     string OverlayTileMatrixSet);
 
+internal readonly record struct GibsLayerCandidate(
+    string BaseLayer,
+    string BaseTileMatrixSet,
+    string OverlayLayer,
+    string OverlayTileMatrixSet,
+    GibsPreviewSource BaseSource);
+
 public static class GibsLayers
 {
+    private static readonly GibsSourceDefinition Terra = new(
+        "MODIS_NRT",
+        "Terra",
+        "MODIS",
+        "MODIS_Terra_CorrectedReflectance_TrueColor",
+        "250m",
+        "MODIS_Terra_Brightness_Temp_Band31_Night",
+        "1km",
+        "MODIS_Terra_Thermal_Anomalies_All",
+        "1km");
+    private static readonly GibsSourceDefinition Aqua = new(
+        "MODIS_NRT",
+        "Aqua",
+        "MODIS",
+        "MODIS_Aqua_CorrectedReflectance_TrueColor",
+        "250m",
+        "MODIS_Aqua_Brightness_Temp_Band31_Night",
+        "1km",
+        "MODIS_Aqua_Thermal_Anomalies_All",
+        "1km");
+    private static readonly GibsSourceDefinition Noaa21 = CreateViirs(
+        "VIIRS_NOAA21_NRT",
+        "NOAA-21",
+        "VIIRS_NOAA21");
+    private static readonly GibsSourceDefinition Noaa20 = CreateViirs(
+        "VIIRS_NOAA20_NRT",
+        "NOAA-20",
+        "VIIRS_NOAA20");
+    private static readonly GibsSourceDefinition SuomiNpp = CreateViirs(
+        "VIIRS_SNPP_NRT",
+        "Suomi-NPP",
+        "VIIRS_SNPP");
+    private static readonly ImmutableArray<GibsSourceDefinition> ModisSources = [Terra, Aqua];
+    private static readonly ImmutableArray<GibsSourceDefinition> ViirsSources =
+        [Noaa21, Noaa20, SuomiNpp];
+
     public static bool TryGet(Anomaly anomaly, out GibsLayerPair layers)
     {
+        var candidates = GetCandidates(anomaly);
+        if (!candidates.IsDefaultOrEmpty)
+        {
+            var candidate = candidates[0];
+            layers = new(
+                candidate.BaseLayer,
+                candidate.BaseTileMatrixSet,
+                candidate.OverlayLayer,
+                candidate.OverlayTileMatrixSet);
+            return true;
+        }
+
+        layers = default;
+        return false;
+    }
+
+    internal static ImmutableArray<GibsLayerCandidate> GetCandidates(Anomaly anomaly)
+    {
         var night = anomaly.DayNight == "N";
+        var family = anomaly.Source == "MODIS_NRT" ? ModisSources : ViirsSources;
+        var otherFamily = anomaly.Source == "MODIS_NRT" ? ViirsSources : ModisSources;
+        var representative = family.FirstOrDefault(source => source.Matches(anomaly));
+        if (representative is null)
+            return [];
 
-        if (anomaly.Source == "MODIS_NRT")
+        var candidates = ImmutableArray.CreateBuilder<GibsLayerCandidate>(
+            ModisSources.Length + ViirsSources.Length);
+        AddCandidate(candidates, representative, representative, night);
+        foreach (var source in family)
         {
-            if (anomaly.Satellite.Equals("Terra", StringComparison.OrdinalIgnoreCase)
-                || anomaly.Satellite.Equals("T", StringComparison.OrdinalIgnoreCase))
-            {
-                layers = new(
-                    night
-                        ? "MODIS_Terra_Brightness_Temp_Band31_Night"
-                        : "MODIS_Terra_CorrectedReflectance_TrueColor",
-                    night ? "1km" : "250m",
-                    "MODIS_Terra_Thermal_Anomalies_All",
-                    "1km");
-                return true;
-            }
-
-            if (anomaly.Satellite.Equals("Aqua", StringComparison.OrdinalIgnoreCase)
-                || anomaly.Satellite.Equals("A", StringComparison.OrdinalIgnoreCase))
-            {
-                layers = new(
-                    night
-                        ? "MODIS_Aqua_Brightness_Temp_Band31_Night"
-                        : "MODIS_Aqua_CorrectedReflectance_TrueColor",
-                    night ? "1km" : "250m",
-                    "MODIS_Aqua_Thermal_Anomalies_All",
-                    "1km");
-                return true;
-            }
-
-            layers = default;
-            return false;
+            if (source != representative)
+                AddCandidate(candidates, source, representative, night);
         }
 
-        var prefix = anomaly.Source switch
-        {
-            "VIIRS_SNPP_NRT" => "VIIRS_SNPP",
-            "VIIRS_NOAA20_NRT" => "VIIRS_NOAA20",
-            "VIIRS_NOAA21_NRT" => "VIIRS_NOAA21",
-            _ => null
-        };
+        foreach (var source in otherFamily)
+            AddCandidate(candidates, source, representative, night);
 
-        if (prefix is null)
-        {
-            layers = default;
-            return false;
-        }
+        return candidates.MoveToImmutable();
+    }
 
-        layers = new(
-            night
-                ? $"{prefix}_Brightness_Temp_BandI5_Night"
-                : $"{prefix}_CorrectedReflectance_TrueColor",
+    private static void AddCandidate(
+        ImmutableArray<GibsLayerCandidate>.Builder candidates,
+        GibsSourceDefinition baseSource,
+        GibsSourceDefinition representative,
+        bool night)
+    {
+        candidates.Add(new(
+            night ? baseSource.NightBaseLayer : baseSource.DayBaseLayer,
+            night ? baseSource.NightBaseTileMatrixSet : baseSource.DayBaseTileMatrixSet,
+            representative.OverlayLayer,
+            representative.OverlayTileMatrixSet,
+            new(
+                baseSource.FirmsSource,
+                baseSource.Satellite,
+                baseSource.Instrument)));
+    }
+
+    private static GibsSourceDefinition CreateViirs(
+        string firmsSource,
+        string satellite,
+        string prefix) =>
+        new(
+            firmsSource,
+            satellite,
+            "VIIRS",
+            $"{prefix}_CorrectedReflectance_TrueColor",
+            "250m",
+            $"{prefix}_Brightness_Temp_BandI5_Night",
             "250m",
             $"{prefix}_Thermal_Anomalies_375m_All",
             "500m");
-        return true;
+
+    private sealed record GibsSourceDefinition(
+        string FirmsSource,
+        string Satellite,
+        string Instrument,
+        string DayBaseLayer,
+        string DayBaseTileMatrixSet,
+        string NightBaseLayer,
+        string NightBaseTileMatrixSet,
+        string OverlayLayer,
+        string OverlayTileMatrixSet)
+    {
+        public bool Matches(Anomaly anomaly)
+        {
+            if (!anomaly.Source.Equals(FirmsSource, StringComparison.Ordinal))
+                return false;
+
+            if (FirmsSource != "MODIS_NRT")
+                return true;
+
+            return anomaly.Satellite.Equals(Satellite, StringComparison.OrdinalIgnoreCase)
+                || Satellite == "Terra"
+                    && anomaly.Satellite.Equals("T", StringComparison.OrdinalIgnoreCase)
+                || Satellite == "Aqua"
+                    && anomaly.Satellite.Equals("A", StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

@@ -69,11 +69,11 @@ These rules are heuristics, not event classification. Land cover, confidence, FR
 
 ## Preview policy
 
-[GibsClient.cs](../../src/ThermalWatch.Core/GibsClient.cs) maps the representative source, satellite, and day/night pass to sensor-matched base and thermal-anomaly layers. Daytime uses true color; nighttime uses the corresponding brightness-temperature layer.
+[GibsClient.cs](../../src/ThermalWatch.Core/GibsClient.cs) maps the representative source, satellite, and day/night pass to a representative thermal-anomaly overlay and pass-matched contextual base layers. Daytime uses true color; nighttime uses the corresponding brightness-temperature products.
 
-Both layers must advertise the exact acquisition date before the client requests a WMS composite. It does not choose the nearest date, another sensor, or a different pass. Imagery represents a date, not the exact acquisition minute.
+The overlay and selected base must advertise the exact acquisition date. The client probes the requested crop rather than treating global date availability as proof that spatial pixels are ready. It prefers the representative satellite's base, then tries other supported satellites in the same sensor family, followed by the other family. A fallback changes only the contextual base: the representative thermal overlay remains authoritative, and the Telegram caption names both sources. It never chooses the nearest date or a different pass. Imagery represents a date, not the exact acquisition minute.
 
-Automatic candidates wait until a preview becomes available or the retry window expires. With the visibility filter and preview requirement enabled, expiry discards the candidate. Otherwise it may send as text. Crop selection uses the large dimensions when detection count, representative FRP, or cluster diameter meets its configured large-cluster threshold.
+Black, transparent, malformed, or mostly no-data base crops are unavailable and are not cached, so a later snapshot can retry transient GIBS ingestion gaps. Automatic candidates wait until a preview becomes available or the retry window expires. With the visibility filter and preview requirement enabled, expiry discards the candidate. Otherwise it may send as text. Crop selection uses the large dimensions when detection count, representative FRP, or cluster diameter meets its configured large-cluster threshold.
 
 ## Manual send differences
 
