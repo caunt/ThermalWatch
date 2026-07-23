@@ -70,7 +70,7 @@
     confidencePercent: "Confidence (%)",
     confidenceCategory: "Confidence category",
     version: "Product version",
-    googleMapsUrl: "Google Maps URL",
+    googleMapsUrl: "Map links",
     generatedAtUtc: "Snapshot generated (UTC)",
     activeWindowHours: "Active window (hours)",
     isReady: "Snapshot ready",
@@ -434,7 +434,7 @@
     wrapper.append(heading);
 
     const observationSection = section("Observation data");
-    observationSection.append(fieldList(Object.entries(anomaly)));
+    observationSection.append(fieldList(Object.entries(anomaly), point));
     wrapper.append(observationSection);
 
     const debugSection = section("Snapshot debug information");
@@ -509,20 +509,20 @@
     return item;
   }
 
-  function fieldList(entries) {
+  function fieldList(entries, point = null) {
     const list = document.createElement("dl");
     list.className = "field-list";
 
     entries.forEach(([key, value]) => {
       list.append(textElement("dt", fieldLabels[key] ?? humanize(key)));
       const definition = document.createElement("dd");
-      definition.append(formatFieldValue(key, value));
+      definition.append(formatFieldValue(key, value, point));
       list.append(definition);
     });
     return list;
   }
 
-  function formatFieldValue(key, value) {
+  function formatFieldValue(key, value, point) {
     if (value === null || value === undefined || value === "")
       return document.createTextNode("Not available");
 
@@ -530,12 +530,15 @@
       try {
         const url = new URL(value);
         if (url.protocol === "https:" || url.protocol === "http:") {
-          const link = document.createElement("a");
-          link.href = url.href;
-          link.target = "_blank";
-          link.rel = "noopener noreferrer";
-          link.textContent = "Open in Google Maps ↗";
-          return link;
+          const actions = document.createElement("span");
+          actions.className = "map-actions";
+          actions.append(
+            externalMapLink(url.href, "Google Maps"),
+            externalMapLink(
+              mapSupport.yandexMapsUrl(point.latitude, point.longitude),
+              "Yandex Maps")
+          );
+          return actions;
         }
       } catch {
         // The raw value is shown below when the URL is malformed.
@@ -562,6 +565,17 @@
       return document.createTextNode(JSON.stringify(value));
 
     return document.createTextNode(String(value));
+  }
+
+  function externalMapLink(url, label) {
+    const link = document.createElement("a");
+    link.className = "map-action";
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.setAttribute("aria-label", `${label} (opens in a new tab)`);
+    link.textContent = `${label} ↗`;
+    return link;
   }
 
   function humanize(value) {

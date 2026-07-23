@@ -13,7 +13,7 @@
 | `ThermalWatch.Telegram` | Notification-specific clustering context, filtering, formatting, validation, and delivery. | Core. |
 | `ThermalWatch.Viewer` | Viewer configuration and routes, same-origin imagery delivery, root-mounted static assets, and provider-neutral browser presentation. | Core. |
 | `ThermalWatch.Api` | Sole executable, process startup, environment configuration, resilient HTTP clients, polling, public anomaly/Telegram routes, and static-file hosting. | Viewer, Core, and Telegram. |
-| Browser viewer | Reads same-origin configuration, anomaly, and NASA imagery APIs; renders provider-neutral markers through Leaflet or optional Google Maps. | ThermalWatch API plus the approved unpkg and Google browser services. |
+| Browser viewer | Reads same-origin configuration, anomaly, and NASA imagery APIs; renders provider-neutral markers through Leaflet or optional Google Maps; offers selected-coordinate navigation to Google and Yandex Maps. | ThermalWatch API plus the approved unpkg and Google browser services; external map sites only after user navigation. |
 | `ThermalWatch.Tests` | .NET, JavaScript, and documentation validation. | API and its transitive project references. |
 
 Preserve the dependency directions `Api -> Viewer -> Core`, `Api -> Telegram -> Core`, and `Api -> Core`. `ThermalWatch.Api` remains the only executable and listener; Viewer is a library included in the same publish output and container. Core must not acquire host, browser, or Telegram concerns.
@@ -63,7 +63,7 @@ All API routes use camel-case JSON. The host currently permits cross-origin `GET
 - NASA GIBS supplies Telegram imagery, land-cover tiles, and backend-retrieved viewer map tiles. GIBS failure leaves missing viewer pixels transparent and does not stop FIRMS ingestion or the anomaly API.
 - Telegram is outbound only. Missing credentials, validation failure, or notifier disablement does not stop polling or HTTP service.
 - Natural Earth boundary data is embedded in Core, so fallback does not depend on a runtime boundary service.
-- Browser-only external dependencies are pinned Leaflet assets from unpkg and optional Google Maps JavaScript. NASA/FIRMS data is never requested directly by viewer code. Browser or viewer-tile failure affects the viewer, not FIRMS ingestion.
+- Browser-only external dependencies are pinned Leaflet assets from unpkg and optional Google Maps JavaScript. Selected-anomaly links can navigate to Google or Yandex Maps, but neither is a server-side data dependency. NASA/FIRMS data is never requested directly by viewer code. Browser or viewer-tile failure affects the viewer, not FIRMS ingestion.
 - Serilog writes structured events to the console. The repository defines no database, durable queue, health endpoint, metrics, tracing, or production deployment target.
 
 Read the focused [FIRMS](components/firms-ingestion.md), [Telegram](components/telegram-notifier.md), or [viewer](components/web-viewer.md) document before changing those failure semantics.

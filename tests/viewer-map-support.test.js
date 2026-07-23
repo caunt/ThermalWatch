@@ -7,6 +7,7 @@ const { join } = require("node:path");
 const {
   imageryCoverageHeader,
   gibsTileApiUrl,
+  yandexMapsUrl,
   loadGibsTile,
   createGibsWarningReporter,
   createGoogleMapsLoader
@@ -137,6 +138,23 @@ test("GIBS tile URLs use only the same-origin viewer API", () => {
     gibsTileApiUrl({ z: 6, x: 37, y: 21 }),
     "/api/viewer/imagery/gibs/6/37/21.png");
   assert.throws(() => gibsTileApiUrl({ z: 6, x: 37.5, y: 21 }), /Integer map tile/);
+});
+
+test("Yandex Maps URLs pin validated coordinates in longitude-latitude order", () => {
+  const url = new URL(yandexMapsUrl(50.123456, 30.654321));
+
+  assert.equal(url.origin, "https://yandex.com");
+  assert.equal(url.pathname, "/maps/");
+  assert.equal(url.searchParams.get("ll"), "30.654321,50.123456");
+  assert.equal(url.searchParams.get("pt"), "30.654321,50.123456");
+  assert.equal(url.searchParams.get("z"), "12");
+  assert.equal(url.searchParams.get("l"), "map");
+});
+
+test("Yandex Maps URLs reject malformed and out-of-range coordinates", () => {
+  assert.throws(() => yandexMapsUrl(Number.NaN, 30), /Valid map coordinates/);
+  assert.throws(() => yandexMapsUrl(91, 30), /Valid map coordinates/);
+  assert.throws(() => yandexMapsUrl(50, -181), /Valid map coordinates/);
 });
 
 test("GIBS tiles load API PNGs and expose complete coverage", async () => {

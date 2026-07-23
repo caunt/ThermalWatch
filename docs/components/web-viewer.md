@@ -1,7 +1,7 @@
 # Web viewer
 
 > **Purpose:** Explain the Viewer project boundary, framework-free interface, same-origin NASA imagery, provider adapters, and browser-specific failure behavior.
-> **Scope:** Root-mounted static assets, viewer routes and state, Core GIBS map tiles, Google Maps, markers, diagnostics, responsive layout, and validation.
+> **Scope:** Root-mounted static assets, viewer routes and state, Core GIBS map tiles, Google and Yandex Maps, markers, diagnostics, responsive layout, and validation.
 > **Sources of truth:** [Viewer project](../../src/ThermalWatch.Viewer/ThermalWatch.Viewer.csproj), [viewer endpoints](../../src/ThermalWatch.Viewer/ViewerEndpoints.cs), [controller](../../src/ThermalWatch.Viewer/wwwroot/app.js), [map support](../../src/ThermalWatch.Viewer/wwwroot/map-support.js), [Core tile client](../../src/ThermalWatch.Core/GibsMapTileClient.cs), and [composition root](../../src/ThermalWatch.Api/Program.cs).
 > **Update when:** Viewer inputs, project/static-asset boundaries, imagery composition, provider contracts, browser dependencies, marker behavior, diagnostics, layout, or validation changes.
 
@@ -22,7 +22,7 @@ The controller owns configuration, snapshot, validated points, malformed-coordin
 
 NASA and Google receive the same validated points, point keys, marker colors, selected state, tooltips, click callback, and fit rules. Empty data uses a world view, one point uses bounded zoom 8, and multiple points use padded bounds capped at zoom 10. Selection survives successful refreshes and provider switches while the observation exists, clears when it disappears, and does not toggle off on repeated marker or map-background clicks.
 
-The browser defensively accepts only finite in-range coordinates. Malformed observations are omitted with a visible count rather than failing the snapshot. The inspector still renders every anomaly property, snapshot readiness/staleness metadata, matching country/source status, and raw JSON. Dynamic values use text nodes, and only HTTP(S) Google URLs become links.
+The browser defensively accepts only finite in-range coordinates. Malformed observations are omitted with a visible count rather than failing the snapshot. The inspector still renders every anomaly property, snapshot readiness/staleness metadata, matching country/source status, and raw JSON. Dynamic values use text nodes. A valid HTTP(S) Google URL is paired with a Yandex Maps action derived from the validated coordinates; both are explicit new-tab navigations rather than data inputs.
 
 ## NASA GIBS through Core
 
@@ -32,11 +32,11 @@ Each upstream response is size, media-type, and dimension checked before decode.
 
 The caption avoids claiming one exact date or satellite for the complete mosaic. This contextual map differs from Telegram's representative-sensor, day/night-matched exact-date previews.
 
-## Google and external-browser boundary
+## Google, Yandex, and the external-browser boundary
 
 Google Maps JavaScript remains an explicit exception to the same-origin data rule. It loads only when selected and only when `GOOGLE_MAPS_API_KEY` is available from viewer configuration. The option stays visible but disabled otherwise. Loading has a 15-second timeout; download/callback failures clean up for retry, and authentication failures are reported without breaking NASA or server processing. The key remains browser-visible by design and requires Google API and HTTP-referrer restrictions.
 
-Consequently, browser external requests are limited by design to pinned unpkg assets and optional Google Maps. NASA/FIRMS data and imagery always cross the ThermalWatch HTTP boundary first.
+Consequently, automatic browser external requests are limited by design to pinned unpkg assets and optional Google Maps. Selected-anomaly actions can navigate the user to Google or Yandex Maps with the observation coordinates. NASA/FIRMS data and imagery always cross the ThermalWatch HTTP boundary first.
 
 ## Interface and failure states
 
@@ -59,6 +59,6 @@ node --check src/ThermalWatch.Viewer/wwwroot/app.js
 node --test tests/viewer-map-support.test.js
 ```
 
-The Node suite covers same-origin tile URLs, coverage propagation, warning deduplication, failed loads, cancellation/object-URL cleanup, absence of direct NASA request hosts, and Google success/failure/retry/authentication behavior. The .NET suite owns GIBS product order, response validation, pixel composition, coverage, cache, cancellation, and endpoint headers. Then run the complete build, test, format, documentation, and publish checks from [development](../development.md).
+The Node suite covers same-origin tile URLs, Yandex coordinate-link construction, coverage propagation, warning deduplication, failed loads, cancellation/object-URL cleanup, absence of direct NASA request hosts, and Google success/failure/retry/authentication behavior. The .NET suite owns GIBS product order, response validation, pixel composition, coverage, cache, cancellation, and endpoint headers. Then run the complete build, test, format, documentation, and publish checks from [development](../development.md).
 
 Every viewer task also requires the [live screenshot workflow](../development.md#live-viewer-screenshot-verification). Capture and open NASA and Google desktop/narrow states plus a provider round trip. Treat imagery defects, missing markers/controls, unreadable details, unstable desktop bounds, or narrow overflow as failures. For imagery-boundary work, observe that browser NASA tiles use only the same-origin imagery API; do not save archives or logs containing a Google key.

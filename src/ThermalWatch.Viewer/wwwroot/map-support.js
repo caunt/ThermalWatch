@@ -23,6 +23,25 @@
     return `/api/viewer/imagery/gibs/${coordinates.z}/${coordinates.x}/${coordinates.y}.png`;
   }
 
+  function yandexMapsUrl(latitude, longitude) {
+    if (!Number.isFinite(latitude)
+        || latitude < -90
+        || latitude > 90
+        || !Number.isFinite(longitude)
+        || longitude < -180
+        || longitude > 180) {
+      throw new Error("Valid map coordinates are required.");
+    }
+
+    const coordinates = `${longitude},${latitude}`;
+    const url = new URL("https://yandex.com/maps/");
+    url.searchParams.set("ll", coordinates);
+    url.searchParams.set("pt", coordinates);
+    url.searchParams.set("z", "12");
+    url.searchParams.set("l", "map");
+    return url.href;
+  }
+
   function loadGibsTile(image, coordinates, options = {}) {
     if (!image)
       throw new Error("An image element is required to load a map tile.");
@@ -262,6 +281,7 @@
   return Object.freeze({
     imageryCoverageHeader,
     gibsTileApiUrl,
+    yandexMapsUrl,
     loadGibsTile,
     createGibsWarningReporter,
     createGoogleMapsLoader

@@ -83,6 +83,7 @@ No credentials disables Telegram without affecting the API. Supplying only one c
 | Telegram Bot API | Startup validation and outbound channel messages. | Notifier can disable or defer; polling and HTTP API continue. |
 | Natural Earth | Embedded boundary data loaded from Core. | Missing or unusable geometry for a configured country is a fatal startup error. |
 | unpkg and Google Maps | Approved browser-only viewer resources. NASA/FIRMS data is same-origin through ThermalWatch. | A browser provider can fail while server APIs and polling continue. |
+| Yandex Maps | No server-side use; a selected-anomaly action can navigate the browser to the observation coordinates. | Navigation failure affects only the external map action. |
 
 Configured HTTP clients use bounded total and attempt timeouts, exponential retry delay with jitter, and `Retry-After` handling. FIRMS uses its configured request timeout; GIBS and Telegram use fixed 30-second total policies. See [Program.cs](../src/ThermalWatch.Api/Program.cs) for retry counts and attempt-timeout calculation.
 
