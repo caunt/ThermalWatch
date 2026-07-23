@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Net.Http.Headers;
 using ThermalWatch.Core;
@@ -24,8 +25,36 @@ public static class ViewerEndpoints
         endpoints.MapGet(
             pattern: "/api/viewer/imagery/gibs/{z:int}/{x:int}/{y:int}.png",
             GetGibsMapTileAsync);
+        endpoints.MapGet(
+            pattern: "/api/viewer/notification-diagnostics/{anomalyId}",
+            GetNotificationDiagnosticAsync);
 
         return endpoints;
+    }
+
+    private static async Task<IResult> GetNotificationDiagnosticAsync(
+        string anomalyId,
+        [FromServices] AnomalySnapshotStore snapshotStore,
+        [FromServices] NotificationCandidateEngine candidateEngine,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        NotificationDiagnostic? diagnostic;
+        try
+        {
+            diagnostic = await candidateEngine.DiagnoseAsync(
+                snapshotStore.Current,
+                anomalyId,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            return Results.Empty;
+        }
+
+        return diagnostic is null
+            ? Results.NotFound(new { error = "The selected anomaly is not present in the current snapshot." })
+            : Results.Ok(diagnostic);
     }
 
     private static async Task<IResult> GetGibsMapTileAsync(

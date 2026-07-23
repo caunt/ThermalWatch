@@ -29,5 +29,6 @@ An ADR becomes accepted only when the implementation and cited validation suppor
 | ADR | Status | Decision |
 | --- | --- | --- |
 | [0001](0001-server-mediated-viewer-imagery.md) | Accepted | Keep one Api host while Viewer owns assets/routes and Core mediates NASA imagery. |
+| [0002](0002-core-owned-notification-candidates.md) | Accepted | Keep notification candidate policy/lifecycle in Core and Telegram as a message/delivery adapter. |
 
 `0000-template.md` is a template and is not an architectural decision.

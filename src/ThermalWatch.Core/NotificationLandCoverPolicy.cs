@@ -1,13 +1,10 @@
-using System.Globalization;
-using ThermalWatch.Core;
+namespace ThermalWatch.Core;
 
-namespace ThermalWatch.Telegram;
-
-internal static class TelegramLandCoverFilter
+public static class NotificationLandCoverPolicy
 {
-    public static async Task<LandCoverFilterResult> EvaluateAsync(
+    public static async Task<NotificationLandCoverResult> EvaluateAsync(
         NotificationCluster cluster,
-        TelegramLandCoverOptions options,
+        NotificationLandCoverOptions options,
         GibsClient gibsClient,
         CancellationToken cancellationToken)
     {
@@ -18,9 +15,9 @@ internal static class TelegramLandCoverFilter
         return Evaluate(cluster, options, landCover);
     }
 
-    internal static LandCoverFilterResult Evaluate(
+    public static NotificationLandCoverResult Evaluate(
         NotificationCluster cluster,
-        TelegramLandCoverOptions options,
+        NotificationLandCoverOptions options,
         GibsLandCoverResult landCover)
     {
         if (GetUnavailableResult(landCover) is { } unavailableResult)
@@ -32,21 +29,21 @@ internal static class TelegramLandCoverFilter
 
         if (vegetationPercent < options.VegetationPercentThreshold)
         {
-            return LandCoverFilterResult.Retained(
+            return NotificationLandCoverResult.Retained(
                 landCoverYear,
                 vegetationPercent,
                 landCover.HasBuiltUpWithinProximity,
-                reason: $"Vegetation {formattedPercent}% is below {FormatNumber(options.VegetationPercentThreshold)}%",
+                reason: $"Vegetation {formattedPercent}% is below {NotificationPolicy.FormatNumber(options.VegetationPercentThreshold)}%",
                 formattingSummary);
         }
 
         if (landCover.HasBuiltUpWithinProximity)
         {
-            return LandCoverFilterResult.Retained(
+            return NotificationLandCoverResult.Retained(
                 landCoverYear,
                 vegetationPercent,
                 hasBuiltUpWithinProximity: true,
-                reason: $"NASA class 13 is within {FormatNumber(options.BuiltUpProximityKilometers)} km",
+                reason: $"NASA class 13 is within {NotificationPolicy.FormatNumber(options.BuiltUpProximityKilometers)} km",
                 formattingSummary);
         }
 
@@ -54,11 +51,11 @@ internal static class TelegramLandCoverFilter
             && cluster.Representative.FrpMegawatts is { } frp
             && frp >= options.VegetationMaximumFrpMegawatts)
         {
-            return LandCoverFilterResult.Retained(
+            return NotificationLandCoverResult.Retained(
                 landCoverYear,
                 vegetationPercent,
                 hasBuiltUpWithinProximity: false,
-                reason: $"Configured high-FRP vegetation exception retained {FormatNumber(frp)} MW",
+                reason: $"Configured high-FRP vegetation exception retained {NotificationPolicy.FormatNumber(frp)} MW",
                 formattingSummary);
         }
 
@@ -69,7 +66,7 @@ internal static class TelegramLandCoverFilter
             .Any();
         if (options.KeepMultiSatelliteVegetation && hasMultipleSatellites)
         {
-            return LandCoverFilterResult.Retained(
+            return NotificationLandCoverResult.Retained(
                 landCoverYear,
                 vegetationPercent,
                 hasBuiltUpWithinProximity: false,
@@ -77,18 +74,18 @@ internal static class TelegramLandCoverFilter
                 formattingSummary);
         }
 
-        return LandCoverFilterResult.Suppressed(
+        return NotificationLandCoverResult.Suppressed(
             landCoverYear,
             vegetationPercent,
-            reason: $"Vegetation {formattedPercent}% meets {FormatNumber(options.VegetationPercentThreshold)}%; no NASA class 13 within {FormatNumber(options.BuiltUpProximityKilometers)} km",
+            reason: $"Vegetation {formattedPercent}% meets {NotificationPolicy.FormatNumber(options.VegetationPercentThreshold)}%; no NASA class 13 within {NotificationPolicy.FormatNumber(options.BuiltUpProximityKilometers)} km",
             formattingSummary);
     }
 
-    private static LandCoverFilterResult? GetUnavailableResult(GibsLandCoverResult landCover)
+    private static NotificationLandCoverResult? GetUnavailableResult(GibsLandCoverResult landCover)
     {
         if (!landCover.IsAvailable)
         {
-            return LandCoverFilterResult.Unavailable(
+            return NotificationLandCoverResult.Unavailable(
                 landCover.Year,
                 reason: "NASA land-cover data unavailable");
         }
@@ -97,7 +94,7 @@ internal static class TelegramLandCoverFilter
             || landCover.SampledClasses.IsDefaultOrEmpty
             || landCover.SampledClasses.Any(landCoverClass => landCoverClass is < 1 or > 17))
         {
-            return LandCoverFilterResult.Unavailable(
+            return NotificationLandCoverResult.Unavailable(
                 landCover.Year,
                 reason: "NASA land-cover data invalid");
         }
@@ -110,7 +107,7 @@ internal static class TelegramLandCoverFilter
     {
         int vegetationCount = landCover.SampledClasses.Count(IsVegetation);
         double vegetationPercent = vegetationCount * 100d / landCover.SampledClasses.Length;
-        string formattedPercent = FormatNumber(vegetationPercent);
+        string formattedPercent = NotificationPolicy.FormatNumber(vegetationPercent);
         string formattingSummary = landCover.HasBuiltUpWithinProximity
             ? $"Urban/built-up nearby · vegetation {formattedPercent}%"
             : $"Vegetation · {formattedPercent}%";
@@ -119,7 +116,4 @@ internal static class TelegramLandCoverFilter
 
     private static bool IsVegetation(byte landCoverClass) =>
         landCoverClass is >= 1 and <= 12 or 14;
-
-    private static string FormatNumber(double value) =>
-        value.ToString(format: "0.##", CultureInfo.InvariantCulture);
 }

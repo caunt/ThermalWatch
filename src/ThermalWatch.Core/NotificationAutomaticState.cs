@@ -1,15 +1,13 @@
-using ThermalWatch.Core;
+namespace ThermalWatch.Core;
 
-namespace ThermalWatch.Telegram;
-
-internal sealed class TelegramAutomaticNotificationState(
+internal sealed class NotificationAutomaticState(
     double radiusKilometers,
     TimeSpan timeWindow,
     TimeSpan retention)
 {
     private const int MaximumDeliveredDetections = 100_000;
     private readonly Dictionary<string, DeliveredDetection> _delivered = new(StringComparer.Ordinal);
-    private readonly List<PendingTelegramNotification> _pending = [];
+    private readonly List<PendingNotificationCandidate> _pending = [];
 
     public int PendingCount => _pending.Count;
 
@@ -25,7 +23,7 @@ internal sealed class TelegramAutomaticNotificationState(
         }
     }
 
-    public TelegramCandidatePreparation PrepareCandidate(
+    public NotificationCandidatePreparation PrepareCandidate(
         NotificationCluster cluster,
         DateTimeOffset now)
     {
@@ -39,8 +37,8 @@ internal sealed class TelegramAutomaticNotificationState(
             foundRelatedPending = false;
             for (int index = _pending.Count - 1; index >= 0; index--)
             {
-                PendingTelegramNotification pending = _pending[index];
-                if (!clusters.Any(existing => TelegramNotificationClustering.AreRelated(
+                PendingNotificationCandidate pending = _pending[index];
+                if (!clusters.Any(existing => NotificationClustering.AreRelated(
                     existing,
                     pending.Cluster,
                     radiusKilometers,
@@ -59,7 +57,7 @@ internal sealed class TelegramAutomaticNotificationState(
         }
         while (foundRelatedPending);
 
-        NotificationCluster preparedCluster = TelegramNotificationClustering.MergeRelated(
+        NotificationCluster preparedCluster = NotificationClustering.MergeRelated(
             clusters,
             radiusKilometers,
             timeWindow);
@@ -68,15 +66,15 @@ internal sealed class TelegramAutomaticNotificationState(
         return new(preparedCluster, firstSeenUtc, continuesDeliveredEpisode);
     }
 
-    public void AddPending(PendingTelegramNotification pending) =>
+    public void AddPending(PendingNotificationCandidate pending) =>
         _pending.Add(pending);
 
-    public PendingTelegramNotification GetPending(int index) =>
+    public PendingNotificationCandidate GetPending(int index) =>
         _pending[index];
 
     public bool TrySuppressPending(int index, DateTimeOffset now)
     {
-        PendingTelegramNotification pending = _pending[index];
+        PendingNotificationCandidate pending = _pending[index];
         if (!TryExtendDeliveredEpisode(pending.Cluster, now))
             return false;
 

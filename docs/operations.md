@@ -2,14 +2,14 @@
 
 > **Purpose:** Define ThermalWatch runtime configuration, deployment, security, observability, failure, and recovery behavior.
 > **Scope:** Process startup, environment variables, external services, SDK publishing, CI artifacts, containers, and operational limitations.
-> **Sources of truth:** [Application configuration](../src/ThermalWatch.Api/ApplicationConfiguration.cs), [Telegram options](../src/ThermalWatch.Telegram/TelegramOptions.cs), [automatic notification state](../src/ThermalWatch.Telegram/TelegramAutomaticNotificationState.cs), [composition root](../src/ThermalWatch.Api/Program.cs), and [publish workflows](../.github/workflows/).
+> **Sources of truth:** [Application configuration](../src/ThermalWatch.Api/ApplicationConfiguration.cs), [notification options](../src/ThermalWatch.Core/NotificationOptions.cs), [Telegram options](../src/ThermalWatch.Telegram/TelegramOptions.cs), [automatic notification state](../src/ThermalWatch.Core/NotificationAutomaticState.cs), [composition root](../src/ThermalWatch.Api/Program.cs), and [publish workflows](../.github/workflows/).
 > **Update when:** A variable, startup rule, external dependency, security boundary, log, deployment workflow, failure mode, or recovery procedure changes.
 
 ## Runtime model
 
 The process binds plain HTTP to `0.0.0.0:8080`, starts one immediate FIRMS refresh, then runs non-overlapping polling cycles. Application options are parsed once at startup and are not reloaded.
 
-All application state is in memory: source segments, the published snapshot, GIBS preview/land-cover/viewer-tile cache entries, Telegram seen IDs, delivered-episode history, and pending preview notifications. The service has no database, durable queue, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
+All application state is in memory: source segments, the published snapshot, GIBS preview/land-cover/viewer-tile cache entries, notification seen IDs, delivered-episode history, and pending preview notifications. The service has no database, durable queue, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
 
 The application-specific options below use exact uppercase environment names. Framework hosting still uses ASP.NET Core's normal host configuration, but .NET-style nested names such as `Firms__MapKey` do not configure ThermalWatch options.
 
@@ -30,7 +30,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `GOOGLE_MAPS_API_KEY` | unset | Optional trimmed browser key. When present, it is returned by `/api/viewer/config`; protect it with Google API and HTTP-referrer restrictions. |
 | `LOGGING_MINIMUM_LEVEL` | `Information` | `Verbose`, `Debug`, `Information`, `Warning`, `Error`, or `Fatal`, case-insensitive. |
 
-### Telegram lifecycle and preview
+### Notification lifecycle and preview
 
 | Variable | Default | Contract |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `TELEGRAM_LARGE_CLUSTER_MIN_FRP_MW` | `500` | Non-negative finite number. |
 | `TELEGRAM_LARGE_CLUSTER_MIN_DIAMETER_KM` | `8` | Non-negative finite number. |
 
-### Telegram land-cover and visibility policy
+### Notification land-cover and visibility policy
 
 | Variable | Default | Contract |
 | --- | --- | --- |
@@ -70,7 +70,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `TELEGRAM_REQUIRE_DAYTIME` | `true` | Boolean. |
 | `TELEGRAM_REQUIRE_PREVIEW` | `true` | Boolean controlling whether automatic candidates without exact imagery are discarded after the retry window. |
 
-Every Telegram option is parsed even when Telegram credentials are absent. An invalid optional value can therefore stop startup while Telegram would otherwise be disabled.
+The `TELEGRAM_*` policy names are retained as deployment compatibility keys, but the API host parses them into neutral Core notification options. Every policy option is parsed even when Telegram credentials are absent because Viewer diagnostics use the same configuration. An invalid optional value can therefore stop startup while Telegram delivery would otherwise be disabled.
 
 No credentials disables Telegram without affecting the API. Supplying only one credential logs a warning and leaves it disabled. With both values, startup calls Telegram to validate the bot, channel type, membership, and permission to post. Validation failure disables notifications until process restart; it does not terminate the API.
 
@@ -79,7 +79,7 @@ No credentials disables Telegram without affecting the API. Supplying only one c
 | Service | Server-side use | Failure boundary |
 | --- | --- | --- |
 | NASA FIRMS | Country and area CSV plus MAP_KEY status. | Isolated by country/source segment; stale data is retained where available. |
-| NASA GIBS | Exact-date Telegram previews, spatial base-image probes, availability domains, annual land-cover domains, and latest viewer map tiles. | Preview/land-cover results become unavailable; viewer tiles become partial or transparent; FIRMS and the anomaly API continue. |
+| NASA GIBS | Exact-date notification previews and diagnostics, spatial base-image probes, availability domains, annual land-cover domains, and latest viewer map tiles. | Preview/land-cover results become unavailable; viewer tiles become partial or transparent; FIRMS and the anomaly API continue. |
 | Telegram Bot API | Startup validation and outbound channel messages. | Notifier can disable or defer; polling and HTTP API continue. |
 | Natural Earth | Embedded boundary data loaded from Core. | Missing or unusable geometry for a configured country is a fatal startup error. |
 | unpkg and Google Maps | Approved browser-only viewer resources. NASA/FIRMS data is same-origin through ThermalWatch. | A browser provider can fail while server APIs and polling continue. |
@@ -99,7 +99,7 @@ There is no health/readiness route, metrics endpoint, tracing, external log sink
 
 All current HTTP endpoints are unauthenticated. Cross-origin `GET` is allowed:
 
-- `/api/anomalies`, `/api/viewer/config`, and `/api/viewer/imagery/gibs/{z}/{x}/{y}.png` are read-only. The imagery route can cause bounded backend GIBS requests for uncached valid coordinates.
+- `/api/anomalies`, `/api/viewer/config`, `/api/viewer/imagery/gibs/{z}/{x}/{y}.png`, and `/api/viewer/notification-diagnostics/{anomalyId}` are read-only. The imagery and diagnostic routes can cause bounded backend GIBS requests for uncached data.
 - `/api/viewer/config` intentionally exposes a browser API key when configured.
 - `/api/telegram/send-top` sends Telegram messages and must sit behind an appropriate network access boundary. Its use is not safe as a health check.
 

@@ -1,6 +1,6 @@
-namespace ThermalWatch.Telegram;
+namespace ThermalWatch.Core;
 
-public sealed record TelegramLandCoverOptions(
+public sealed record NotificationLandCoverOptions(
     bool Enabled,
     double VegetationPercentThreshold,
     double BuiltUpProximityKilometers,

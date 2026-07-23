@@ -1,45 +1,45 @@
-namespace ThermalWatch.Telegram;
+namespace ThermalWatch.Core;
 
-internal readonly record struct LandCoverFilterResult(
-    LandCoverFilterDecision Decision,
+public readonly record struct NotificationLandCoverResult(
+    NotificationLandCoverDecision Decision,
     int? LandCoverYear,
     double? VegetationPercent,
     bool? HasBuiltUpWithinProximity,
     string Reason,
     string FormattingSummary)
 {
-    public bool IsSuppressed => Decision == LandCoverFilterDecision.Suppressed;
+    public bool IsSuppressed => Decision == NotificationLandCoverDecision.Suppressed;
 
-    public static LandCoverFilterResult Retained(
+    public static NotificationLandCoverResult Retained(
         int year,
         double vegetationPercent,
         bool hasBuiltUpWithinProximity,
         string reason,
         string formattingSummary) =>
         new(
-            LandCoverFilterDecision.Retained,
+            NotificationLandCoverDecision.Retained,
             year,
             vegetationPercent,
             hasBuiltUpWithinProximity,
             reason,
             formattingSummary);
 
-    public static LandCoverFilterResult Suppressed(
+    public static NotificationLandCoverResult Suppressed(
         int year,
         double vegetationPercent,
         string reason,
         string formattingSummary) =>
         new(
-            LandCoverFilterDecision.Suppressed,
+            NotificationLandCoverDecision.Suppressed,
             year,
             vegetationPercent,
             HasBuiltUpWithinProximity: false,
             reason,
             formattingSummary);
 
-    public static LandCoverFilterResult Unavailable(int? year, string reason) =>
+    public static NotificationLandCoverResult Unavailable(int? year, string reason) =>
         new(
-            LandCoverFilterDecision.Unavailable,
+            NotificationLandCoverDecision.Unavailable,
             year,
             VegetationPercent: null,
             HasBuiltUpWithinProximity: null,

@@ -1,10 +1,9 @@
 using System.Collections.Immutable;
 using ThermalWatch.Core;
-using ThermalWatch.Telegram;
 
 namespace ThermalWatch.Tests;
 
-public sealed class TelegramLandCoverFilterTests
+public sealed class NotificationLandCoverPolicyTests
 {
     private static readonly DateTimeOffset s_observedAt = new(year: 2026, month: 7, day: 19, hour: 12, minute: 0, second: 0, TimeSpan.Zero);
 
@@ -19,12 +18,12 @@ public sealed class TelegramLandCoverFilterTests
             .ToImmutableArray();
         var cluster = new NotificationCluster(Id: "cluster", members[0], members);
 
-        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+        NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
             cluster,
             DefaultOptions(),
             AvailableLandCover([1, 2, 3, 10]));
 
-        Assert.Equal(LandCoverFilterDecision.Suppressed, result.Decision);
+        Assert.Equal(NotificationLandCoverDecision.Suppressed, result.Decision);
         Assert.True(result.IsSuppressed);
         Assert.Equal(100, result.VegetationPercent);
         Assert.False(result.HasBuiltUpWithinProximity);
@@ -37,12 +36,12 @@ public sealed class TelegramLandCoverFilterTests
     {
         Anomaly detection = Detection(id: "missing-frp", frpMegawatts: null, satellite: "Suomi-NPP");
 
-        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+        NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
             new(Id: "cluster", detection, [detection]),
             DefaultOptions(),
             AvailableLandCover([1, 15]));
 
-        Assert.Equal(LandCoverFilterDecision.Suppressed, result.Decision);
+        Assert.Equal(NotificationLandCoverDecision.Suppressed, result.Decision);
         Assert.Equal(50, result.VegetationPercent);
     }
 
@@ -51,12 +50,12 @@ public sealed class TelegramLandCoverFilterTests
     {
         Anomaly detection = Detection(id: "urban", frpMegawatts: 100, satellite: "Suomi-NPP");
 
-        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+        NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
             new(Id: "cluster", detection, [detection]),
             DefaultOptions(),
             AvailableLandCover([1, 2, 13], hasBuiltUp: true));
 
-        Assert.Equal(LandCoverFilterDecision.Retained, result.Decision);
+        Assert.Equal(NotificationLandCoverDecision.Retained, result.Decision);
         Assert.True(result.HasBuiltUpWithinProximity);
         Assert.Contains("class 13", result.Reason, StringComparison.Ordinal);
     }
@@ -66,12 +65,12 @@ public sealed class TelegramLandCoverFilterTests
     {
         Anomaly detection = Detection(id: "mixed", frpMegawatts: 100, satellite: "Suomi-NPP");
 
-        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+        NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
             new(Id: "cluster", detection, [detection]),
             DefaultOptions(),
             AvailableLandCover([1, 15, 16]));
 
-        Assert.Equal(LandCoverFilterDecision.Retained, result.Decision);
+        Assert.Equal(NotificationLandCoverDecision.Retained, result.Decision);
         Assert.Equal(100d / 3, result.VegetationPercent!.Value, 8);
         Assert.Contains("below 50%", result.Reason, StringComparison.Ordinal);
     }
@@ -81,12 +80,12 @@ public sealed class TelegramLandCoverFilterTests
     {
         Anomaly detection = Detection(id: "classes", frpMegawatts: 100, satellite: "Suomi-NPP");
 
-        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+        NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
             new(Id: "cluster", detection, [detection]),
             DefaultOptions(vegetationPercentThreshold: 75),
             AvailableLandCover([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]));
 
-        Assert.Equal(LandCoverFilterDecision.Suppressed, result.Decision);
+        Assert.Equal(NotificationLandCoverDecision.Suppressed, result.Decision);
         Assert.Equal(13d * 100 / 17, result.VegetationPercent!.Value, 8);
     }
 
@@ -94,14 +93,14 @@ public sealed class TelegramLandCoverFilterTests
     public void EvaluateHonorsExplicitHighFrpVegetationException()
     {
         Anomaly detection = Detection(id: "strong", frpMegawatts: 500, satellite: "Suomi-NPP");
-        TelegramLandCoverOptions options = DefaultOptions() with { KeepHighFrpVegetation = true };
+        NotificationLandCoverOptions options = DefaultOptions() with { KeepHighFrpVegetation = true };
 
-        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+        NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
             new(Id: "cluster", detection, [detection]),
             options,
             AvailableLandCover([1]));
 
-        Assert.Equal(LandCoverFilterDecision.Retained, result.Decision);
+        Assert.Equal(NotificationLandCoverDecision.Retained, result.Decision);
         Assert.Contains("high-FRP", result.Reason, StringComparison.Ordinal);
     }
 
@@ -110,14 +109,14 @@ public sealed class TelegramLandCoverFilterTests
     {
         Anomaly first = Detection(id: "first", frpMegawatts: 100, satellite: "Suomi-NPP");
         Anomaly second = Detection(id: "second", frpMegawatts: 90, satellite: "NOAA-20");
-        TelegramLandCoverOptions options = DefaultOptions() with { KeepMultiSatelliteVegetation = true };
+        NotificationLandCoverOptions options = DefaultOptions() with { KeepMultiSatelliteVegetation = true };
 
-        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+        NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
             new(Id: "cluster", first, [first, second]),
             options,
             AvailableLandCover([1]));
 
-        Assert.Equal(LandCoverFilterDecision.Retained, result.Decision);
+        Assert.Equal(NotificationLandCoverDecision.Retained, result.Decision);
         Assert.Contains("multi-satellite", result.Reason, StringComparison.Ordinal);
     }
 
@@ -133,18 +132,18 @@ public sealed class TelegramLandCoverFilterTests
     {
         Anomaly detection = Detection(id: "unavailable", frpMegawatts: 100, satellite: "Suomi-NPP");
 
-        LandCoverFilterResult result = TelegramLandCoverFilter.Evaluate(
+        NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
             new(Id: "cluster", detection, [detection]),
             DefaultOptions(),
             new(isAvailable, year, [.. sampledClasses], false));
 
-        Assert.Equal(LandCoverFilterDecision.Unavailable, result.Decision);
+        Assert.Equal(NotificationLandCoverDecision.Unavailable, result.Decision);
         Assert.False(result.IsSuppressed);
         Assert.Null(result.VegetationPercent);
         Assert.Null(result.HasBuiltUpWithinProximity);
     }
 
-    private static TelegramLandCoverOptions DefaultOptions(
+    private static NotificationLandCoverOptions DefaultOptions(
         double vegetationPercentThreshold = 50) =>
         new(
             Enabled: true,

@@ -1,9 +1,9 @@
 # Notification policy
 
 > **Purpose:** Define the non-obvious domain rules that distinguish raw thermal observations from Telegram notification candidates.
-> **Scope:** Anomaly meaning and identity, clustering, automatic selection, visibility and land-cover filters, imagery, and manual sends.
-> **Sources of truth:** [Anomaly model](../../src/ThermalWatch.Core/Anomaly.cs), [notification cluster](../../src/ThermalWatch.Core/NotificationCluster.cs), [generic clustering](../../src/ThermalWatch.Core/NotificationClustering.cs), [notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [automatic state](../../src/ThermalWatch.Telegram/TelegramAutomaticNotificationState.cs), [visibility filter](../../src/ThermalWatch.Telegram/TelegramVisibilityFilter.cs), and [land-cover filter](../../src/ThermalWatch.Telegram/TelegramLandCoverFilter.cs).
-> **Update when:** Observation identity, clustering, representative choice, eligibility, filtering order, imagery policy, or manual-send semantics change.
+> **Scope:** Anomaly meaning and identity, clustering, automatic selection, visibility and land-cover filters, diagnostics, imagery, and manual sends.
+> **Sources of truth:** [Anomaly model](../../src/ThermalWatch.Core/Anomaly.cs), [notification cluster](../../src/ThermalWatch.Core/NotificationCluster.cs), [clustering](../../src/ThermalWatch.Core/NotificationClustering.cs), [candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs), [metadata policy](../../src/ThermalWatch.Core/NotificationPolicy.cs), and [land-cover policy](../../src/ThermalWatch.Core/NotificationLandCoverPolicy.cs).
+> **Update when:** Observation identity, clustering, representative choice, eligibility, diagnostic explanation, filtering order, imagery policy, or manual-send semantics change.
 
 ## Observation meaning and API boundary
 
@@ -13,7 +13,7 @@ The HTTP API is the raw-observation boundary:
 
 - It returns every valid FIRMS observation in the active snapshot, across MODIS and all three VIIRS feeds.
 - It may apply only caller-requested query filters from [AnomalyQuery.cs](../../src/ThermalWatch.Api/AnomalyQuery.cs).
-- Telegram visibility, land-cover, preview, deduplication, and clustering state never remove or annotate API items.
+- Notification visibility, land-cover, preview, deduplication, and clustering state never remove or annotate API items.
 
 An anomaly ID is a deterministic truncated SHA-256 hash of country, source, satellite, UTC acquisition second, latitude, and longitude. Thermal contrast is primary brightness minus secondary/background brightness only when both values exist. [AnomalyId.cs](../../src/ThermalWatch.Core/AnomalyId.cs) and [Anomaly.cs](../../src/ThermalWatch.Core/Anomaly.cs) define these contracts.
 
@@ -48,7 +48,7 @@ Seen IDs, delivered-episode detections, and pending candidates are process memor
 
 ## Visibility policy
 
-When enabled, [TelegramVisibilityFilter.cs](../../src/ThermalWatch.Telegram/TelegramVisibilityFilter.cs) evaluates in this order:
+When enabled, [NotificationPolicy.cs](../../src/ThermalWatch.Core/NotificationPolicy.cs) evaluates in this order:
 
 1. Required daytime pass.
 2. Minimum cluster member count.
@@ -60,7 +60,7 @@ A required value that is absent rejects the candidate. Exact defaults and ranges
 
 ## Land-cover policy
 
-The land-cover filter uses NASA's annual combined MODIS IGBP product. The GIBS client selects the newest year common to every required tile, samples the detection pixels plus pixels intersecting the configured proximity, and decodes the official indexed colors into classes.
+The [land-cover policy](../../src/ThermalWatch.Core/NotificationLandCoverPolicy.cs) uses NASA's annual combined MODIS IGBP product. The GIBS client selects the newest year common to every required tile, samples the detection pixels plus pixels intersecting the configured proximity, and decodes the official indexed colors into classes.
 
 - IGBP classes 1–12 and 14 count as vegetation.
 - Class 13 means urban/built-up and retains an otherwise vegetation-dominated cluster when present within proximity.
@@ -69,6 +69,14 @@ The land-cover filter uses NASA's annual combined MODIS IGBP product. The GIBS c
 - Unavailable, inconsistent, or invalid NASA land-cover data fails open: retain the candidate and report the unavailable reason.
 
 These rules are heuristics, not event classification. Land cover, confidence, FRP, and imagery cannot prove whether a wildfire or visible smoke exists.
+
+## Viewer diagnostics
+
+Selecting an anomaly in the viewer asks the Core candidate engine to cluster every observation in the current active snapshot and find the connected component containing that anomaly. The diagnostic uses the same radius, time window, representative selection, metadata rules, land-cover policy, preview sizing, and exact-date preview client as automatic and manual candidate preparation.
+
+The diagnostic is deliberately exhaustive: it reports daytime, detection-count, source-specific confidence, FRP, thermal-contrast, land-cover, and exact-preview outcomes even when an earlier criterion already blocks the candidate. Disabled criteria are identified explicitly. Unavailable land cover remains non-blocking because the policy fails open; an unavailable required preview is currently blocking and explains the automatic retry-window behavior.
+
+This is a fresh, read-only evaluation. It neither asks whether an anomaly is new nor reads or changes seen IDs, delivered episodes, or pending previews. Refreshing diagnostics can therefore observe newly available GIBS data without changing later automatic or manual behavior.
 
 ## Preview policy
 

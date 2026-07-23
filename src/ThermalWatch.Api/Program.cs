@@ -48,6 +48,7 @@ try
     builder.Host.UseSerilog(Log.Logger, dispose: false);
 
     builder.Services.AddSingleton(configuration.Firms);
+    builder.Services.AddSingleton(configuration.Notifications);
     builder.Services.AddSingleton(configuration.Telegram);
     builder.Services.AddSingleton(configuration.Viewer);
     builder.Services.AddSingleton(countryBoundaries);
@@ -101,6 +102,7 @@ try
         serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient(name: "GibsMapTiles"),
         serviceProvider.GetRequiredService<IMemoryCache>(),
         serviceProvider.GetRequiredService<ILogger<GibsMapTileClient>>()));
+    builder.Services.AddSingleton<NotificationCandidateEngine>();
 
     builder.Services
         .AddHttpClient(name: "Telegram", client => client.Timeout = Timeout.InfiniteTimeSpan)

@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Globalization;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -14,20 +13,12 @@ namespace ThermalWatch.Telegram;
 public sealed class TelegramNotificationService(
     TelegramOptions options,
     AnomalySnapshotStore snapshotStore,
-    GibsClient gibsClient,
+    NotificationCandidateEngine candidateEngine,
     IHttpClientFactory httpClientFactory,
-    TimeProvider timeProvider,
     ILogger<TelegramNotificationService> logger) : BackgroundService
 {
-    private const int MaximumSeenIds = 100_000;
-    private readonly Dictionary<string, DateTimeOffset> _seen = new(StringComparer.Ordinal);
-    private readonly TelegramAutomaticNotificationState _automaticState = new(
-        options.ClusterRadiusKilometers,
-        options.ClusterTimeWindow,
-        options.SeenRetention);
     private readonly SemaphoreSlim _manualSendGate = new(initialCount: 1, maxCount: 1);
     private ValidatedTelegram? _validated;
-    private bool _firstReadySnapshot = true;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -43,29 +34,48 @@ public sealed class TelegramNotificationService(
                 if (!ReferenceEquals(Volatile.Read(ref _validated), validated))
                     return;
 
-                if (!snapshot.IsReady)
-                    continue;
-
-                var summary = new VisibilityProcessingSummary();
-                var landCoverSummary = new LandCoverProcessingSummary();
-                await TrackNewDetectionsAsync(
+                NotificationAutomaticProcessingResult result = await candidateEngine.ProcessAutomaticAsync(
                     snapshot,
-                    summary,
-                    landCoverSummary,
+                    (candidate, cancellationToken) => TryDeliverAutomaticAsync(
+                        validated,
+                        candidate,
+                        cancellationToken),
                     stoppingToken).ConfigureAwait(false);
-                bool continueRunning = await SendPendingAsync(
-                    validated,
-                    summary,
-                    stoppingToken).ConfigureAwait(false);
-                LogVisibilitySummary(summary);
-                LogLandCoverSummary(landCoverSummary);
-                if (!continueRunning)
+                LogProcessingSummary(result.Summary);
+                if (!result.ContinueProcessing)
                     return;
             }
         }
         finally
         {
             Interlocked.CompareExchange(ref _validated, value: null, validated);
+        }
+    }
+
+    public async Task<ManualTelegramSendResult> SendTopAsync(
+        int requestedCount,
+        CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _validated) is null)
+            return ManualTelegramSendResult.TelegramUnavailable;
+
+        if (!_manualSendGate.Wait(millisecondsTimeout: 0, cancellationToken))
+            return ManualTelegramSendResult.AlreadyRunning;
+
+        try
+        {
+            ValidatedTelegram? validated = Volatile.Read(ref _validated);
+            if (validated is null)
+                return ManualTelegramSendResult.TelegramUnavailable;
+
+            return await ExecuteManualSendAsync(
+                validated,
+                requestedCount,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _manualSendGate.Release();
         }
     }
 
@@ -114,68 +124,33 @@ public sealed class TelegramNotificationService(
         }
     }
 
-    public async Task<ManualTelegramSendResult> SendTopAsync(
-        int requestedCount,
-        CancellationToken cancellationToken)
-    {
-        if (Volatile.Read(ref _validated) is null)
-            return ManualTelegramSendResult.TelegramUnavailable;
-
-        if (!_manualSendGate.Wait(millisecondsTimeout: 0, cancellationToken))
-            return ManualTelegramSendResult.AlreadyRunning;
-
-        try
-        {
-            ValidatedTelegram? validated = Volatile.Read(ref _validated);
-            if (validated is null)
-                return ManualTelegramSendResult.TelegramUnavailable;
-
-            return await ExecuteManualSendAsync(
-                validated,
-                requestedCount,
-                cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _manualSendGate.Release();
-        }
-    }
-
     private async Task<ManualTelegramSendResult> ExecuteManualSendAsync(
         ValidatedTelegram validated,
         int requestedCount,
         CancellationToken cancellationToken)
     {
-        AnomalySnapshot snapshot = snapshotStore.Current;
-        ImmutableArray<NotificationCluster> clusters = TelegramNotificationClustering.Create(
-            snapshot.Items,
-            snapshot.Items,
-            options.ClusterRadiusKilometers,
-            options.ClusterTimeWindow,
-            includeActiveContext: false);
-        List<PreparedNotification> eligible = await GetEligibleNotificationsAsync(
-            clusters,
+        ManualNotificationCandidates preparation = await candidateEngine.PrepareManualAsync(
+            snapshotStore.Current,
+            requestedCount,
             cancellationToken).ConfigureAwait(false);
-        PreparedNotification[] selected = SelectTopNotifications(eligible, requestedCount);
-
-        if (selected.Length == 0)
+        if (preparation.Selected.IsEmpty)
         {
             return await CompleteEmptyManualSendAsync(
                 validated,
                 requestedCount,
-                eligible.Count,
+                preparation.EligibleCount,
                 cancellationToken).ConfigureAwait(false);
         }
 
         if (!await TrySendManualStatusAsync(
             validated,
-            message: $"🔥 <b>Sending top {selected.Length} anomalies manually</b>",
+            message: $"🔥 <b>Sending top {preparation.Selected.Length} anomalies manually</b>",
             cancellationToken).ConfigureAwait(false))
         {
             var response = new ManualTelegramSendResponse(
                 requestedCount,
-                eligible.Count,
-                selected.Length,
+                preparation.EligibleCount,
+                preparation.Selected.Length,
                 SentCount: 0,
                 FailedCount: 0,
                 []);
@@ -185,65 +160,18 @@ public sealed class TelegramNotificationService(
 
         (int sentCount, List<string> failedIds) = await SendManualNotificationsAsync(
             validated,
-            selected,
+            preparation.Selected,
             cancellationToken).ConfigureAwait(false);
-
         var completedResponse = new ManualTelegramSendResponse(
             requestedCount,
-            eligible.Count,
-            selected.Length,
+            preparation.EligibleCount,
+            preparation.Selected.Length,
             sentCount,
             failedIds.Count,
             [.. failedIds]);
         LogManualSendSummary(completedResponse);
         return ManualTelegramSendResult.Completed(completedResponse);
     }
-
-    private async Task<List<PreparedNotification>> GetEligibleNotificationsAsync(
-        ImmutableArray<NotificationCluster> clusters,
-        CancellationToken cancellationToken)
-    {
-        var eligible = new List<PreparedNotification>();
-        foreach (NotificationCluster cluster in clusters)
-        {
-            ClusterEvaluation evaluation = await EvaluateClusterAsync(cluster, cancellationToken).ConfigureAwait(false);
-            if (!evaluation.IsAccepted)
-                continue;
-
-            TelegramPreviewSelection previewSelection = SelectPreview(cluster);
-            GibsPreview preview = await gibsClient.GetPreviewAsync(
-                cluster.Representative,
-                previewSelection.Dimensions,
-                cancellationToken).ConfigureAwait(false);
-            if (!preview.IsAvailable
-                && options.Visibility.Enabled
-                && options.Visibility.RequirePreview)
-            {
-                TelegramNotificationLog.ManualPreviewUnavailable(logger, cluster.Id);
-                continue;
-            }
-
-            eligible.Add(new(
-                cluster,
-                preview,
-                previewSelection,
-                evaluation.LandCoverResult?.FormattingSummary));
-        }
-
-        return eligible;
-    }
-
-    private static PreparedNotification[] SelectTopNotifications(
-        List<PreparedNotification> eligible,
-        int requestedCount) =>
-        [.. eligible
-            .OrderByDescending(candidate => candidate.Cluster.Representative.FrpMegawatts.HasValue)
-            .ThenByDescending(candidate => candidate.Cluster.Representative.FrpMegawatts)
-            .ThenByDescending(candidate => candidate.Cluster.Members.Length)
-            .ThenByDescending(candidate => candidate.PreviewSelection.ClusterDiameterKilometers)
-            .ThenByDescending(candidate => candidate.Cluster.Representative.AcquiredAtUtc)
-            .ThenBy(candidate => candidate.Cluster.Id, StringComparer.Ordinal)
-            .Take(requestedCount)];
 
     private async Task<ManualTelegramSendResult> CompleteEmptyManualSendAsync(
         ValidatedTelegram validated,
@@ -270,22 +198,16 @@ public sealed class TelegramNotificationService(
 
     private async Task<(int SentCount, List<string> FailedIds)> SendManualNotificationsAsync(
         ValidatedTelegram validated,
-        PreparedNotification[] selected,
+        IReadOnlyList<PreparedNotificationCandidate> selected,
         CancellationToken cancellationToken)
     {
         int sentCount = 0;
         var failedIds = new List<string>();
-        foreach (PreparedNotification candidate in selected)
+        foreach (PreparedNotificationCandidate candidate in selected)
         {
             try
             {
-                await SendNotificationAsync(
-                    validated,
-                    candidate.Cluster,
-                    candidate.Preview,
-                    candidate.PreviewSelection,
-                    candidate.LandCoverSummary,
-                    cancellationToken).ConfigureAwait(false);
+                await SendNotificationAsync(validated, candidate, cancellationToken).ConfigureAwait(false);
                 sentCount++;
                 TelegramNotificationLog.ManualNotificationSent(logger, candidate.Cluster.Id);
             }
@@ -329,248 +251,20 @@ public sealed class TelegramNotificationService(
         }
     }
 
-    private async Task TrackNewDetectionsAsync(
-        AnomalySnapshot snapshot,
-        VisibilityProcessingSummary summary,
-        LandCoverProcessingSummary landCoverSummary,
-        CancellationToken cancellationToken)
-    {
-        DateTimeOffset now = timeProvider.GetUtcNow();
-        ExpireSeen(now);
-        _automaticState.Expire(now);
-
-        if (_firstReadySnapshot && !options.NotifyExistingOnStartup)
-        {
-            foreach (Anomaly detection in snapshot.Items)
-                _seen[detection.Id] = now;
-
-            _firstReadySnapshot = false;
-            TrimSeen();
-            TelegramNotificationLog.DeduplicationPrimed(logger, snapshot.Items.Length);
-            return;
-        }
-
-        _firstReadySnapshot = false;
-        Anomaly[] newDetections = [.. snapshot.Items.Where(detection => !_seen.ContainsKey(detection.Id))];
-
-        foreach (Anomaly detection in newDetections)
-            _seen[detection.Id] = now;
-
-        TrimSeen();
-        ImmutableArray<NotificationCluster> clusters = TelegramNotificationClustering.Create(
-            snapshot.Items,
-            newDetections,
-            options.ClusterRadiusKilometers,
-            options.ClusterTimeWindow,
-            options.Visibility.Enabled && options.Visibility.MinimumClusterDetections > 1);
-
-        await TrackClustersAsync(
-            clusters,
-            now,
-            summary,
-            landCoverSummary,
-            cancellationToken).ConfigureAwait(false);
-
-        if (newDetections.Length > 0)
-        {
-            TelegramNotificationLog.ZonesCreated(
-                logger,
-                clusters.Length,
-                newDetections.Length);
-        }
-    }
-
-    private async Task TrackClustersAsync(
-        ImmutableArray<NotificationCluster> clusters,
-        DateTimeOffset now,
-        VisibilityProcessingSummary summary,
-        LandCoverProcessingSummary landCoverSummary,
-        CancellationToken cancellationToken)
-    {
-        foreach (NotificationCluster cluster in clusters)
-        {
-            summary.AddCandidate();
-            TelegramCandidatePreparation preparation = _automaticState.PrepareCandidate(cluster, now);
-            if (preparation.ContinuesDeliveredEpisode)
-            {
-                summary.AddDuplicateEpisode();
-                TelegramNotificationLog.DeliveredEpisodeSuppressed(logger, preparation.Cluster.Id);
-                continue;
-            }
-
-            NotificationCluster preparedCluster = preparation.Cluster;
-            ClusterEvaluation evaluation = await EvaluateClusterAsync(preparedCluster, cancellationToken).ConfigureAwait(false);
-            if (evaluation.VisibilityRejectionReason is { } visibilityRejectionReason)
-            {
-                summary.Reject(visibilityRejectionReason);
-                continue;
-            }
-
-            RecordLandCoverResult(landCoverSummary, evaluation.LandCoverResult);
-            if (!evaluation.IsAccepted)
-                continue;
-
-            _automaticState.AddPending(new(
-                preparedCluster,
-                preparation.FirstSeenUtc,
-                SelectPreview(preparedCluster),
-                evaluation.LandCoverResult?.FormattingSummary));
-        }
-    }
-
-    private static void RecordLandCoverResult(
-        LandCoverProcessingSummary summary,
-        LandCoverFilterResult? result)
-    {
-        if (result is not { } landCoverResult)
-            return;
-
-        summary.AddCandidate();
-        if (landCoverResult.LandCoverYear is { } landCoverYear)
-            summary.RecordYear(landCoverYear);
-        if (landCoverResult.Decision == LandCoverFilterDecision.Unavailable)
-            summary.AddUnavailable();
-        else if (landCoverResult.Decision == LandCoverFilterDecision.Suppressed)
-            summary.AddSuppressed();
-    }
-
-    private async Task<ClusterEvaluation> EvaluateClusterAsync(
-        NotificationCluster cluster,
-        CancellationToken cancellationToken)
-    {
-        VisibilityFilterResult visibilityResult = TelegramVisibilityFilter.EvaluateMetadata(
-            cluster,
-            options.Visibility);
-        if (!visibilityResult.IsAccepted)
-        {
-            VisibilityRejectionReason reason = visibilityResult.RejectionReason!.Value;
-            TelegramNotificationLog.VisibilityRejected(
-                logger,
-                cluster.Id,
-                reason);
-            return new(IsAccepted: false, reason, LandCoverResult: null);
-        }
-
-        if (!options.LandCover.Enabled)
-            return ClusterEvaluation.Accepted;
-
-        LandCoverFilterResult landCoverResult = await TelegramLandCoverFilter.EvaluateAsync(
-            cluster,
-            options.LandCover,
-            gibsClient,
-            cancellationToken).ConfigureAwait(false);
-        if (landCoverResult.LandCoverYear is { } landCoverYear)
-        {
-            TelegramNotificationLog.LandCoverYearSelected(
-                logger,
-                landCoverYear,
-                cluster.Id);
-        }
-
-        if (landCoverResult.Decision == LandCoverFilterDecision.Unavailable)
-        {
-            TelegramNotificationLog.LandCoverUnavailable(
-                logger,
-                cluster.Id,
-                landCoverResult.Reason);
-        }
-        else if (landCoverResult.Decision == LandCoverFilterDecision.Suppressed)
-        {
-            TelegramNotificationLog.LandCoverSuppressed(
-                logger,
-                cluster.Id,
-                landCoverResult.Reason);
-        }
-
-        return new(
-            landCoverResult.Decision != LandCoverFilterDecision.Suppressed,
-            VisibilityRejectionReason: null,
-            landCoverResult);
-    }
-
-    private async Task<bool> SendPendingAsync(
+    private async Task<NotificationDeliveryOutcome> TryDeliverAutomaticAsync(
         ValidatedTelegram validated,
-        VisibilityProcessingSummary summary,
-        CancellationToken cancellationToken)
-    {
-        for (int index = 0; index < _automaticState.PendingCount;)
-        {
-            DateTimeOffset now = timeProvider.GetUtcNow();
-            PendingTelegramNotification pending = _automaticState.GetPending(index);
-            if (_automaticState.TrySuppressPending(index, now))
-            {
-                summary.AddDuplicateEpisode();
-                TelegramNotificationLog.PendingDeliveredEpisodeSuppressed(logger, pending.Cluster.Id);
-                continue;
-            }
-
-            GibsPreview preview = await gibsClient.GetPreviewAsync(
-                pending.Cluster.Representative,
-                pending.PreviewSelection.Dimensions,
-                cancellationToken).ConfigureAwait(false);
-            bool previewExpired = now - pending.FirstSeenUtc >= options.PreviewRetryWindow;
-
-            if (!preview.IsAvailable && !previewExpired)
-            {
-                summary.AddPendingPreview();
-                index++;
-                continue;
-            }
-
-            if (!preview.IsAvailable
-                && options.Visibility.Enabled
-                && options.Visibility.RequirePreview)
-            {
-                summary.Reject(VisibilityRejectionReason.PreviewUnavailable);
-                summary.AddPreviewTimeout();
-                TelegramNotificationLog.PreviewRetryExpired(logger, pending.Cluster.Id);
-                _automaticState.RemovePendingAt(index);
-                continue;
-            }
-
-            PendingSendResult sendResult = await TrySendPendingNotificationAsync(
-                validated,
-                pending,
-                preview,
-                summary,
-                index,
-                cancellationToken).ConfigureAwait(false);
-            if (sendResult == PendingSendResult.Stop)
-                return false;
-            if (sendResult == PendingSendResult.RetryLater)
-                return true;
-        }
-
-        return true;
-    }
-
-    private async Task<PendingSendResult> TrySendPendingNotificationAsync(
-        ValidatedTelegram validated,
-        PendingTelegramNotification pending,
-        GibsPreview preview,
-        VisibilityProcessingSummary summary,
-        int pendingIndex,
+        PreparedNotificationCandidate candidate,
         CancellationToken cancellationToken)
     {
         try
         {
-            await SendNotificationAsync(
-                validated,
-                pending.Cluster,
-                preview,
-                pending.PreviewSelection,
-                pending.LandCoverSummary,
-                cancellationToken).ConfigureAwait(false);
-
-            _automaticState.RecordDelivered(pending.Cluster, timeProvider.GetUtcNow());
+            await SendNotificationAsync(validated, candidate, cancellationToken).ConfigureAwait(false);
             TelegramNotificationLog.NotificationSent(
                 logger,
-                pending.Cluster.Id,
-                pending.Cluster.Representative.Satellite,
-                pending.Cluster.Representative.AcquiredAtUtc);
-            summary.AddAccepted();
-            _automaticState.RemovePendingAt(pendingIndex);
-            return PendingSendResult.Sent;
+                candidate.Cluster.Id,
+                candidate.Cluster.Representative.Satellite,
+                candidate.Cluster.Representative.AcquiredAtUtc);
+            return NotificationDeliveryOutcome.Delivered;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -578,36 +272,31 @@ public sealed class TelegramNotificationService(
         }
         catch (ApiRequestException exception) when (exception.ErrorCode is 400 or 401 or 403)
         {
-            summary.AddSendFailure();
             DisableValidatedTelegram(validated);
             TelegramNotificationLog.PermanentSendFailure(logger);
-            return PendingSendResult.Stop;
+            return NotificationDeliveryOutcome.Stop;
         }
         catch (Exception)
         {
-            summary.AddSendFailure();
-            TelegramNotificationLog.TransientSendFailure(logger, pending.Cluster.Id);
-            return PendingSendResult.RetryLater;
+            TelegramNotificationLog.TransientSendFailure(logger, candidate.Cluster.Id);
+            return NotificationDeliveryOutcome.RetryLater;
         }
     }
 
     private static async Task SendNotificationAsync(
         ValidatedTelegram validated,
-        NotificationCluster cluster,
-        GibsPreview preview,
-        TelegramPreviewSelection previewSelection,
-        string? landCoverSummary,
+        PreparedNotificationCandidate candidate,
         CancellationToken cancellationToken)
     {
-        InlineKeyboardMarkup keyboard = CreateLocationKeyboard(cluster);
+        InlineKeyboardMarkup keyboard = CreateLocationKeyboard(candidate.Cluster);
         string message = TelegramMessageFormatter.Format(
-            cluster,
-            preview,
-            previewSelection.Dimensions,
-            previewSelection.ClusterDiameterKilometers,
-            landCoverSummary);
+            candidate.Cluster,
+            candidate.Preview,
+            candidate.PreviewSelection.Dimensions,
+            candidate.PreviewSelection.ClusterDiameterKilometers,
+            candidate.LandCoverSummary);
 
-        if (preview.PngBytes is { } pngBytes)
+        if (candidate.Preview.PngBytes is { } pngBytes)
         {
             using var stream = new MemoryStream(pngBytes, writable: false);
             await validated.Client.SendPhoto(
@@ -652,57 +341,35 @@ public sealed class TelegramNotificationService(
     private void DisableValidatedTelegram(ValidatedTelegram validated) =>
         Interlocked.CompareExchange(ref _validated, value: null, validated);
 
-    private TelegramPreviewSelection SelectPreview(NotificationCluster cluster)
+    private void LogProcessingSummary(NotificationProcessingSummary summary)
     {
-        Anomaly representative = cluster.Representative;
-        double clusterDiameterKilometers = Geography.ClusterDiameterKilometers(cluster.Members);
-        TelegramPreviewOptions previewOptions = options.Preview;
-        bool isLargePreview =
-            cluster.Members.Length >= previewOptions.LargeClusterMinimumDetections
-            || representative.FrpMegawatts is { } frp
-                && frp >= previewOptions.LargeClusterMinimumFrpMegawatts
-            || clusterDiameterKilometers >= previewOptions.LargeClusterMinimumDiameterKilometers;
-        TelegramPreviewSize previewSize = isLargePreview
-            ? previewOptions.LargePreviewSize
-            : previewOptions.PreviewSize;
-        var dimensions = new GibsPreviewDimensions(
-            previewSize.WidthKilometers,
-            previewSize.HeightKilometers,
-            previewOptions.PixelWidth,
-            previewOptions.PixelHeight);
+        if (summary.PrimedDetectionCount > 0)
+            TelegramNotificationLog.DeduplicationPrimed(logger, summary.PrimedDetectionCount);
 
-        TelegramNotificationLog.PreviewSizeSelected(
-            logger,
-            cluster.Id,
-            cluster.Members.Length,
-            representative.FrpMegawatts,
-            clusterDiameterKilometers,
-            isLargePreview,
-            dimensions.WidthKilometers,
-            dimensions.HeightKilometers,
-            dimensions.PixelWidth,
-            dimensions.PixelHeight);
-
-        return new(dimensions, clusterDiameterKilometers);
-    }
-
-    private void LogVisibilitySummary(VisibilityProcessingSummary summary)
-    {
-        if (!options.Visibility.Enabled
-            || !summary.HasActivity)
+        if (summary.NewDetectionCount > 0)
         {
-            return;
+            TelegramNotificationLog.ZonesCreated(
+                logger,
+                summary.CandidateClusterCount,
+                summary.NewDetectionCount);
         }
 
-        if (logger.IsEnabled(LogLevel.Information))
+        if (logger.IsEnabled(LogLevel.Information)
+            && (summary.CandidateClusterCount > 0
+            || summary.AcceptedClusterCount > 0
+            || summary.RejectedClusterCount > 0
+            || summary.DuplicateEpisodeCount > 0
+            || summary.PendingPreviewCount > 0
+            || summary.PreviewTimeoutCount > 0
+            || summary.SendFailureCount > 0))
         {
-            int nighttimeCount = summary.RejectionCount(VisibilityRejectionReason.Nighttime);
-            int insufficientDetectionsCount = summary.RejectionCount(VisibilityRejectionReason.InsufficientDetections);
-            int lowConfidenceCount = summary.RejectionCount(VisibilityRejectionReason.LowConfidence);
-            int lowFrpCount = summary.RejectionCount(VisibilityRejectionReason.LowFrp);
-            int lowThermalContrastCount = summary.RejectionCount(VisibilityRejectionReason.LowThermalContrast);
-            int missingRequiredValueCount = summary.RejectionCount(VisibilityRejectionReason.MissingRequiredValue);
-            int previewUnavailableCount = summary.RejectionCount(VisibilityRejectionReason.PreviewUnavailable);
+            int nighttimeCount = summary.RejectionCount(NotificationRejectionReason.Nighttime);
+            int insufficientDetectionsCount = summary.RejectionCount(NotificationRejectionReason.InsufficientDetections);
+            int lowConfidenceCount = summary.RejectionCount(NotificationRejectionReason.LowConfidence);
+            int lowFrpCount = summary.RejectionCount(NotificationRejectionReason.LowFrp);
+            int lowThermalContrastCount = summary.RejectionCount(NotificationRejectionReason.LowThermalContrast);
+            int missingRequiredValueCount = summary.RejectionCount(NotificationRejectionReason.MissingRequiredValue);
+            int previewUnavailableCount = summary.RejectionCount(NotificationRejectionReason.PreviewUnavailable);
             TelegramNotificationLog.VisibilitySummary(
                 logger,
                 summary.CandidateClusterCount,
@@ -720,19 +387,16 @@ public sealed class TelegramNotificationService(
                 missingRequiredValueCount,
                 previewUnavailableCount);
         }
-    }
 
-    private void LogLandCoverSummary(LandCoverProcessingSummary summary)
-    {
-        if (!options.LandCover.Enabled || !summary.HasActivity)
-            return;
-
-        TelegramNotificationLog.LandCoverSummary(
-            logger,
-            summary.CandidateClusterCount,
-            summary.VegetationSuppressedCount,
-            summary.LandCoverUnavailableCount,
-            summary.LandCoverYear);
+        if (summary.LandCoverCandidateCount > 0)
+        {
+            TelegramNotificationLog.LandCoverSummary(
+                logger,
+                summary.LandCoverCandidateCount,
+                summary.VegetationSuppressedCount,
+                summary.LandCoverUnavailableCount,
+                summary.LandCoverYear);
+        }
     }
 
     private void LogManualSendSummary(ManualTelegramSendResponse response)
@@ -746,114 +410,5 @@ public sealed class TelegramNotificationService(
             response.FailedCount);
     }
 
-    private void ExpireSeen(DateTimeOffset now)
-    {
-        DateTimeOffset cutoff = now - options.SeenRetention;
-        foreach (string id in _seen.Where(pair => pair.Value < cutoff).Select(pair => pair.Key).ToArray())
-            _seen.Remove(id);
-    }
-
-    private void TrimSeen()
-    {
-        int excess = _seen.Count - MaximumSeenIds;
-        if (excess <= 0)
-            return;
-
-        foreach (string id in _seen.OrderBy(pair => pair.Value).Take(excess).Select(pair => pair.Key).ToArray())
-            _seen.Remove(id);
-    }
-
-    private sealed record PreparedNotification(
-        NotificationCluster Cluster,
-        GibsPreview Preview,
-        TelegramPreviewSelection PreviewSelection,
-        string? LandCoverSummary);
-
     private sealed record ValidatedTelegram(TelegramBotClient Client, ChatId ChatId);
-
-    private enum PendingSendResult
-    {
-        Sent,
-        Stop,
-        RetryLater
-    }
-
-    private readonly record struct ClusterEvaluation(
-        bool IsAccepted,
-        VisibilityRejectionReason? VisibilityRejectionReason,
-        LandCoverFilterResult? LandCoverResult)
-    {
-        public static ClusterEvaluation Accepted { get; } = new(IsAccepted: true, VisibilityRejectionReason: null, LandCoverResult: null);
-    }
-
-    private sealed class VisibilityProcessingSummary
-    {
-        private readonly Dictionary<VisibilityRejectionReason, int> _rejectionCounts = [];
-
-        public int CandidateClusterCount { get; private set; }
-
-        public int AcceptedClusterCount { get; private set; }
-
-        public int RejectedClusterCount { get; private set; }
-
-        public int DuplicateEpisodeCount { get; private set; }
-
-        public int PendingPreviewCount { get; private set; }
-
-        public int PreviewTimeoutCount { get; private set; }
-
-        public int SendFailureCount { get; private set; }
-
-        public bool HasActivity =>
-            CandidateClusterCount > 0
-            || AcceptedClusterCount > 0
-            || RejectedClusterCount > 0
-            || DuplicateEpisodeCount > 0
-            || PendingPreviewCount > 0
-            || PreviewTimeoutCount > 0
-            || SendFailureCount > 0;
-
-        public void AddCandidate() => CandidateClusterCount++;
-
-        public void AddAccepted() => AcceptedClusterCount++;
-
-        public void AddDuplicateEpisode() => DuplicateEpisodeCount++;
-
-        public void AddPendingPreview() => PendingPreviewCount++;
-
-        public void AddPreviewTimeout() => PreviewTimeoutCount++;
-
-        public void AddSendFailure() => SendFailureCount++;
-
-        public void Reject(VisibilityRejectionReason reason)
-        {
-            RejectedClusterCount++;
-            _rejectionCounts[reason] = RejectionCount(reason) + 1;
-        }
-
-        public int RejectionCount(VisibilityRejectionReason reason) =>
-            _rejectionCounts.GetValueOrDefault(reason);
-    }
-
-    private sealed class LandCoverProcessingSummary
-    {
-        public int CandidateClusterCount { get; private set; }
-
-        public int VegetationSuppressedCount { get; private set; }
-
-        public int LandCoverUnavailableCount { get; private set; }
-
-        public int? LandCoverYear { get; private set; }
-
-        public bool HasActivity => CandidateClusterCount > 0;
-
-        public void AddCandidate() => CandidateClusterCount++;
-
-        public void AddSuppressed() => VegetationSuppressedCount++;
-
-        public void AddUnavailable() => LandCoverUnavailableCount++;
-
-        public void RecordYear(int year) =>
-            LandCoverYear = LandCoverYear is { } current ? Math.Max(current, year) : year;
-    }
 }

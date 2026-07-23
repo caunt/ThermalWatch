@@ -42,6 +42,46 @@
     return url.href;
   }
 
+  function notificationMarkerStyle(selected, clustered = false) {
+    if (selected)
+      return Object.freeze({ fill: "#ffd166", stroke: "#ffffff", size: 9, weight: 2 });
+    if (clustered)
+      return Object.freeze({ fill: "#57d5ff", stroke: "#e9fbff", size: 8, weight: 2 });
+    return Object.freeze({ fill: "#ff593d", stroke: "#ffffff", size: 7, weight: 2 });
+  }
+
+  function clusterPointKeys(points, memberIds) {
+    if (!Array.isArray(points) || !Array.isArray(memberIds))
+      throw new Error("Points and notification member IDs must be arrays.");
+
+    const members = new Set(memberIds.filter(id => typeof id === "string"));
+    return new Set(points
+      .filter(point => typeof point?.key === "string" && members.has(point.anomaly?.id))
+      .map(point => point.key));
+  }
+
+  function createMapResizeScheduler(onResize, options = {}) {
+    if (typeof onResize !== "function")
+      throw new Error("A map resize callback is required.");
+
+    const requestAnimationFrameFunction = options.requestAnimationFrameFunction
+      ?? globalThis.requestAnimationFrame;
+    if (typeof requestAnimationFrameFunction !== "function")
+      throw new Error("Animation frames are required to schedule map resizing.");
+
+    let framePending = false;
+    return () => {
+      if (framePending)
+        return;
+
+      framePending = true;
+      requestAnimationFrameFunction(() => {
+        framePending = false;
+        onResize();
+      });
+    };
+  }
+
   function loadGibsTile(image, coordinates, options = {}) {
     if (!image)
       throw new Error("An image element is required to load a map tile.");
@@ -282,6 +322,9 @@
     imageryCoverageHeader,
     gibsTileApiUrl,
     yandexMapsUrl,
+    notificationMarkerStyle,
+    clusterPointKeys,
+    createMapResizeScheduler,
     loadGibsTile,
     createGibsWarningReporter,
     createGoogleMapsLoader

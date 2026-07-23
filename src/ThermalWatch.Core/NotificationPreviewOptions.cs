@@ -1,8 +1,8 @@
-namespace ThermalWatch.Telegram;
+namespace ThermalWatch.Core;
 
-public sealed record TelegramPreviewOptions(
-    TelegramPreviewSize PreviewSize,
-    TelegramPreviewSize LargePreviewSize,
+public sealed record NotificationPreviewOptions(
+    NotificationPreviewSize PreviewSize,
+    NotificationPreviewSize LargePreviewSize,
     int PixelWidth,
     int PixelHeight,
     int LargeClusterMinimumDetections,

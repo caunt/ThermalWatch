@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
 
-namespace ThermalWatch.Telegram;
+namespace ThermalWatch.Core;
 
 [StructLayout(LayoutKind.Auto)]
-public readonly record struct TelegramPreviewSize(
+public readonly record struct NotificationPreviewSize(
     double WidthKilometers,
     double HeightKilometers);

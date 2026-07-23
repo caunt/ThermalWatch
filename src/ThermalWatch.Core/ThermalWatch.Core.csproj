@@ -11,4 +11,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Data/ne_50m_admin_0_countries.geojson.gz" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ThermalWatch.Tests" />
+  </ItemGroup>
 </Project>

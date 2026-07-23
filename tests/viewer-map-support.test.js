@@ -8,6 +8,9 @@ const {
   imageryCoverageHeader,
   gibsTileApiUrl,
   yandexMapsUrl,
+  notificationMarkerStyle,
+  clusterPointKeys,
+  createMapResizeScheduler,
   loadGibsTile,
   createGibsWarningReporter,
   createGoogleMapsLoader
@@ -138,6 +141,49 @@ test("GIBS tile URLs use only the same-origin viewer API", () => {
     gibsTileApiUrl({ z: 6, x: 37, y: 21 }),
     "/api/viewer/imagery/gibs/6/37/21.png");
   assert.throws(() => gibsTileApiUrl({ z: 6, x: 37.5, y: 21 }), /Integer map tile/);
+});
+
+test("notification cluster markers distinguish selected, clustered, and unrelated points", () => {
+  assert.deepEqual(notificationMarkerStyle(true, true), {
+    fill: "#ffd166", stroke: "#ffffff", size: 9, weight: 2
+  });
+  assert.deepEqual(notificationMarkerStyle(false, true), {
+    fill: "#57d5ff", stroke: "#e9fbff", size: 8, weight: 2
+  });
+  assert.deepEqual(notificationMarkerStyle(false, false), {
+    fill: "#ff593d", stroke: "#ffffff", size: 7, weight: 2
+  });
+});
+
+test("notification cluster member IDs map to provider-neutral point keys", () => {
+  const points = [
+    { key: "first", anomaly: { id: "a" } },
+    { key: "duplicate#2", anomaly: { id: "a" } },
+    { key: "unrelated", anomaly: { id: "b" } }
+  ];
+
+  assert.deepEqual([...clusterPointKeys(points, ["a"])], ["first", "duplicate#2"]);
+  assert.throws(() => clusterPointKeys(null, ["a"]), /must be arrays/);
+});
+
+test("map resize scheduling coalesces callbacks to one per animation frame", () => {
+  const frames = [];
+  let resizeCount = 0;
+  const scheduleResize = createMapResizeScheduler(
+    () => { resizeCount += 1; },
+    { requestAnimationFrameFunction: callback => frames.push(callback) });
+
+  scheduleResize();
+  scheduleResize();
+  scheduleResize();
+
+  assert.equal(frames.length, 1);
+  assert.equal(resizeCount, 0);
+  frames.shift()();
+  assert.equal(resizeCount, 1);
+
+  scheduleResize();
+  assert.equal(frames.length, 1);
 });
 
 test("Yandex Maps URLs pin validated coordinates in longitude-latitude order", () => {

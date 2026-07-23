@@ -1,10 +1,9 @@
 using System.Collections.Immutable;
 using ThermalWatch.Core;
-using ThermalWatch.Telegram;
 
 namespace ThermalWatch.Tests;
 
-public sealed class TelegramNotificationClusteringTests
+public sealed class NotificationClusteringTests
 {
     private static readonly DateTimeOffset s_observedAt = new(year: 2026, month: 7, day: 18, hour: 12, minute: 0, second: 0, TimeSpan.Zero);
 
@@ -14,7 +13,7 @@ public sealed class TelegramNotificationClusteringTests
         Anomaly earlier = Detection(id: "earlier", s_observedAt, latitude: 50.000, longitude: 30.000);
         Anomaly newlySeen = Detection(id: "new", s_observedAt.AddMinutes(5), latitude: 50.010, longitude: 30.010);
 
-        ImmutableArray<NotificationCluster> clusters = TelegramNotificationClustering.Create(
+        ImmutableArray<NotificationCluster> clusters = NotificationClustering.CreateCandidates(
             [earlier, newlySeen],
             [newlySeen],
             radiusKilometers: 5,
@@ -33,7 +32,7 @@ public sealed class TelegramNotificationClusteringTests
         Anomaly earlier = Detection(id: "earlier", s_observedAt, latitude: 50.000, longitude: 30.000, frpMegawatts: 200);
         Anomaly newlySeen = Detection(id: "new", s_observedAt.AddMinutes(5), latitude: 50.010, longitude: 30.010, frpMegawatts: 100);
 
-        NotificationCluster cluster = Assert.Single(TelegramNotificationClustering.Create(
+        NotificationCluster cluster = Assert.Single(NotificationClustering.CreateCandidates(
             [earlier, newlySeen],
             [newlySeen],
             radiusKilometers: 5,
@@ -49,7 +48,7 @@ public sealed class TelegramNotificationClusteringTests
         Anomaly unrelated = Detection(id: "unrelated", s_observedAt, latitude: 40.000, longitude: 20.000);
         Anomaly newlySeen = Detection(id: "new", s_observedAt.AddMinutes(5), latitude: 50.000, longitude: 30.000);
 
-        NotificationCluster cluster = Assert.Single(TelegramNotificationClustering.Create(
+        NotificationCluster cluster = Assert.Single(NotificationClustering.CreateCandidates(
             [unrelated, newlySeen],
             [newlySeen],
             radiusKilometers: 5,
@@ -66,7 +65,7 @@ public sealed class TelegramNotificationClusteringTests
         Anomaly tooOld = Detection(id: "old", s_observedAt, latitude: 50.000, longitude: 30.000);
         Anomaly newlySeen = Detection(id: "new", s_observedAt.AddMinutes(91), latitude: 50.010, longitude: 30.010);
 
-        NotificationCluster cluster = Assert.Single(TelegramNotificationClustering.Create(
+        NotificationCluster cluster = Assert.Single(NotificationClustering.CreateCandidates(
             [tooOld, newlySeen],
             [newlySeen],
             radiusKilometers: 5,
@@ -83,7 +82,7 @@ public sealed class TelegramNotificationClusteringTests
         Anomaly earlier = Detection(id: "earlier", s_observedAt, latitude: 50.000, longitude: 30.000);
         Anomaly newlySeen = Detection(id: "new", s_observedAt.AddMinutes(5), latitude: 50.010, longitude: 30.010);
 
-        NotificationCluster cluster = Assert.Single(TelegramNotificationClustering.Create(
+        NotificationCluster cluster = Assert.Single(NotificationClustering.CreateCandidates(
             [earlier, newlySeen],
             [newlySeen],
             radiusKilometers: 5,
@@ -99,7 +98,7 @@ public sealed class TelegramNotificationClusteringTests
     {
         Anomaly existing = Detection(id: "existing", s_observedAt, latitude: 50.000, longitude: 30.000);
 
-        ImmutableArray<NotificationCluster> clusters = TelegramNotificationClustering.Create(
+        ImmutableArray<NotificationCluster> clusters = NotificationClustering.CreateCandidates(
             [existing],
             [],
             radiusKilometers: 5,

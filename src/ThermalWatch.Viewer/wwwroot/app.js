@@ -32,6 +32,12 @@
     points: [],
     malformedCount: 0,
     selectedKey: null,
+    diagnostic: null,
+    diagnosticStatus: "idle",
+    diagnosticError: null,
+    diagnosticVersion: 0,
+    diagnosticAbortController: null,
+    clusterKeys: new Set(),
     providerName: "gibs",
     provider: null,
     notices: new Map(),
@@ -91,6 +97,9 @@
   elements.refreshButton.addEventListener("click", () => {
     void loadViewer();
   });
+  window.addEventListener("resize", mapSupport.createMapResizeScheduler(
+    () => state.provider?.resize(),
+    { requestAnimationFrameFunction: callback => window.requestAnimationFrame(callback) }));
 
   void loadViewer();
 
@@ -158,11 +167,17 @@
     updateSnapshotNotices();
     renderSnapshotSummary();
 
-    if (state.selectedKey && !state.points.some(point => point.key === state.selectedKey))
+    if (state.selectedKey && !state.points.some(point => point.key === state.selectedKey)) {
+      resetDiagnostic();
       state.selectedKey = null;
+    }
 
     if (state.selectedKey) {
-      renderDetails(state.points.find(point => point.key === state.selectedKey));
+      const selectedPoint = state.points.find(point => point.key === state.selectedKey);
+      resetDiagnostic();
+      state.diagnosticStatus = "loading";
+      renderDetails(selectedPoint);
+      void loadNotificationDiagnostic(selectedPoint);
     } else if (state.points.length === 0) {
       renderEmptyDetails(
         state.snapshot.items.length === 0 ? "No current anomalies" : "No mappable anomalies",
@@ -179,10 +194,11 @@
     setBusy(false);
   }
 
-  async function fetchJson(url) {
+  async function fetchJson(url, signal = undefined) {
     const response = await fetch(url, {
       cache: "no-store",
-      headers: { Accept: "application/json" }
+      headers: { Accept: "application/json" },
+      signal
     });
 
     let body;
@@ -338,7 +354,7 @@
       }
 
       provider.renderAnomalies(state.points);
-      provider.setSelected(state.selectedKey);
+      provider.setSelection(state.selectedKey, state.clusterKeys);
       provider.fitToAnomalies(state.points);
       state.provider = provider;
       elements.providerCaption.textContent = definition.caption();
@@ -366,8 +382,87 @@
       return;
 
     state.selectedKey = key;
-    state.provider?.setSelected(key);
+    resetDiagnostic();
+    state.diagnosticStatus = "loading";
+    state.provider?.setSelection(key, state.clusterKeys);
     renderDetails(point);
+    void loadNotificationDiagnostic(point);
+  }
+
+  async function loadNotificationDiagnostic(point) {
+    const anomalyId = typeof point?.anomaly?.id === "string"
+      ? point.anomaly.id.trim()
+      : "";
+    if (!anomalyId) {
+      state.diagnosticStatus = "error";
+      state.diagnosticError = "The selected observation has no anomaly ID.";
+      renderSelectedDetails();
+      return;
+    }
+
+    state.diagnosticAbortController?.abort();
+    const controller = new AbortController();
+    const version = ++state.diagnosticVersion;
+    state.diagnosticAbortController = controller;
+    try {
+      const diagnostic = await fetchJson(
+        `/api/viewer/notification-diagnostics/${encodeURIComponent(anomalyId)}`,
+        controller.signal);
+      if (version !== state.diagnosticVersion || state.selectedKey !== point.key)
+        return;
+
+      validateNotificationDiagnostic(diagnostic, anomalyId);
+      state.diagnostic = diagnostic;
+      state.diagnosticStatus = "ready";
+      state.diagnosticError = null;
+      state.clusterKeys = mapSupport.clusterPointKeys(state.points, diagnostic.memberIds);
+      state.provider?.setSelection(state.selectedKey, state.clusterKeys);
+      renderSelectedDetails();
+    } catch (error) {
+      if (error?.name === "AbortError"
+          || version !== state.diagnosticVersion
+          || state.selectedKey !== point.key) {
+        return;
+      }
+
+      state.diagnostic = null;
+      state.diagnosticStatus = "error";
+      state.diagnosticError = errorMessage(error);
+      state.clusterKeys = new Set();
+      state.provider?.setSelection(state.selectedKey, state.clusterKeys);
+      renderSelectedDetails();
+    } finally {
+      if (version === state.diagnosticVersion)
+        state.diagnosticAbortController = null;
+    }
+  }
+
+  function validateNotificationDiagnostic(diagnostic, anomalyId) {
+    if (!diagnostic || typeof diagnostic !== "object"
+        || diagnostic.selectedAnomalyId !== anomalyId
+        || !Array.isArray(diagnostic.memberIds)
+        || !Array.isArray(diagnostic.criteria)
+        || typeof diagnostic.clusterId !== "string"
+        || typeof diagnostic.representativeId !== "string"
+        || typeof diagnostic.isEligible !== "boolean") {
+      throw new Error("The notification diagnostic response is invalid.");
+    }
+  }
+
+  function resetDiagnostic() {
+    state.diagnosticAbortController?.abort();
+    state.diagnosticAbortController = null;
+    state.diagnosticVersion += 1;
+    state.diagnostic = null;
+    state.diagnosticStatus = "idle";
+    state.diagnosticError = null;
+    state.clusterKeys = new Set();
+  }
+
+  function renderSelectedDetails() {
+    const selected = state.points.find(point => point.key === state.selectedKey);
+    if (selected)
+      renderDetails(selected);
   }
 
   function renderSnapshotSummary() {
@@ -433,6 +528,8 @@
     );
     wrapper.append(heading);
 
+    wrapper.append(notificationDiagnosticSection());
+
     const observationSection = section("Observation data");
     observationSection.append(fieldList(Object.entries(anomaly), point));
     wrapper.append(observationSection);
@@ -470,6 +567,98 @@
 
     elements.detailsPanel.replaceChildren(wrapper);
     elements.detailsPanel.scrollTop = 0;
+  }
+
+  function notificationDiagnosticSection() {
+    const diagnosticSection = section("Notification criteria");
+    if (state.diagnosticStatus === "loading") {
+      const loading = document.createElement("div");
+      loading.className = "diagnostic-loading";
+      loading.append(
+        textElement("span", "", "spinner"),
+        textElement("p", "Building the active-snapshot cluster and checking notification criteria…"));
+      diagnosticSection.append(loading);
+      return diagnosticSection;
+    }
+
+    if (state.diagnosticStatus === "error") {
+      const error = document.createElement("div");
+      error.className = "diagnostic-error";
+      error.append(
+        textElement("strong", "Notification diagnostics unavailable"),
+        textElement("p", state.diagnosticError || "The diagnostic request failed."));
+      diagnosticSection.append(error);
+      return diagnosticSection;
+    }
+
+    if (state.diagnosticStatus !== "ready" || !state.diagnostic) {
+      diagnosticSection.append(textElement(
+        "p",
+        "Select an anomaly to evaluate its current cluster.",
+        "details-subtitle"));
+      return diagnosticSection;
+    }
+
+    const diagnostic = state.diagnostic;
+    const summary = document.createElement("div");
+    summary.className = "diagnostic-summary";
+    summary.append(
+      textElement(
+        "span",
+        diagnostic.isEligible ? "Eligible now" : "Filtered out",
+        `diagnostic-outcome ${diagnostic.isEligible ? "passed" : "failed"}`),
+      textElement(
+        "p",
+        `${diagnostic.detectionCount} ${plural(diagnostic.detectionCount, "detection", "detections")} · ${formatDistance(diagnostic.clusterDiameterKilometers)} diameter`),
+      textElement(
+        "p",
+        diagnostic.representativeId === diagnostic.selectedAnomalyId
+          ? "The selected anomaly is the cluster representative."
+          : "Another cluster member is the representative used by the criteria.",
+        "details-subtitle"));
+    diagnosticSection.append(summary);
+
+    const list = document.createElement("ul");
+    list.className = "criteria-list";
+    diagnostic.criteria.forEach(criterion => list.append(criterionItem(criterion)));
+    diagnosticSection.append(list);
+
+    const disclosure = document.createElement("details");
+    disclosure.className = "cluster-members";
+    disclosure.append(textElement("summary", "Show cluster member IDs"));
+    const members = document.createElement("ul");
+    diagnostic.memberIds.forEach(memberId => {
+      const suffix = memberId === diagnostic.representativeId ? " · representative" : "";
+      members.append(textElement("li", `${memberId}${suffix}`));
+    });
+    disclosure.append(members);
+    diagnosticSection.append(disclosure);
+    return diagnosticSection;
+  }
+
+  function criterionItem(criterion) {
+    const outcome = ["passed", "failed", "disabled", "unavailable"].includes(criterion?.outcome)
+      ? criterion.outcome
+      : "unavailable";
+    const item = document.createElement("li");
+    item.className = `criterion ${outcome}`;
+    const heading = document.createElement("div");
+    heading.className = "criterion-heading";
+    heading.append(
+      textElement("strong", criterion?.label || "Unnamed criterion"),
+      textElement("span", outcome, "criterion-outcome"));
+    item.append(
+      heading,
+      textElement("p", `Observed: ${criterion?.actualValue || "Not available"}`),
+      textElement("p", `Required: ${criterion?.requirement || "Not available"}`),
+      textElement("p", criterion?.explanation || "No explanation was returned.", "criterion-explanation"));
+    return item;
+  }
+
+  function formatDistance(value) {
+    return typeof value === "number" && Number.isFinite(value)
+      ? `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value)} km`
+      : "Unknown";
   }
 
   function section(title) {
@@ -670,10 +859,8 @@
     ].filter(Boolean).join(" · ");
   }
 
-  function markerStyle(selected) {
-    return selected
-      ? { fill: "#ffd166", stroke: "#ffffff", size: 9, weight: 2 }
-      : { fill: "#ff593d", stroke: "#ffffff", size: 7, weight: 2 };
+  function markerStyle(selected, clustered = false) {
+    return mapSupport.notificationMarkerStyle(selected, clustered);
   }
 
   function errorMessage(error) {
@@ -762,16 +949,17 @@
       });
     }
 
-    setSelected(key) {
+    setSelection(selectedKey, clusterKeys) {
       this.markers.forEach((marker, markerKey) => {
-        const visual = markerStyle(markerKey === key);
+        const selected = markerKey === selectedKey;
+        const visual = markerStyle(selected, clusterKeys.has(markerKey));
         marker.setStyle({
           radius: visual.size,
           color: visual.stroke,
           weight: visual.weight,
           fillColor: visual.fill
         });
-        if (markerKey === key)
+        if (selected)
           marker.bringToFront();
       });
     }
@@ -786,6 +974,10 @@
           points.map(point => [point.latitude, point.longitude]));
         this.map.fitBounds(bounds, { padding: [42, 42], maxZoom: 10 });
       }
+    }
+
+    resize() {
+      this.map?.invalidateSize({ pan: false });
     }
 
     destroy() {
@@ -848,11 +1040,12 @@
       });
     }
 
-    setSelected(key) {
+    setSelection(selectedKey, clusterKeys) {
       this.markers.forEach((marker, markerKey) => {
-        const selected = markerKey === key;
-        marker.setIcon(googleMarkerIcon(selected));
-        marker.setZIndex(selected ? 1000 : undefined);
+        const selected = markerKey === selectedKey;
+        const clustered = clusterKeys.has(markerKey);
+        marker.setIcon(googleMarkerIcon(selected, clustered));
+        marker.setZIndex(selected ? 1000 : clustered ? 500 : undefined);
       });
     }
 
@@ -874,6 +1067,16 @@
       }
     }
 
+    resize() {
+      if (!this.map)
+        return;
+
+      const center = this.map.getCenter();
+      window.google.maps.event.trigger(this.map, "resize");
+      if (center)
+        this.map.setCenter(center);
+    }
+
     clearMarkers() {
       this.markers.forEach(marker => {
         window.google.maps.event.clearInstanceListeners(marker);
@@ -892,8 +1095,8 @@
     }
   }
 
-  function googleMarkerIcon(selected) {
-    const visual = markerStyle(selected);
+  function googleMarkerIcon(selected, clustered = false) {
+    const visual = markerStyle(selected, clustered);
     return {
       path: window.google.maps.SymbolPath.CIRCLE,
       fillColor: visual.fill,

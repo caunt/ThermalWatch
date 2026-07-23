@@ -1,6 +1,6 @@
-namespace ThermalWatch.Telegram;
+namespace ThermalWatch.Core;
 
-internal enum VisibilityRejectionReason
+public enum NotificationRejectionReason
 {
     Nighttime,
     InsufficientDetections,

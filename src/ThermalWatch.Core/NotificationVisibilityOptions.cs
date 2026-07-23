@@ -1,11 +1,11 @@
-namespace ThermalWatch.Telegram;
+namespace ThermalWatch.Core;
 
-public sealed record TelegramVisibilityOptions(
+public sealed record NotificationVisibilityOptions(
     bool Enabled,
     double MinimumFrpMegawatts,
     double MinimumThermalContrastKelvin,
     int MinimumClusterDetections,
     double MinimumModisConfidencePercent,
-    ViirsConfidenceLevel MinimumViirsConfidence,
+    NotificationViirsConfidenceLevel MinimumViirsConfidence,
     bool RequireDaytime,
     bool RequirePreview);

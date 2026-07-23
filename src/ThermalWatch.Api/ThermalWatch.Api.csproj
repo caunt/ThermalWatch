@@ -9,4 +9,7 @@
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Sinks.Console" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ThermalWatch.Tests" />
+  </ItemGroup>
 </Project>
