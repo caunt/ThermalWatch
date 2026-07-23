@@ -92,39 +92,6 @@ public sealed class DocumentationValidationTests
     }
 
     [Fact]
-    public void TelegramNotificationFlowRemainsRoutedAndAgentMaintained()
-    {
-        var flowPath = Path.Combine(
-            RepositoryRoot,
-            "docs",
-            "components",
-            "telegram-notification-flow.md");
-        Assert.True(File.Exists(flowPath), "The Telegram notification flow document is required.");
-
-        var flow = File.ReadAllText(flowPath).ReplaceLineEndings("\n");
-        Assert.True(
-            flow.Contains("```mermaid\nflowchart TB\n", StringComparison.Ordinal),
-            "The Telegram notification flow must contain a top-to-bottom Mermaid flowchart.");
-
-        var indexPath = Path.Combine(RepositoryRoot, "docs", "README.md");
-        var indexedFiles = GetMarkdownLinkTargets(indexPath)
-            .Select(target => TryResolveLocalTarget(indexPath, target, out var path, out var error)
-                && error is null
-                    ? path
-                    : null)
-            .OfType<string>()
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        Assert.Contains(flowPath, indexedFiles);
-
-        var agentGuide = File.ReadAllText(Path.Combine(RepositoryRoot, "AGENTS.md"));
-        Assert.True(
-            agentGuide.Contains(
-                "docs/components/telegram-notification-flow.md",
-                StringComparison.Ordinal),
-            "AGENTS.md must require agents to maintain the Telegram notification flow.");
-    }
-
-    [Fact]
     public void AdrIdentifiersAreFourDigitsAndUnique()
     {
         var decisionsDirectory = Path.Combine(RepositoryRoot, "docs", "decisions");

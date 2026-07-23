@@ -5,8 +5,6 @@
 > **Sources of truth:** [Models](../../src/ThermalWatch.Core/Models.cs), [generic clustering](../../src/ThermalWatch.Core/NotificationClustering.cs), [notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [visibility filter](../../src/ThermalWatch.Telegram/TelegramVisibilityFilter.cs), and [land-cover filter](../../src/ThermalWatch.Telegram/TelegramLandCoverFilter.cs).
 > **Update when:** Observation identity, clustering, representative choice, eligibility, filtering order, imagery policy, or manual-send semantics change.
 
-See the [Telegram notification flow](../components/telegram-notification-flow.md) for the complete decision-by-decision visual path from FIRMS observations through filtering, imagery, and delivery.
-
 ## Observation meaning and API boundary
 
 A FIRMS thermal anomaly is a satellite observation of heat. It may indicate wildfire, industrial heat, gas flaring, agricultural burning, an explosion, or another hot surface. Near-real-time acquisition is not continuous monitoring, and a recent observation does not prove the source remains active.

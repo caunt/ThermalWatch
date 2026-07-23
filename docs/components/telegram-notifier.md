@@ -5,7 +5,7 @@
 > **Sources of truth:** [Notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [Telegram options](../../src/ThermalWatch.Telegram/TelegramOptions.cs), [GIBS client](../../src/ThermalWatch.Core/GibsClient.cs), and [message formatter](../../src/ThermalWatch.Telegram/TelegramMessageFormatter.cs).
 > **Update when:** Telegram startup, state, filtering collaboration, imagery, formatting, sending, concurrency, or failure handling changes.
 
-Read the [notification policy](../domain/notification-policy.md) for domain eligibility and clustering rules, and the [Telegram notification flow](telegram-notification-flow.md) for the complete vertical decision path. This document focuses on component lifecycle and failure boundaries.
+Read the [notification policy](../domain/notification-policy.md) for domain eligibility and clustering rules. This document focuses on component lifecycle and failure boundaries.
 
 ## Enablement and startup validation
 
