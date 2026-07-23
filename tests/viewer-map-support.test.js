@@ -7,6 +7,7 @@ const { join } = require("node:path");
 const {
   imageryCoverageHeader,
   gibsTileApiUrl,
+  googleMapsUrl,
   yandexMapsUrl,
   validateNearbyFeatures,
   parseCoordinateInput,
@@ -211,6 +212,21 @@ test("Yandex Maps URLs reject malformed and out-of-range coordinates", () => {
   assert.throws(() => yandexMapsUrl(Number.NaN, 30), /Valid map coordinates/);
   assert.throws(() => yandexMapsUrl(91, 30), /Valid map coordinates/);
   assert.throws(() => yandexMapsUrl(50, -181), /Valid map coordinates/);
+});
+
+test("Google Maps URLs point to the exact validated coordinates", () => {
+  const url = new URL(googleMapsUrl(50.123456, 30.654321));
+
+  assert.equal(url.origin, "https://www.google.com");
+  assert.equal(url.pathname, "/maps/search/");
+  assert.equal(url.searchParams.get("api"), "1");
+  assert.equal(url.searchParams.get("query"), "50.123456,30.654321");
+});
+
+test("Google Maps URLs reject malformed and out-of-range coordinates", () => {
+  assert.throws(() => googleMapsUrl(Number.NaN, 30), /Valid map coordinates/);
+  assert.throws(() => googleMapsUrl(91, 30), /Valid map coordinates/);
+  assert.throws(() => googleMapsUrl(50, -181), /Valid map coordinates/);
 });
 
 test("nearby feature diagnostics accept only bounded canonical OpenStreetMap results", () => {

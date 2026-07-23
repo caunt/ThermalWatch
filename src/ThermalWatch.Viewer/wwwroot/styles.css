@@ -808,18 +808,6 @@ select:disabled,
   font-variant-numeric: tabular-nums;
 }
 
-.nearby-feature-warning {
-  color: var(--warning);
-  font-size: 0.67rem;
-  line-height: 1.45;
-}
-
-.nearby-feature-attribution {
-  color: #89d4f2;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 0.18em;
-}
-
 .field-list {
   display: grid;
   grid-template-columns: minmax(7rem, 0.85fr) minmax(0, 1.15fr);

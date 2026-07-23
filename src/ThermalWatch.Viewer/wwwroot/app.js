@@ -688,7 +688,9 @@
     list.className = "nearby-feature-list";
     nearbyFeatures.forEach(feature => {
       const item = document.createElement("li");
-      const link = externalMapLink(feature.openStreetMapUrl, feature.name);
+      const link = externalMapLink(
+        mapSupport.googleMapsUrl(feature.latitude, feature.longitude),
+        feature.name);
       link.className = "nearby-feature-link";
       link.textContent = feature.name;
       item.append(
@@ -696,16 +698,7 @@
         textElement("span", formatDistance(feature.distanceKilometers), "nearby-feature-distance"));
       list.append(item);
     });
-    const warning = textElement("p", "", "nearby-feature-warning");
-    const attribution = externalMapLink(
-      "https://www.openstreetmap.org/copyright",
-      "© OpenStreetMap contributors");
-    attribution.className = "nearby-feature-attribution";
-    attribution.textContent = "© OpenStreetMap contributors";
-    warning.append(
-      attribution,
-      document.createTextNode(". Mapped proximity does not establish cause."));
-    nearbySection.append(list, warning);
+    nearbySection.append(list);
     return nearbySection;
   }
 

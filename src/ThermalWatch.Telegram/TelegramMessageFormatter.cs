@@ -73,6 +73,9 @@ public static class TelegramMessageFormatter
             observation.Add($"{pass.Emoji} <b>Pass:</b> {pass.Name}");
         sections.Add(string.Join('\n', observation));
 
+        if (FormatNearbyFeatures(data.NearbyFeatures, compactLevel) is { } nearbyFeatures)
+            sections.Add(nearbyFeatures);
+
         var sensor = new List<string>
         {
             $"🛰 <b>Satellite:</b> {Html(FormatInlineList(data.Satellites, compactLevel))}",
@@ -106,9 +109,6 @@ public static class TelegramMessageFormatter
             sections.Add(string.Join('\n', preview));
         }
 
-        if (FormatNearbyFeatures(data.NearbyFeatures, compactLevel) is { } nearbyFeatures)
-            sections.Add(nearbyFeatures);
-
         sections.Add(FormatLocation(data));
         return string.Join(separator: "\n\n", sections);
     }
@@ -122,10 +122,12 @@ public static class TelegramMessageFormatter
             string.Join('\n',
                 $"📍 <b>{Html(FormatInlineList(data.Countries, compactLevel))}</b>",
                 $"🕓 <b>Latest observation:</b> {Html(FormatDateTime(data.LatestObservation))} UTC",
-                $"✅ <b>Confirmed by:</b> {Html(data.Satellites.Length.ToString(CultureInfo.InvariantCulture))} satellites"),
-            $"🛰 <b>Satellites:</b>\n{FormatSatelliteBullets(data.Satellites, compactLevel)}",
-            $"📡 <b>Feeds:</b> <code>{Html(FormatInlineList(data.Sources, compactLevel))}</code>"
+                $"✅ <b>Confirmed by:</b> {Html(data.Satellites.Length.ToString(CultureInfo.InvariantCulture))} satellites")
         };
+        if (FormatNearbyFeatures(data.NearbyFeatures, compactLevel) is { } nearbyFeatures)
+            sections.Add(nearbyFeatures);
+        sections.Add($"🛰 <b>Satellites:</b>\n{FormatSatelliteBullets(data.Satellites, compactLevel)}");
+        sections.Add($"📡 <b>Feeds:</b> <code>{Html(FormatInlineList(data.Sources, compactLevel))}</code>");
 
         var metrics = new List<string>();
         if (compactLevel < 2 && FormatNumber(data.PeakFrpMegawatts) is { } frp)
@@ -152,9 +154,6 @@ public static class TelegramMessageFormatter
                 preview.Add($"📏 <b>Coverage:</b> {Html(coverage)} km");
             sections.Add(string.Join('\n', preview));
         }
-
-        if (FormatNearbyFeatures(data.NearbyFeatures, compactLevel) is { } nearbyFeatures)
-            sections.Add(nearbyFeatures);
 
         sections.Add(FormatLocation(data));
         return string.Join(separator: "\n\n", sections);
@@ -222,11 +221,9 @@ public static class TelegramMessageFormatter
         foreach (NearbyFeature feature in nearbyFeatures)
         {
             lines.Add(
-                $"• {Html(CompactNearbyName(feature.Name, compactLevel))} · {Html(FormatNearbyDistance(feature.DistanceKilometers))} km");
+                $"<code>{Html(FormatNearbyDistance(feature.DistanceKilometers))} km • {Html(CompactNearbyName(feature.Name, compactLevel))}</code>");
         }
 
-        lines.Add("© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap contributors</a>");
-        lines.Add("⚠️ <i>Mapped proximity does not establish cause.</i>");
         return string.Join('\n', lines);
     }
 

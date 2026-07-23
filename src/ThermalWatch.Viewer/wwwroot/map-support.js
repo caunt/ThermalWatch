@@ -44,6 +44,19 @@
     return url.href;
   }
 
+  function googleMapsUrl(latitude, longitude) {
+    if (!Number.isFinite(latitude)
+        || latitude < -90
+        || latitude > 90
+        || !Number.isFinite(longitude)
+        || longitude < -180
+        || longitude > 180) {
+      throw new Error("Valid map coordinates are required.");
+    }
+
+    return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+  }
+
   function validateNearbyFeatures(features) {
     if (!Array.isArray(features))
       throw new Error("Nearby features must be an array.");
@@ -811,6 +824,7 @@
   return Object.freeze({
     imageryCoverageHeader,
     gibsTileApiUrl,
+    googleMapsUrl,
     yandexMapsUrl,
     validateNearbyFeatures,
     parseCoordinateInput,

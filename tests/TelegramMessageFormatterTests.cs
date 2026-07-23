@@ -111,11 +111,18 @@ public sealed class TelegramMessageFormatterTests
         Assert.Contains(expectedPreviewLine, caption, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void FormatShowsEveryNearbyFeatureWithDistanceAndCausalityWarning()
+    [Theory]
+    [InlineData(false, "🛰 <b>Satellite:</b>")]
+    [InlineData(true, "🛰 <b>Satellites:</b>")]
+    public void FormatShowsEveryNearbyFeatureAsMonospaceBeforeSatellites(
+        bool multiSatellite,
+        string satelliteHeading)
     {
         Anomaly representative = Detection(id: "first", satellite: "Suomi-NPP");
-        var cluster = new NotificationCluster(Id: "cluster", representative, [representative]);
+        Anomaly[] members = multiSatellite
+            ? [representative, Detection(id: "second", satellite: "NOAA-20")]
+            : [representative];
+        var cluster = new NotificationCluster(Id: "cluster", representative, [.. members]);
         NearbyFeature[] nearbyFeatures =
         [
             Feature(id: 1, name: "Factory & Sons", distanceKilometers: 0.12),
@@ -134,14 +141,14 @@ public sealed class TelegramMessageFormatterTests
             nearbyFeatures);
 
         Assert.Contains("<b>Possible nearby sources:</b>", caption, StringComparison.Ordinal);
-        Assert.Contains("Factory &amp; Sons · 0.12 km", caption, StringComparison.Ordinal);
-        Assert.Contains("Power station · 1.9 km", caption, StringComparison.Ordinal);
-        Assert.Contains(
-            "https://www.openstreetmap.org/copyright\">OpenStreetMap contributors</a>",
-            caption,
-            StringComparison.Ordinal);
-        Assert.Contains("Mapped proximity does not establish cause.", caption, StringComparison.Ordinal);
-        Assert.Equal(5, caption.Split('\n').Count(line => line.StartsWith(value: "• ", StringComparison.Ordinal)));
+        Assert.Contains("<code>0.12 km • Factory &amp; Sons</code>", caption, StringComparison.Ordinal);
+        Assert.Contains("<code>1.9 km • Power station</code>", caption, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenStreetMap contributors", caption, StringComparison.Ordinal);
+        Assert.DoesNotContain("Mapped proximity does not establish cause.", caption, StringComparison.Ordinal);
+        Assert.True(
+            caption.IndexOf(value: "<b>Possible nearby sources:</b>", StringComparison.Ordinal)
+            < caption.IndexOf(value: satelliteHeading, StringComparison.Ordinal));
+        Assert.Equal(5, caption.Split('\n').Count(line => line.StartsWith(value: "<code>", StringComparison.Ordinal)));
         Assert.InRange(caption.Length, low: 1, high: 1024);
     }
 
@@ -169,8 +176,8 @@ public sealed class TelegramMessageFormatterTests
             nearbyFeatures);
 
         Assert.InRange(caption.Length, low: 1, high: 1024);
-        Assert.Equal(5, caption.Split('\n').Count(line => line.StartsWith(value: "• ", StringComparison.Ordinal)));
-        Assert.Contains("Mapped proximity does not establish cause.", caption, StringComparison.Ordinal);
+        Assert.Equal(5, caption.Split('\n').Count(line => line.StartsWith(value: "<code>", StringComparison.Ordinal)));
+        Assert.DoesNotContain("Mapped proximity does not establish cause.", caption, StringComparison.Ordinal);
     }
 
     private static NearbyFeature Feature(long id, string name, double distanceKilometers) =>

@@ -33,7 +33,7 @@ Messages use Telegram HTML and paired inline Google and Yandex Maps buttons; the
 
 A preview caption names its contextual base and representative thermal overlay rather than claiming sensor-matched imagery when Core used a fallback base. The candidate's detection count, satellites, representative metadata, cluster diameter, land-cover summary, preview dimensions, GIBS attribution, and distance-ordered nearby features arrive as prepared Core data; Telegram does not recalculate eligibility or call Overpass.
 
-When Core supplies one or more nearby features, every result appears under “Possible nearby sources” with its distance, OpenStreetMap contributor attribution, and an explicit warning that mapped proximity does not establish cause. Empty or unavailable lookups add no section. Progressive compaction shortens names and less important message detail while retaining all five bounded results within the photo-caption limit.
+When Core supplies one or more nearby features, “Possible nearby sources” appears before the satellite details and renders every result as a distance-first monospace line. Empty or unavailable lookups add no section. Progressive compaction shortens names and less important message detail while retaining all five bounded results within the photo-caption limit.
 
 ## Manual send path
 
