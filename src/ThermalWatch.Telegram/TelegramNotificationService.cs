@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
@@ -20,7 +19,10 @@ public sealed class TelegramNotificationService(
 {
     private const int MaximumSeenIds = 100_000;
     private readonly Dictionary<string, DateTimeOffset> _seen = new(StringComparer.Ordinal);
-    private readonly List<PendingNotification> _pending = [];
+    private readonly TelegramAutomaticNotificationState _automaticState = new(
+        options.ClusterRadiusKilometers,
+        options.ClusterTimeWindow,
+        options.SeenRetention);
     private readonly SemaphoreSlim _manualSendGate = new(1, 1);
     private ValidatedTelegram? _validated;
     private bool _firstReadySnapshot = true;
@@ -303,6 +305,7 @@ public sealed class TelegramNotificationService(
     {
         var now = timeProvider.GetUtcNow();
         ExpireSeen(now);
+        _automaticState.Expire(now);
 
         if (_firstReadySnapshot && !options.NotifyExistingOnStartup)
         {
@@ -336,7 +339,18 @@ public sealed class TelegramNotificationService(
         foreach (var cluster in clusters)
         {
             summary.AddCandidate();
-            var evaluation = await EvaluateClusterAsync(cluster, cancellationToken);
+            var preparation = _automaticState.PrepareCandidate(cluster, now);
+            if (preparation.ContinuesDeliveredEpisode)
+            {
+                summary.AddDuplicateEpisode();
+                logger.LogDebug(
+                    "Suppressed Telegram cluster {NotificationId}: continuing a delivered episode",
+                    preparation.Cluster.Id);
+                continue;
+            }
+
+            var preparedCluster = preparation.Cluster;
+            var evaluation = await EvaluateClusterAsync(preparedCluster, cancellationToken);
             if (evaluation.VisibilityRejectionReason is { } visibilityRejectionReason)
             {
                 summary.Reject(visibilityRejectionReason);
@@ -357,10 +371,10 @@ public sealed class TelegramNotificationService(
             if (!evaluation.IsAccepted)
                 continue;
 
-            _pending.Add(new(
-                cluster,
-                now,
-                SelectPreview(cluster),
+            _automaticState.AddPending(new(
+                preparedCluster,
+                preparation.FirstSeenUtc,
+                SelectPreview(preparedCluster),
                 evaluation.LandCoverResult?.FormattingSummary));
         }
 
@@ -432,14 +446,24 @@ public sealed class TelegramNotificationService(
         VisibilityProcessingSummary summary,
         CancellationToken cancellationToken)
     {
-        for (var index = 0; index < _pending.Count;)
+        for (var index = 0; index < _automaticState.PendingCount;)
         {
-            var pending = _pending[index];
+            var now = timeProvider.GetUtcNow();
+            var pending = _automaticState.GetPending(index);
+            if (_automaticState.TrySuppressPending(index, now))
+            {
+                summary.AddDuplicateEpisode();
+                logger.LogDebug(
+                    "Suppressed pending Telegram cluster {NotificationId}: continuing a delivered episode",
+                    pending.Cluster.Id);
+                continue;
+            }
+
             var preview = await gibsClient.GetPreviewAsync(
                 pending.Cluster.Representative,
                 pending.PreviewSelection.Dimensions,
                 cancellationToken);
-            var previewExpired = timeProvider.GetUtcNow() - pending.FirstSeenUtc >= options.PreviewRetryWindow;
+            var previewExpired = now - pending.FirstSeenUtc >= options.PreviewRetryWindow;
 
             if (!preview.IsAvailable && !previewExpired)
             {
@@ -457,7 +481,7 @@ public sealed class TelegramNotificationService(
                 logger.LogDebug(
                     "Visibility filter discarded Telegram cluster {NotificationId}: preview unavailable after retry timeout",
                     pending.Cluster.Id);
-                _pending.RemoveAt(index);
+                _automaticState.RemovePendingAt(index);
                 continue;
             }
 
@@ -471,13 +495,17 @@ public sealed class TelegramNotificationService(
                     pending.LandCoverSummary,
                     cancellationToken);
 
+                _automaticState.RecordDelivered(
+                    pending.Cluster,
+                    timeProvider.GetUtcNow());
+
                 logger.LogInformation(
                     "Sent Telegram notification {NotificationId} for {Satellite} at {AcquiredAtUtc}",
                     pending.Cluster.Id,
                     pending.Cluster.Representative.Satellite,
                     pending.Cluster.Representative.AcquiredAtUtc);
                 summary.AddAccepted();
-                _pending.RemoveAt(index);
+                _automaticState.RemovePendingAt(index);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -507,7 +535,7 @@ public sealed class TelegramNotificationService(
         ValidatedTelegram validated,
         NotificationCluster cluster,
         GibsPreview preview,
-        PreviewSelection previewSelection,
+        TelegramPreviewSelection previewSelection,
         string? landCoverSummary,
         CancellationToken cancellationToken)
     {
@@ -553,7 +581,7 @@ public sealed class TelegramNotificationService(
     private void DisableValidatedTelegram(ValidatedTelegram validated) =>
         Interlocked.CompareExchange(ref _validated, null, validated);
 
-    private PreviewSelection SelectPreview(NotificationCluster cluster)
+    private TelegramPreviewSelection SelectPreview(NotificationCluster cluster)
     {
         var representative = cluster.Representative;
         var clusterDiameterKilometers = Geography.ClusterDiameterKilometers(cluster.Members);
@@ -593,10 +621,11 @@ public sealed class TelegramNotificationService(
             return;
 
         logger.LogInformation(
-            "Visibility filter processed {CandidateClusterCount} new Telegram clusters; accepted {AcceptedClusterCount}; rejected {RejectedClusterCount}; pending preview {PendingPreviewCount}; preview timeouts {PreviewTimeoutCount}; send failures {SendFailureCount}. Rejections: nighttime {NighttimeCount}; insufficient detections {InsufficientDetectionsCount}; low confidence {LowConfidenceCount}; low FRP {LowFrpCount}; low thermal contrast {LowThermalContrastCount}; missing required value {MissingRequiredValueCount}; preview unavailable {PreviewUnavailableCount}",
+            "Visibility filter processed {CandidateClusterCount} new Telegram clusters; accepted {AcceptedClusterCount}; rejected {RejectedClusterCount}; duplicate episodes {DuplicateEpisodeCount}; pending preview {PendingPreviewCount}; preview timeouts {PreviewTimeoutCount}; send failures {SendFailureCount}. Rejections: nighttime {NighttimeCount}; insufficient detections {InsufficientDetectionsCount}; low confidence {LowConfidenceCount}; low FRP {LowFrpCount}; low thermal contrast {LowThermalContrastCount}; missing required value {MissingRequiredValueCount}; preview unavailable {PreviewUnavailableCount}",
             summary.CandidateClusterCount,
             summary.AcceptedClusterCount,
             summary.RejectedClusterCount,
+            summary.DuplicateEpisodeCount,
             summary.PendingPreviewCount,
             summary.PreviewTimeoutCount,
             summary.SendFailureCount,
@@ -650,21 +679,11 @@ public sealed class TelegramNotificationService(
             _seen.Remove(id);
     }
 
-    private sealed record PendingNotification(
-        NotificationCluster Cluster,
-        DateTimeOffset FirstSeenUtc,
-        PreviewSelection PreviewSelection,
-        string? LandCoverSummary);
-
     private sealed record PreparedNotification(
         NotificationCluster Cluster,
         GibsPreview Preview,
-        PreviewSelection PreviewSelection,
+        TelegramPreviewSelection PreviewSelection,
         string? LandCoverSummary);
-
-    private readonly record struct PreviewSelection(
-        GibsPreviewDimensions Dimensions,
-        double ClusterDiameterKilometers);
 
     private sealed record ValidatedTelegram(TelegramBotClient Client, ChatId ChatId);
 
@@ -686,6 +705,8 @@ public sealed class TelegramNotificationService(
 
         public int RejectedClusterCount { get; private set; }
 
+        public int DuplicateEpisodeCount { get; private set; }
+
         public int PendingPreviewCount { get; private set; }
 
         public int PreviewTimeoutCount { get; private set; }
@@ -696,6 +717,7 @@ public sealed class TelegramNotificationService(
             CandidateClusterCount > 0
             || AcceptedClusterCount > 0
             || RejectedClusterCount > 0
+            || DuplicateEpisodeCount > 0
             || PendingPreviewCount > 0
             || PreviewTimeoutCount > 0
             || SendFailureCount > 0;
@@ -703,6 +725,8 @@ public sealed class TelegramNotificationService(
         public void AddCandidate() => CandidateClusterCount++;
 
         public void AddAccepted() => AcceptedClusterCount++;
+
+        public void AddDuplicateEpisode() => DuplicateEpisodeCount++;
 
         public void AddPendingPreview() => PendingPreviewCount++;
 
@@ -774,52 +798,4 @@ public sealed record ManualTelegramSendResult(
 
     public static ManualTelegramSendResult Completed(ManualTelegramSendResponse response) =>
         new(ManualTelegramSendStatus.Completed, response);
-}
-
-internal static class TelegramNotificationClustering
-{
-    public static ImmutableArray<NotificationCluster> Create(
-        IReadOnlyList<Anomaly> activeDetections,
-        IReadOnlyList<Anomaly> newDetections,
-        double radiusKilometers,
-        TimeSpan timeWindow,
-        bool includeActiveContext)
-    {
-        if (newDetections.Count == 0)
-            return [];
-
-        var newIds = newDetections
-            .Select(detection => detection.Id)
-            .ToHashSet(StringComparer.Ordinal);
-        var clusteringDetections = includeActiveContext
-            ? activeDetections
-                .Where(detection => newIds.Contains(detection.Id)
-                    || newDetections.Any(newDetection => AreRelated(
-                        detection,
-                        newDetection,
-                        radiusKilometers,
-                        timeWindow)))
-                .DistinctBy(detection => detection.Id)
-                .ToArray()
-            : newDetections
-                .DistinctBy(detection => detection.Id)
-                .ToArray();
-
-        return
-        [
-            .. NotificationClustering.Create(
-                    clusteringDetections,
-                    radiusKilometers,
-                    timeWindow)
-                .Where(cluster => cluster.Members.Any(member => newIds.Contains(member.Id)))
-        ];
-    }
-
-    private static bool AreRelated(
-        Anomaly first,
-        Anomaly second,
-        double radiusKilometers,
-        TimeSpan timeWindow) =>
-        (first.AcquiredAtUtc - second.AcquiredAtUtc).Duration() <= timeWindow
-        && Geography.HaversineKilometers(first, second) <= radiusKilometers;
 }

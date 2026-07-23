@@ -46,7 +46,7 @@ All API routes use camel-case JSON. The host currently permits cross-origin `GET
 
 ## State and invariants
 
-- Anomaly segments, current snapshot, GIBS cache, Telegram seen IDs, and pending previews exist only in process memory. Restart is the only persistence boundary.
+- Anomaly segments, current snapshot, GIBS cache, Telegram seen IDs, delivered-episode history, and pending previews exist only in process memory. Restart is the only persistence boundary.
 - The anomaly API exposes every valid active FIRMS observation. Notification filters do not delete or annotate API items.
 - MODIS and the three VIIRS feeds remain distinct observations because their sensors and acquisition characteristics differ.
 - Anomaly and cluster IDs are deterministic hashes of stable observation inputs; see [AnomalyId.cs](../src/ThermalWatch.Core/AnomalyId.cs).

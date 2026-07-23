@@ -2,7 +2,7 @@
 
 > **Purpose:** Explain the stateful Telegram integration and its delivery, retry, and disable boundaries.
 > **Scope:** Credential validation, snapshot consumption, seen/pending state, GIBS collaboration, automatic delivery, and manual sends.
-> **Sources of truth:** [Notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [Telegram options](../../src/ThermalWatch.Telegram/TelegramOptions.cs), [GIBS client](../../src/ThermalWatch.Core/GibsClient.cs), and [message formatter](../../src/ThermalWatch.Telegram/TelegramMessageFormatter.cs).
+> **Sources of truth:** [Notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [automatic state](../../src/ThermalWatch.Telegram/TelegramAutomaticNotificationState.cs), [Telegram options](../../src/ThermalWatch.Telegram/TelegramOptions.cs), [GIBS client](../../src/ThermalWatch.Core/GibsClient.cs), and [message formatter](../../src/ThermalWatch.Telegram/TelegramMessageFormatter.cs).
 > **Update when:** Telegram startup, state, filtering collaboration, imagery, formatting, sending, concurrency, or failure handling changes.
 
 Read the [notification policy](../domain/notification-policy.md) for domain eligibility and clustering rules. This document focuses on component lifecycle and failure boundaries.
@@ -21,14 +21,15 @@ The service is the single reader of the snapshot store's bounded update channel.
 
 For every ready update it:
 
-1. Expires seen IDs and identifies new observations.
+1. Expires seen IDs and delivered-episode history, then identifies new observations.
 2. Builds notification clusters, optionally including related active context.
-3. Applies visibility metadata and optional NASA land-cover evaluation.
-4. Adds accepted clusters to an in-memory pending list with first-seen time and selected crop dimensions.
-5. Revisits pending entries to fetch exact-date previews and either send, keep pending, or discard according to policy.
-6. Logs aggregate visibility and land-cover outcomes.
+3. Coalesces related pending clusters, or suppresses and extends a related successfully delivered episode.
+4. Applies visibility metadata and optional NASA land-cover evaluation to the current merged cluster.
+5. Adds accepted clusters to an in-memory pending list with first-seen time and selected crop dimensions.
+6. Revisits pending entries to fetch exact-date previews and either send, keep pending, discard according to policy, or suppress one made redundant by an earlier successful send.
+7. Logs aggregate visibility, duplicate-episode, and land-cover outcomes.
 
-Seen IDs are timestamped before evaluation and bounded by both configured retention and a hard cap of 100,000. Pending entries are not persisted. Restart resets both collections.
+Seen IDs are timestamped before evaluation. Delivered history is recorded only after a successful automatic send; related later detections extend it transitively without sending or editing another message. Seen and delivered detections are each bounded by configured retention and a hard cap of 100,000. Pending entries retain their earliest preview retry start when merged. None of this state is persisted, so restart resets all three collections.
 
 ## GIBS collaboration
 
@@ -47,6 +48,7 @@ When a preview exists, the service sends a photo with caption. A fallback captio
 
 - Telegram `400`, `401`, or `403` during automatic delivery is treated as permanent and disables automatic processing until restart.
 - Other send failures are treated as transient; the current pending entry remains and processing returns to wait for another snapshot update.
+- A send failure or preview timeout does not establish delivered-episode history.
 - Cancellation stops the hosted service normally.
 
 There is no independent retry timer for pending sends. Another published snapshot drives the next pass.
@@ -57,10 +59,10 @@ There is no independent retry timer for pending sends. Another published snapsho
 
 The manual path evaluates and ranks the full snapshot, sends a status message, and then sends selected clusters individually. A status-message failure ends the operation with a distinct result. Individual candidate failures are collected by cluster ID without stopping later sends.
 
-Manual operations do not mutate automatic seen IDs or pending previews. The endpoint status mapping and input validation are in [Program.cs](../../src/ThermalWatch.Api/Program.cs).
+Manual operations do not inspect or mutate automatic seen IDs, delivered episodes, or pending previews. The endpoint status mapping and input validation are in [Program.cs](../../src/ThermalWatch.Api/Program.cs).
 
 ## Tests and diagnostics
 
-The tests cover option defaults, active-context clustering, land-cover policy, land-cover tile decoding/cache reuse, preview no-data detection and fallback ordering, message link behavior, and formatter output. They do not call Telegram or NASA live.
+The tests cover option defaults, active-context clustering, delivered-episode continuity and pending coalescing, land-cover policy, land-cover tile decoding/cache reuse, preview no-data detection and fallback ordering, message link behavior, and formatter output. They do not call Telegram or NASA live.
 
 Operational signals are console logs and manual endpoint results. There is no Telegram health endpoint, webhook, inbound update loop, durable outbox, or persisted deduplication state.

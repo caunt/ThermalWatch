@@ -2,14 +2,14 @@
 
 > **Purpose:** Define ThermalWatch runtime configuration, deployment, security, observability, failure, and recovery behavior.
 > **Scope:** Process startup, environment variables, external services, SDK publishing, CI artifacts, containers, and operational limitations.
-> **Sources of truth:** [Application configuration](../src/ThermalWatch.Api/EnvironmentConfiguration.cs), [Telegram options](../src/ThermalWatch.Telegram/TelegramOptions.cs), [composition root](../src/ThermalWatch.Api/Program.cs), and [publish workflows](../.github/workflows/).
+> **Sources of truth:** [Application configuration](../src/ThermalWatch.Api/EnvironmentConfiguration.cs), [Telegram options](../src/ThermalWatch.Telegram/TelegramOptions.cs), [automatic notification state](../src/ThermalWatch.Telegram/TelegramAutomaticNotificationState.cs), [composition root](../src/ThermalWatch.Api/Program.cs), and [publish workflows](../.github/workflows/).
 > **Update when:** A variable, startup rule, external dependency, security boundary, log, deployment workflow, failure mode, or recovery procedure changes.
 
 ## Runtime model
 
 The process binds plain HTTP to `0.0.0.0:8080`, starts one immediate FIRMS refresh, then runs non-overlapping polling cycles. Application options are parsed once at startup and are not reloaded.
 
-All application state is in memory: source segments, the published snapshot, GIBS cache entries, Telegram seen IDs, and pending preview notifications. The service has no database, durable queue, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
+All application state is in memory: source segments, the published snapshot, GIBS cache entries, Telegram seen IDs, delivered-episode history, and pending preview notifications. The service has no database, durable queue, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
 
 The application-specific options below use exact uppercase environment names. Framework hosting still uses ASP.NET Core's normal host configuration, but .NET-style nested names such as `Firms__MapKey` do not configure ThermalWatch options.
 

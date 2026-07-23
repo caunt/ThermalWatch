@@ -2,7 +2,7 @@
 
 > **Purpose:** Define the non-obvious domain rules that distinguish raw thermal observations from Telegram notification candidates.
 > **Scope:** Anomaly meaning and identity, clustering, automatic selection, visibility and land-cover filters, imagery, and manual sends.
-> **Sources of truth:** [Models](../../src/ThermalWatch.Core/Models.cs), [generic clustering](../../src/ThermalWatch.Core/NotificationClustering.cs), [notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [visibility filter](../../src/ThermalWatch.Telegram/TelegramVisibilityFilter.cs), and [land-cover filter](../../src/ThermalWatch.Telegram/TelegramLandCoverFilter.cs).
+> **Sources of truth:** [Models](../../src/ThermalWatch.Core/Models.cs), [generic clustering](../../src/ThermalWatch.Core/NotificationClustering.cs), [notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [automatic state](../../src/ThermalWatch.Telegram/TelegramAutomaticNotificationState.cs), [visibility filter](../../src/ThermalWatch.Telegram/TelegramVisibilityFilter.cs), and [land-cover filter](../../src/ThermalWatch.Telegram/TelegramLandCoverFilter.cs).
 > **Update when:** Observation identity, clustering, representative choice, eligibility, filtering order, imagery policy, or manual-send semantics change.
 
 ## Observation meaning and API boundary
@@ -27,21 +27,24 @@ Clusters can cross configured countries, FIRMS sources, and satellites. Members 
 2. Newest acquisition time.
 3. Lexically smallest anomaly ID.
 
-The cluster ID is a deterministic hash of its sorted member IDs. Preview sensor/date, filter metadata, map link, and much of the message are based on the representative, while multi-satellite and detection-count facts use all members.
+The cluster ID is a deterministic hash of its sorted member IDs. Preview sensor/date, filter metadata, map link, and much of the message are based on the representative, while multi-satellite and detection-count facts use all members. Because adding a member changes that hash, automatic delivery does not use cluster ID alone as the identity of an ongoing episode.
+
+After an automatic message sends successfully, its members establish a delivered episode. A later cluster continues that episode when any new member is linked to a delivered member by the same radius and acquisition-time rule. Suppressed members extend the history, so continuity is transitive across snapshots: A linked to B and B linked to C remains one episode even if A is not linked directly to C. A cluster outside both limits can establish a new episode. The first successful message is not edited when later detections extend it.
 
 ## Automatic notification lifecycle
 
 On each ready snapshot:
 
-1. Expire old seen IDs. The first ready snapshot is marked seen without notification unless `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` is enabled.
+1. Expire old seen IDs and delivered-episode history. The first ready snapshot is marked seen without notification unless `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` is enabled.
 2. Identify observations not already seen and mark their IDs seen before filtering or sending. A rejected or failed candidate is therefore not treated as new again merely because it remains active.
 3. Build clusters containing at least one new observation. When the visibility filter requires multiple detections, related active observations from prior snapshots can provide clustering context and can remain the representative.
-4. Apply representative metadata visibility rules.
-5. If enabled, evaluate NASA land cover for every cluster member and its configured built-up proximity.
-6. Queue accepted clusters pending an exact-date preview.
-7. Send when imagery is available, or apply the configured preview-timeout policy.
+4. Merge a cluster with any related pending candidate, preserving the earliest preview retry start. If the merged cluster continues an already delivered episode, suppress it and extend that episode without rerunning filters or imagery work.
+5. Apply representative metadata visibility rules to the current merged cluster.
+6. If enabled, evaluate NASA land cover for every merged cluster member and its configured built-up proximity.
+7. Queue accepted clusters pending an exact-date preview.
+8. Send when imagery is available, or apply the configured preview-timeout policy. Only successful automatic delivery establishes a delivered episode; rejection, preview timeout, and send failure do not.
 
-Seen IDs and pending candidates are process memory only. Seen retention is time-bounded and also capped at 100,000 entries.
+Seen IDs, delivered-episode detections, and pending candidates are process memory only. Seen and delivered history use the configured seen retention and are each capped at 100,000 entries.
 
 ## Visibility policy
 
@@ -80,7 +83,7 @@ Black, transparent, malformed, or mostly no-data base crops are unavailable and 
 `GET /api/telegram/send-top` is an operator action, not a replay of the automatic queue:
 
 - It evaluates the entire current snapshot as newly eligible input and does not refresh FIRMS.
-- It bypasses seen-ID checks without modifying seen IDs, pending previews, or future automatic deduplication.
+- It bypasses seen-ID and delivered-episode checks without modifying seen IDs, delivered episodes, pending previews, or future automatic deduplication.
 - It obtains each preview once; a required missing preview skips the candidate without an automatic retry window.
 - It ranks eligible clusters by available/highest representative FRP, member count, diameter, acquisition time, and ID, then selects the requested count.
 - It serializes manual operations, sends an introductory status message, and continues after individual candidate-send failures.
