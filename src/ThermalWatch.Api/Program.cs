@@ -30,13 +30,8 @@ catch (CountryBoundaryException exception)
     return 1;
 }
 
-Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Is(configuration.MinimumLogLevel)
-    .MinimumLevel.Override(source: "Microsoft.AspNetCore", LogEventLevel.Warning)
-    .MinimumLevel.Override(source: "Microsoft.Extensions.Http", LogEventLevel.Fatal)
-    .MinimumLevel.Override(source: "Polly", LogEventLevel.Warning)
-    .MinimumLevel.Override(source: "System.Net.Http.HttpClient", LogEventLevel.Fatal)
-    .Enrich.FromLogContext()
+Log.Logger = ApplicationLogging
+    .Configure(new LoggerConfiguration(), configuration.MinimumLogLevel)
     .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
     .CreateLogger();
 

@@ -93,7 +93,7 @@ Live provider availability, data ranges, and error bodies change independently o
 
 ## Observability and security
 
-Serilog writes structured console events. `LOGGING_MINIMUM_LEVEL` controls the application minimum while the host suppresses noisy ASP.NET, HTTP-client, and resilience categories. Successful viewer imagery requests are Debug-level to keep map navigation from flooding normal logs; other request summaries remain Information unless they fail. Logs report safe error summaries, segment refreshes, snapshot publication, notification filtering, preview state, and sends; they must never include credential values.
+Serilog writes structured console events. `LOGGING_MINIMUM_LEVEL` controls the application minimum while the host suppresses noisy ASP.NET and HTTP-client categories and excludes Polly's per-attempt resilience telemetry at every level. Retry and timeout attempts therefore do not emit exception stacks; component-owned final failures remain visible as safe summaries. Successful viewer imagery requests are Debug-level to keep map navigation from flooding normal logs; other request summaries remain Information unless they fail. Logs report safe error summaries, segment refreshes, snapshot publication, notification filtering, preview state, and sends; they must never include credential values.
 
 There is no health/readiness route, metrics endpoint, tracing, external log sink, alert, or dashboard. `/api/anomalies` source statuses are the only built-in structured operational diagnostics. A viewer refresh rereads the snapshot and does not force an upstream poll.
 
