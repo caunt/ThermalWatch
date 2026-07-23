@@ -186,7 +186,7 @@ test("map resize scheduling coalesces callbacks to one per animation frame", () 
   assert.equal(frames.length, 1);
 });
 
-test("Yandex Maps URLs pin validated coordinates in longitude-latitude order", () => {
+test("Yandex Maps URLs pin validated coordinates and open the satellite layer", () => {
   const url = new URL(yandexMapsUrl(50.123456, 30.654321));
 
   assert.equal(url.origin, "https://yandex.com");
@@ -194,7 +194,7 @@ test("Yandex Maps URLs pin validated coordinates in longitude-latitude order", (
   assert.equal(url.searchParams.get("ll"), "30.654321,50.123456");
   assert.equal(url.searchParams.get("pt"), "30.654321,50.123456");
   assert.equal(url.searchParams.get("z"), "12");
-  assert.equal(url.searchParams.get("l"), "map");
+  assert.equal(url.searchParams.get("l"), "sat");
 });
 
 test("Yandex Maps URLs reject malformed and out-of-range coordinates", () => {

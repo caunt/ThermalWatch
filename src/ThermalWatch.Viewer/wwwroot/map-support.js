@@ -38,7 +38,7 @@
     url.searchParams.set("ll", coordinates);
     url.searchParams.set("pt", coordinates);
     url.searchParams.set("z", "12");
-    url.searchParams.set("l", "map");
+    url.searchParams.set("l", "sat");
     return url.href;
   }
 

@@ -59,7 +59,7 @@ public sealed class TelegramMessageFormatterTests
             {
                 Assert.Equal("🗺 Yandex Maps", yandexButton.Text);
                 Assert.Equal(
-                    "https://yandex.com/maps/?ll=30.654321%2C50.123456&pt=30.654321%2C50.123456&z=12&l=map",
+                    "https://yandex.com/maps/?ll=30.654321%2C50.123456&pt=30.654321%2C50.123456&z=12&l=sat",
                     yandexButton.Url);
             });
     }

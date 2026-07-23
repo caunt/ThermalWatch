@@ -29,7 +29,7 @@ Core records delivered-episode history only after `Delivered`. A transient trans
 
 ## Message construction
 
-Messages use Telegram HTML and paired inline Google and Yandex Maps buttons. The formatter selects a single- or multi-satellite template and progressively compacts it to Telegram's photo-caption limit. It HTML-encodes dynamic values.
+Messages use Telegram HTML and paired inline Google and Yandex Maps buttons; the Yandex action opens the representative coordinates in satellite view. The formatter selects a single- or multi-satellite template and progressively compacts it to Telegram's photo-caption limit. It HTML-encodes dynamic values.
 
 A preview caption names its contextual base and representative thermal overlay rather than claiming sensor-matched imagery when Core used a fallback base. The candidate's detection count, satellites, representative metadata, cluster diameter, land-cover summary, preview dimensions, and GIBS attribution arrive as prepared Core data; Telegram does not recalculate eligibility.
 
