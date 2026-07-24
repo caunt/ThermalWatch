@@ -51,6 +51,54 @@ public sealed class NearbyFeatureClientTests
     }
 
     [Fact]
+    public async Task FindNearbyAsyncExcludesBlacklistedBusRoutesBeforeLimit()
+    {
+        const string responseJson = """
+            {
+              "elements": [
+                {
+                  "type": "relation",
+                  "id": 4586917,
+                  "center": { "lat": 0, "lon": 0.001 },
+                  "tags": {
+                    "name": "Автобус № 388: Звёздная улица => Ростовская улица, 25",
+                    "ref": "388",
+                    "route": "bus",
+                    "type": "route"
+                  }
+                },
+                {
+                  "type": "relation",
+                  "id": 4586918,
+                  "center": { "lat": 0, "lon": 0.002 },
+                  "tags": {
+                    "name": "Автобус № 388: Славянка, Ростовская улица => Звёздная улица",
+                    "ref": "388",
+                    "route": "bus",
+                    "type": "route"
+                  }
+                },
+                { "type": "node", "id": 3, "lat": 0, "lon": 0.003, "tags": { "name": "Bus stop", "highway": "bus_stop" } },
+                { "type": "relation", "id": 4, "center": { "lat": 0, "lon": 0.004 }, "tags": { "name": "Train route", "route": "train", "type": "route" } },
+                { "type": "node", "id": 5, "lat": 0, "lon": 0.005, "tags": { "name": "Third retained" } },
+                { "type": "node", "id": 6, "lat": 0, "lon": 0.006, "tags": { "name": "Fourth retained" } },
+                { "type": "node", "id": 7, "lat": 0, "lon": 0.007, "tags": { "name": "Fifth retained" } },
+                { "type": "node", "id": 8, "lat": 0, "lon": 0.008, "tags": { "name": "Beyond limit" } }
+              ]
+            }
+            """;
+        var handler = new RecordingHandler((_, _) => JsonResponse(responseJson));
+        using MemoryCache cache = CreateCache();
+        using NearbyFeatureClient client = CreateClient(handler, cache);
+
+        ImmutableArray<NearbyFeature> features = await client.FindNearbyAsync(
+            CreateAnomaly(latitude: 0, longitude: 0),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal([3, 4, 5, 6, 7], features.Select(feature => feature.OsmId));
+    }
+
+    [Fact]
     public async Task FindNearbyAsyncCachesSuccessfulAndFailedLookupsByRoundedCoordinates()
     {
         var successfulHandler = new RecordingHandler((_, _) => JsonResponse(json: "{\"elements\":[]}"));

@@ -16,6 +16,10 @@ public sealed partial class NearbyFeatureClient(
     private const int RadiusMeters = 2000;
     private const double RadiusKilometers = RadiusMeters / 1000d;
     private const double DistanceToleranceKilometers = 0.000001;
+    private static readonly ImmutableArray<(string Key, string Value)> s_tagBlacklist =
+    [
+        (Key: "route", Value: "bus")
+    ];
     private static readonly TimeSpan s_successCacheDuration = TimeSpan.FromHours(hours: 1);
     private static readonly TimeSpan s_failureCacheDuration = TimeSpan.FromMinutes(minutes: 1);
     private readonly SemaphoreSlim _requestGate = new(initialCount: 1, maxCount: 1);
@@ -123,6 +127,7 @@ public sealed partial class NearbyFeatureClient(
         foreach (JsonElement element in elements.EnumerateArray())
         {
             if (!TryReadIdentity(element, out string? osmType, out long osmId)
+                || HasBlacklistedTag(element)
                 || !identities.Add((osmType, osmId))
                 || !TryReadName(element, out string? name)
                 || !TryReadCoordinates(element, osmType, out double latitude, out double longitude))
@@ -156,6 +161,27 @@ public sealed partial class NearbyFeatureClient(
                 .ThenBy(feature => feature.OsmId)
                 .Take(MaximumResults)
         ];
+    }
+
+    private static bool HasBlacklistedTag(JsonElement element)
+    {
+        if (!element.TryGetProperty(propertyName: "tags", out JsonElement tags)
+            || tags.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        foreach ((string key, string value) in s_tagBlacklist)
+        {
+            if (tags.TryGetProperty(propertyName: key, out JsonElement tagValue)
+                && tagValue.ValueKind == JsonValueKind.String
+                && tagValue.ValueEquals(value))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool TryReadIdentity(

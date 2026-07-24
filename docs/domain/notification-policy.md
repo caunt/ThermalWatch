@@ -71,7 +71,7 @@ These rules are heuristics, not event classification. Land cover, confidence, FR
 
 ## Nearby mapped context
 
-The [nearby-feature client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs) queries named OpenStreetMap nodes, ways, and relations within 2 km through `overpass-api.de`. Node coordinates and Overpass-provided way/relation centers are validated, measured from the lookup observation with Haversine distance, ordered nearest first with deterministic ties, and limited to five.
+The [nearby-feature client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs) queries named OpenStreetMap nodes, ways, and relations within 2 km through `overpass-api.de`. Elements carrying a blacklisted tag are discarded before ordering and limiting; the `route=bus` entry excludes bus routes while retaining named bus stops and other route types. Node coordinates and Overpass-provided way/relation centers are validated, measured from the lookup observation with Haversine distance, ordered nearest first with deterministic ties, and limited to five.
 
 Nearby features are presentation context, not a notification criterion or event classification. They never change eligibility, ranking, delivery deduplication, or `/api/anomalies`. The automatic and manual paths query only the cluster representative. The Viewer path queries the specifically selected observation even when another member is the cluster representative.
 
