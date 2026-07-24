@@ -2,14 +2,14 @@
 
 > **Purpose:** Define ThermalWatch runtime configuration, deployment, security, observability, failure, and recovery behavior.
 > **Scope:** Process startup, environment variables, external services, SDK publishing, CI artifacts, containers, and operational limitations.
-> **Sources of truth:** [Application configuration](../src/ThermalWatch.Api/ApplicationConfiguration.cs), [notification options](../src/ThermalWatch.Core/NotificationOptions.cs), [Telegram options](../src/ThermalWatch.Telegram/TelegramOptions.cs), [automatic notification state](../src/ThermalWatch.Core/NotificationAutomaticState.cs), [composition root](../src/ThermalWatch.Api/Program.cs), and [publish workflows](../.github/workflows/).
+> **Sources of truth:** [Application configuration](../src/ThermalWatch.Api/ApplicationConfiguration.cs), [notification options](../src/ThermalWatch.Core/NotificationOptions.cs), [Telegram options](../src/ThermalWatch.Telegram/TelegramOptions.cs), [delivery history](../src/ThermalWatch.Core/NotificationDeliveryHistory.cs), [composition root](../src/ThermalWatch.Api/Program.cs), and [publish workflows](../.github/workflows/).
 > **Update when:** A variable, startup rule, external dependency, security boundary, log, deployment workflow, failure mode, or recovery procedure changes.
 
 ## Runtime model
 
 The process binds plain HTTP to `0.0.0.0:8080`, starts one immediate FIRMS refresh, then runs non-overlapping polling cycles. Each completed cycle is followed by at least the configured interval plus positive jitter. Consecutive cycles where no segment succeeds use capped exponential backoff; any segment success resets it. Application options are parsed once at startup and are not reloaded.
 
-All application state is in memory: source segments, the published snapshot, GIBS preview/land-cover/viewer-tile cache entries, Overpass nearby-feature cache entries, notification seen IDs, delivered-episode history, and pending preview notifications. The service has no database, durable queue, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
+All application state is in memory: source segments, the published snapshot, GIBS preview/land-cover/viewer-tile cache entries, Overpass nearby-feature cache entries, the notification startup baseline, and delivered-episode history. The service has no database, durable queue, retained unsent candidates, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
 
 The application-specific options below use exact uppercase environment names. Framework hosting still uses ASP.NET Core's normal host configuration, but .NET-style nested names such as `Firms__MapKey` do not configure ThermalWatch options.
 
@@ -39,8 +39,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` | `false` | Boolean controlling whether the first ready snapshot is eligible for automatic notification. |
 | `TELEGRAM_CLUSTER_RADIUS_KM` | `5` | Finite number from `0.01` through `100`. |
 | `TELEGRAM_CLUSTER_TIME_WINDOW` | `01:30:00` | Duration from 1 minute through 1 day. |
-| `TELEGRAM_SEEN_RETENTION` | `48:00:00`, or `FIRMS_ACTIVE_WINDOW` when longer | Duration from 1 minute through 30 days and at least `FIRMS_ACTIVE_WINDOW`. |
-| `TELEGRAM_PREVIEW_RETRY_WINDOW` | `01:00:00` | Duration from zero through 1 day. |
+| `TELEGRAM_SEEN_RETENTION` | `48:00:00`, or `FIRMS_ACTIVE_WINDOW` when longer | Legacy-named delivered-episode retention from 1 minute through 30 days and at least `FIRMS_ACTIVE_WINDOW`. |
 | `TELEGRAM_PREVIEW_WIDTH_KM` | `30` | Positive finite number. |
 | `TELEGRAM_PREVIEW_HEIGHT_KM` | `20` | Positive finite number. |
 | `TELEGRAM_LARGE_PREVIEW_WIDTH_KM` | `45` | Positive finite number. |
@@ -68,7 +67,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `TELEGRAM_MIN_MODIS_CONFIDENCE_PERCENT` | `60` | Finite percentage from 0 through 100; zero disables the MODIS requirement. |
 | `TELEGRAM_MIN_VIIRS_CONFIDENCE` | `n` | `l`, `n`, or `h`, case-insensitive. |
 | `TELEGRAM_REQUIRE_DAYTIME` | `true` | Boolean. |
-| `TELEGRAM_REQUIRE_PREVIEW` | `true` | Boolean controlling whether automatic candidates without exact imagery are discarded after the retry window. |
+| `TELEGRAM_REQUIRE_PREVIEW` | `true` | Boolean controlling whether unavailable exact imagery rejects the cluster for the current snapshot; when false, the cluster sends as text immediately. |
 
 The `TELEGRAM_*` policy names are retained as deployment compatibility keys, but the API host parses them into neutral Core notification options. Every policy option is parsed even when Telegram credentials are absent because Viewer diagnostics use the same configuration. An invalid optional value can therefore stop startup while Telegram delivery would otherwise be disabled.
 
@@ -148,12 +147,12 @@ The repository contains no production deployment manifests, immutable release ta
 | FIRMS segment failure | Fail the country/source envelope atomically, retain its previous complete data, mark it stale, and continue other segments. | A later completion-delayed poll retries automatically. Inspect source statuses and logs. |
 | Complete FIRMS cycle failure | Publish retained stale state, then exponentially increase the next base delay up to the configured cap. | The first later cycle with any successful segment resets the normal interval. |
 | Verified country-feature outage | Switch globally to polygon-clipped area fallback and probe the country API after one hour. | Automatic when the country API succeeds again. |
-| GIBS preview unavailable or base crop is mostly no-data | Try other supported same-date, pass-matched satellite bases; if none is usable, keep the automatic candidate pending until retry expiry, then discard if preview is required or send text-only if allowed. | Later snapshots retry uncached spatial probes until expiry. |
+| GIBS preview unavailable or base crop is mostly no-data | Try other supported same-date, pass-matched satellite bases; if none is usable, reject the cluster for this snapshot when preview is required or send text immediately when optional. | The next published snapshot reevaluates the complete active cluster and retries uncached spatial probes. |
 | GIBS land cover unavailable or invalid | Retain the notification candidate and record fail-open diagnostics. | Later candidates retry after cache expiry. |
 | Overpass HTTP, transport, timeout, oversized, or malformed-response failure | Log one Warning per uncached lookup, return no nearby features, and continue the diagnostic or Telegram delivery. | A lookup after the one-minute failure cache expires retries automatically on demand. |
 | Telegram startup validation failure | Disable notifier for the process lifetime. | Correct credentials/channel permissions and restart. |
 | Telegram automatic send returns `400`, `401`, or `403` | Disable automatic notifier processing for the process lifetime. | Correct the permanent condition and restart. |
-| Telegram transient send failure | Keep the pending item and return to the snapshot loop. | A later snapshot update retries it. |
-| Process restart | Lose snapshots, deduplication, pending notifications, and caches; run an immediate poll. | Expected stateless recovery; monitor startup and first ready snapshot. |
+| Telegram transient send failure | Leave the episode undelivered and return to the snapshot loop. | The next published snapshot reevaluates the active cluster and retries it. |
+| Process restart | Lose snapshots, startup baseline, delivery deduplication, and caches; run an immediate poll. | Expected stateless recovery; monitor startup and first ready snapshot. |
 | Viewer GIBS tile is partial or unavailable | Return a partial or transparent PNG without caching the degraded result and show one coverage warning. | Later tile requests retry GIBS; FIRMS polling and anomaly responses remain available. |
 | Browser map dependency failure | Show provider/UI error; server polling and APIs remain available. | Restore unpkg/Google browser access or backend GIBS access as applicable, then refresh. |

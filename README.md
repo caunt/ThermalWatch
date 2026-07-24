@@ -14,7 +14,7 @@ ThermalWatch is a small .NET 10 service that polls NASA FIRMS near-real-time the
 - Adds up to five distance-ordered named OpenStreetMap features within 2 km to selected-anomaly diagnostics and prepared Telegram notifications when any are available.
 - Optionally clusters and filters observations for outbound Telegram notifications with sensor-matched NASA GIBS imagery and nearby mapped context.
 
-All runtime state is in memory. Restarting clears the current snapshot, imagery caches, pending notifications, and notification deduplication state, then starts a fresh FIRMS poll.
+All runtime state is in memory. Restarting clears the current snapshot, imagery caches, notification startup baseline, and delivery-deduplication state, then starts a fresh FIRMS poll. Unsent notification candidates are not retained.
 
 ## Quickstart
 

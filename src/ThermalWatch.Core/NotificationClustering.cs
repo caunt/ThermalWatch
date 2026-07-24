@@ -37,49 +37,6 @@ public static class NotificationClustering
         ];
     }
 
-    public static ImmutableArray<NotificationCluster> CreateCandidates(
-        IReadOnlyList<Anomaly> activeDetections,
-        IReadOnlyList<Anomaly> newDetections,
-        double radiusKilometers,
-        TimeSpan timeWindow,
-        bool includeActiveContext)
-    {
-        if (newDetections.Count == 0)
-            return [];
-
-        var newIds = newDetections
-            .Select(detection => detection.Id)
-            .ToHashSet(StringComparer.Ordinal);
-        Anomaly[] clusteringDetections = includeActiveContext
-            ? [.. activeDetections
-                .Where(detection => newIds.Contains(detection.Id)
-                    || newDetections.Any(newDetection => AreRelated(
-                        detection,
-                        newDetection,
-                        radiusKilometers,
-                        timeWindow)))
-                .DistinctBy(detection => detection.Id)]
-            : [.. newDetections.DistinctBy(detection => detection.Id)];
-
-        return
-        [
-            .. Create(clusteringDetections, radiusKilometers, timeWindow)
-                .Where(cluster => cluster.Members.Any(member => newIds.Contains(member.Id)))
-        ];
-    }
-
-    public static bool AreRelated(
-        NotificationCluster first,
-        NotificationCluster second,
-        double radiusKilometers,
-        TimeSpan timeWindow) =>
-        first.Members.Any(firstMember =>
-            second.Members.Any(secondMember => AreRelated(
-                firstMember,
-                secondMember,
-                radiusKilometers,
-                timeWindow)));
-
     public static bool AreRelated(
         Anomaly first,
         Anomaly second,
@@ -87,30 +44,6 @@ public static class NotificationClustering
         TimeSpan timeWindow) =>
         (first.AcquiredAtUtc - second.AcquiredAtUtc).Duration() <= timeWindow
         && Geography.HaversineKilometers(first, second) <= radiusKilometers;
-
-    public static NotificationCluster MergeRelated(
-        IReadOnlyList<NotificationCluster> clusters,
-        double radiusKilometers,
-        TimeSpan timeWindow)
-    {
-        if (clusters.Count == 0)
-            throw new ArgumentException(message: "At least one cluster is required.", nameof(clusters));
-
-        if (clusters.Count == 1)
-            return clusters[0];
-
-        ImmutableArray<NotificationCluster> components = Create(
-            clusters
-                .SelectMany(cluster => cluster.Members)
-                .DistinctBy(detection => detection.Id)
-                .ToArray(),
-            radiusKilometers,
-            timeWindow);
-
-        return components.Length == 1
-            ? components[0]
-            : throw new InvalidOperationException(message: "Only connected notification clusters can be merged.");
-    }
 
     private static NotificationCluster BuildCluster(IEnumerable<Anomaly> detections)
     {

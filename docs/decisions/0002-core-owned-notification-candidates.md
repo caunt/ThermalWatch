@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded
 
 ## Context
 
@@ -46,7 +46,7 @@ Viewer exposes a read-only selected-anomaly diagnostic backed directly by Core. 
 
 - [Core policy tests](../../tests/NotificationPolicyTests.cs) verify exhaustive criterion reporting.
 - [Core candidate-engine tests](../../tests/NotificationCandidateEngineTests.cs) verify active clustering and diagnostic non-mutation.
-- [Automatic lifecycle tests](../../tests/NotificationAutomaticStateTests.cs) preserve delivered-episode and pending behavior.
+- The former `tests/NotificationAutomaticStateTests.cs` covered delivered-episode and pending behavior at acceptance; [ADR 0004](0004-snapshot-based-notification-evaluation.md) records its replacement.
 - [Viewer endpoint tests](../../tests/ViewerNotificationDiagnosticEndpointTests.cs) verify the HTTP cluster/criteria contract.
 - [Browser support tests](../../tests/viewer-map-support.test.js) verify provider-neutral cluster member mapping and marker styles.
 
@@ -62,4 +62,4 @@ Viewer exposes a read-only selected-anomaly diagnostic backed directly by Core. 
 ## Supersedes / Superseded by
 
 - Supersedes: None.
-- Superseded by: None.
+- Superseded by: [0004](0004-snapshot-based-notification-evaluation.md).

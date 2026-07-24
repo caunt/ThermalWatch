@@ -344,24 +344,14 @@ public sealed class TelegramNotificationService(
 
     private void LogProcessingSummary(NotificationProcessingSummary summary)
     {
-        if (summary.PrimedDetectionCount > 0)
-            TelegramNotificationLog.DeduplicationPrimed(logger, summary.PrimedDetectionCount);
-
-        if (summary.NewDetectionCount > 0)
-        {
-            TelegramNotificationLog.ZonesCreated(
-                logger,
-                summary.CandidateClusterCount,
-                summary.NewDetectionCount);
-        }
+        if (summary.StartupBaselineDetectionCount > 0)
+            TelegramNotificationLog.StartupBaselineCaptured(logger, summary.StartupBaselineDetectionCount);
 
         if (logger.IsEnabled(LogLevel.Information)
-            && (summary.CandidateClusterCount > 0
+            && (summary.ActiveClusterCount > 0
             || summary.AcceptedClusterCount > 0
             || summary.RejectedClusterCount > 0
             || summary.DuplicateEpisodeCount > 0
-            || summary.PendingPreviewCount > 0
-            || summary.PreviewTimeoutCount > 0
             || summary.SendFailureCount > 0))
         {
             int nighttimeCount = summary.RejectionCount(NotificationRejectionReason.Nighttime);
@@ -373,12 +363,12 @@ public sealed class TelegramNotificationService(
             int previewUnavailableCount = summary.RejectionCount(NotificationRejectionReason.PreviewUnavailable);
             TelegramNotificationLog.VisibilitySummary(
                 logger,
-                summary.CandidateClusterCount,
+                summary.ActiveClusterCount,
+                summary.EvaluatedClusterCount,
                 summary.AcceptedClusterCount,
                 summary.RejectedClusterCount,
+                summary.StartupSuppressedClusterCount,
                 summary.DuplicateEpisodeCount,
-                summary.PendingPreviewCount,
-                summary.PreviewTimeoutCount,
                 summary.SendFailureCount,
                 nighttimeCount,
                 insufficientDetectionsCount,

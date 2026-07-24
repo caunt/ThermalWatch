@@ -9,12 +9,11 @@ public sealed class NotificationCandidateEngine(
     NearbyFeatureClient nearbyFeatureClient,
     TimeProvider timeProvider)
 {
-    private const int MaximumSeenIds = 100_000;
-    private readonly Dictionary<string, DateTimeOffset> _seen = new(StringComparer.Ordinal);
-    private readonly NotificationAutomaticState _automaticState = new(
+    private readonly NotificationDeliveryHistory _deliveryHistory = new(
         options.ClusterRadiusKilometers,
         options.ClusterTimeWindow,
-        options.SeenRetention);
+        options.DeliveredRetention);
+    private HashSet<string>? _startupBaselineIds;
     private bool _firstReadySnapshot = true;
 
     public async Task<NotificationAutomaticProcessingResult> ProcessAutomaticAsync(
@@ -27,93 +26,112 @@ public sealed class NotificationCandidateEngine(
             return new(ContinueProcessing: true, summary.Build());
 
         DateTimeOffset now = timeProvider.GetUtcNow();
-        ExpireSeen(now);
-        _automaticState.Expire(now);
+        _deliveryHistory.Expire(now);
 
-        if (_firstReadySnapshot && !options.NotifyExistingOnStartup)
-        {
-            PrimeExistingDetections(snapshot, now, summary);
+        if (TryCaptureStartupBaseline(snapshot, summary))
             return new(ContinueProcessing: true, summary.Build());
-        }
 
-        _firstReadySnapshot = false;
-        ImmutableArray<NotificationCluster> clusters = FindNewClusters(snapshot, now, summary);
-        await QueueClustersAsync(clusters, now, summary, cancellationToken).ConfigureAwait(false);
-
-        bool continueProcessing = await ProcessPendingAsync(
-            deliverAsync,
-            summary,
-            cancellationToken).ConfigureAwait(false);
-        return new(continueProcessing, summary.Build());
-    }
-
-    private void PrimeExistingDetections(
-        AnomalySnapshot snapshot,
-        DateTimeOffset now,
-        ProcessingSummaryBuilder summary)
-    {
-        foreach (Anomaly detection in snapshot.Items)
-            _seen[detection.Id] = now;
-
-        _firstReadySnapshot = false;
-        TrimSeen();
-        summary.PrimedDetectionCount = snapshot.Items.Length;
-    }
-
-    private ImmutableArray<NotificationCluster> FindNewClusters(
-        AnomalySnapshot snapshot,
-        DateTimeOffset now,
-        ProcessingSummaryBuilder summary)
-    {
-        Anomaly[] newDetections = [.. snapshot.Items.Where(detection => !_seen.ContainsKey(detection.Id))];
-        summary.NewDetectionCount = newDetections.Length;
-        foreach (Anomaly detection in newDetections)
-            _seen[detection.Id] = now;
-
-        TrimSeen();
-        ImmutableArray<NotificationCluster> clusters = NotificationClustering.CreateCandidates(
+        ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
             snapshot.Items,
-            newDetections,
             options.ClusterRadiusKilometers,
-            options.ClusterTimeWindow,
-            options.Visibility.Enabled && options.Visibility.MinimumClusterDetections > 1);
-        summary.CandidateClusterCount = clusters.Length;
-        return clusters;
-    }
-
-    private async Task QueueClustersAsync(
-        ImmutableArray<NotificationCluster> clusters,
-        DateTimeOffset now,
-        ProcessingSummaryBuilder summary,
-        CancellationToken cancellationToken)
-    {
+            options.ClusterTimeWindow);
+        summary.ActiveClusterCount = clusters.Length;
         foreach (NotificationCluster cluster in clusters)
         {
-            NotificationCandidatePreparation preparation = _automaticState.PrepareCandidate(cluster, now);
-            if (preparation.ContinuesDeliveredEpisode)
+            if (_startupBaselineIds is { } startupBaselineIds
+                && cluster.Members.All(member => startupBaselineIds.Contains(member.Id)))
+            {
+                summary.StartupSuppressedClusterCount++;
+                continue;
+            }
+
+            if (_deliveryHistory.TrySuppressAndExtend(cluster, now))
             {
                 summary.DuplicateEpisodeCount++;
                 continue;
             }
 
-            NotificationCluster preparedCluster = preparation.Cluster;
-            NotificationClusterEvaluation evaluation = await EvaluateClusterAsync(
-                preparedCluster,
+            PreparedNotificationCandidate? candidate = await PrepareAutomaticCandidateAsync(
+                cluster,
+                summary,
                 cancellationToken).ConfigureAwait(false);
-            summary.RecordLandCover(evaluation.LandCoverResult);
-            if (!evaluation.IsAccepted)
+            if (candidate is null)
+                continue;
+
+            NotificationDeliveryOutcome outcome = await deliverAsync(
+                candidate,
+                cancellationToken).ConfigureAwait(false);
+            if (outcome == NotificationDeliveryOutcome.Delivered)
             {
-                if (evaluation.RejectionReason is { } rejectionReason)
-                    summary.Reject(rejectionReason);
+                _deliveryHistory.RecordDelivered(cluster, timeProvider.GetUtcNow());
+                summary.AcceptedClusterCount++;
                 continue;
             }
 
-            _automaticState.AddPending(new(
-                preparedCluster,
-                preparation.FirstSeenUtc,
-                SelectPreview(preparedCluster),
-                evaluation.LandCoverResult?.FormattingSummary));
+            summary.SendFailureCount++;
+            return new(outcome != NotificationDeliveryOutcome.Stop, summary.Build());
         }
+
+        return new(ContinueProcessing: true, summary.Build());
+    }
+
+    private bool TryCaptureStartupBaseline(
+        AnomalySnapshot snapshot,
+        ProcessingSummaryBuilder summary)
+    {
+        if (!_firstReadySnapshot)
+            return false;
+
+        _firstReadySnapshot = false;
+        if (options.NotifyExistingOnStartup)
+            return false;
+
+        _startupBaselineIds = snapshot.Items
+            .Select(detection => detection.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        summary.StartupBaselineDetectionCount = _startupBaselineIds.Count;
+        return true;
+    }
+
+    private async Task<PreparedNotificationCandidate?> PrepareAutomaticCandidateAsync(
+        NotificationCluster cluster,
+        ProcessingSummaryBuilder summary,
+        CancellationToken cancellationToken)
+    {
+        summary.EvaluatedClusterCount++;
+        NotificationClusterEvaluation evaluation = await EvaluateClusterAsync(
+            cluster,
+            cancellationToken).ConfigureAwait(false);
+        summary.RecordLandCover(evaluation.LandCoverResult);
+        if (!evaluation.IsAccepted)
+        {
+            if (evaluation.RejectionReason is { } rejectionReason)
+                summary.Reject(rejectionReason);
+            else
+                summary.RejectedClusterCount++;
+            return null;
+        }
+
+        NotificationPreviewSelection previewSelection = SelectPreview(cluster);
+        GibsPreview preview = await gibsClient.GetPreviewAsync(
+            cluster.Representative,
+            previewSelection.Dimensions,
+            cancellationToken).ConfigureAwait(false);
+        if (!preview.IsAvailable && IsPreviewRequired)
+        {
+            summary.Reject(NotificationRejectionReason.PreviewUnavailable);
+            return null;
+        }
+
+        ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
+            cluster.Representative,
+            cancellationToken).ConfigureAwait(false);
+        return new(
+            cluster,
+            preview,
+            previewSelection,
+            evaluation.LandCoverResult?.FormattingSummary,
+            nearbyFeatures);
     }
 
     public async Task<ManualNotificationCandidates> PrepareManualAsync(
@@ -121,12 +139,10 @@ public sealed class NotificationCandidateEngine(
         int requestedCount,
         CancellationToken cancellationToken)
     {
-        ImmutableArray<NotificationCluster> clusters = NotificationClustering.CreateCandidates(
-            snapshot.Items,
+        ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
             snapshot.Items,
             options.ClusterRadiusKilometers,
-            options.ClusterTimeWindow,
-            includeActiveContext: false);
+            options.ClusterTimeWindow);
         var eligible = new List<PreparedNotificationCandidate>();
         foreach (NotificationCluster cluster in clusters)
         {
@@ -263,69 +279,6 @@ public sealed class NotificationCandidateEngine(
     private bool IsPreviewRequired =>
         options.Visibility.Enabled && options.Visibility.RequirePreview;
 
-    private async Task<bool> ProcessPendingAsync(
-        Func<PreparedNotificationCandidate, CancellationToken, Task<NotificationDeliveryOutcome>> deliverAsync,
-        ProcessingSummaryBuilder summary,
-        CancellationToken cancellationToken)
-    {
-        for (int index = 0; index < _automaticState.PendingCount;)
-        {
-            DateTimeOffset now = timeProvider.GetUtcNow();
-            PendingNotificationCandidate pending = _automaticState.GetPending(index);
-            if (_automaticState.TrySuppressPending(index, now))
-            {
-                summary.DuplicateEpisodeCount++;
-                continue;
-            }
-
-            GibsPreview preview = await gibsClient.GetPreviewAsync(
-                pending.Cluster.Representative,
-                pending.PreviewSelection.Dimensions,
-                cancellationToken).ConfigureAwait(false);
-            bool previewExpired = now - pending.FirstSeenUtc >= options.PreviewRetryWindow;
-
-            if (!preview.IsAvailable && !previewExpired)
-            {
-                summary.PendingPreviewCount++;
-                index++;
-                continue;
-            }
-
-            if (!preview.IsAvailable && IsPreviewRequired)
-            {
-                summary.Reject(NotificationRejectionReason.PreviewUnavailable);
-                summary.PreviewTimeoutCount++;
-                _automaticState.RemovePendingAt(index);
-                continue;
-            }
-
-            ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
-                pending.Cluster.Representative,
-                cancellationToken).ConfigureAwait(false);
-            var candidate = new PreparedNotificationCandidate(
-                pending.Cluster,
-                preview,
-                pending.PreviewSelection,
-                pending.LandCoverSummary,
-                nearbyFeatures);
-            NotificationDeliveryOutcome outcome = await deliverAsync(
-                candidate,
-                cancellationToken).ConfigureAwait(false);
-            if (outcome == NotificationDeliveryOutcome.Delivered)
-            {
-                _automaticState.RecordDelivered(pending.Cluster, timeProvider.GetUtcNow());
-                summary.AcceptedClusterCount++;
-                _automaticState.RemovePendingAt(index);
-                continue;
-            }
-
-            summary.SendFailureCount++;
-            return outcome != NotificationDeliveryOutcome.Stop;
-        }
-
-        return true;
-    }
-
     private async Task<NotificationClusterEvaluation> EvaluateClusterAsync(
         NotificationCluster cluster,
         CancellationToken cancellationToken)
@@ -419,7 +372,7 @@ public sealed class NotificationCandidateEngine(
                 Outcome: NotificationCriterionOutcomes.Unavailable,
                 ActualValue: "Not available",
                 Requirement: "Exact acquisition-date imagery",
-                Explanation: "No exact-date preview is currently available; automatic processing waits until its retry window expires.",
+                Explanation: "No exact-date preview is currently available; automatic processing reevaluates the active cluster after later snapshot publications.",
                 IsBlocking: true);
         }
 
@@ -434,23 +387,6 @@ public sealed class NotificationCandidateEngine(
             Requirement: "Exact acquisition-date imagery",
             Explanation: "An exact-date preview is currently available.",
             IsBlocking: false);
-    }
-
-    private void ExpireSeen(DateTimeOffset now)
-    {
-        DateTimeOffset cutoff = now - options.SeenRetention;
-        foreach (string id in _seen.Where(pair => pair.Value < cutoff).Select(pair => pair.Key).ToArray())
-            _seen.Remove(id);
-    }
-
-    private void TrimSeen()
-    {
-        int excess = _seen.Count - MaximumSeenIds;
-        if (excess <= 0)
-            return;
-
-        foreach (string id in _seen.OrderBy(pair => pair.Value).Take(excess).Select(pair => pair.Key).ToArray())
-            _seen.Remove(id);
     }
 
     private readonly record struct NotificationClusterEvaluation(
@@ -468,21 +404,19 @@ public sealed class NotificationCandidateEngine(
     {
         private readonly Dictionary<NotificationRejectionReason, int> _rejectionCounts = [];
 
-        public int PrimedDetectionCount { get; set; }
+        public int StartupBaselineDetectionCount { get; set; }
 
-        public int NewDetectionCount { get; set; }
+        public int ActiveClusterCount { get; set; }
 
-        public int CandidateClusterCount { get; set; }
+        public int EvaluatedClusterCount { get; set; }
 
         public int AcceptedClusterCount { get; set; }
 
         public int RejectedClusterCount { get; set; }
 
+        public int StartupSuppressedClusterCount { get; set; }
+
         public int DuplicateEpisodeCount { get; set; }
-
-        public int PendingPreviewCount { get; set; }
-
-        public int PreviewTimeoutCount { get; set; }
 
         public int SendFailureCount { get; set; }
 
@@ -516,14 +450,13 @@ public sealed class NotificationCandidateEngine(
 
         public NotificationProcessingSummary Build() =>
             new(
-                PrimedDetectionCount,
-                NewDetectionCount,
-                CandidateClusterCount,
+                StartupBaselineDetectionCount,
+                ActiveClusterCount,
+                EvaluatedClusterCount,
                 AcceptedClusterCount,
                 RejectedClusterCount,
+                StartupSuppressedClusterCount,
                 DuplicateEpisodeCount,
-                PendingPreviewCount,
-                PreviewTimeoutCount,
                 SendFailureCount,
                 LandCoverCandidateCount,
                 VegetationSuppressedCount,

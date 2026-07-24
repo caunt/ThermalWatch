@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -140,10 +141,203 @@ public sealed class NotificationCandidateEngineTests
         Assert.Contains("around:2000,50.000000,31.000000", manualQuery, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task AutomaticReevaluatesActiveClusterUntilRequiredPreviewIsAvailable()
+    {
+        var handler = new RecoveringPreviewHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationOptions options = DefaultOptions() with
+        {
+            Visibility = DefaultOptions().Visibility with { RequirePreview = true }
+        };
+        NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
+        AnomalySnapshot snapshot = Snapshot(
+            Detection(id: "first", longitude: 30, frpMegawatts: 100),
+            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+        int deliveryCount = 0;
+
+        NotificationAutomaticProcessingResult unavailable = await engine.ProcessAutomaticAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+        handler.IsPreviewAvailable = true;
+        NotificationAutomaticProcessingResult available = await engine.ProcessAutomaticAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+        NotificationAutomaticProcessingResult delivered = await engine.ProcessAutomaticAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, unavailable.Summary.AcceptedClusterCount);
+        Assert.Equal(1, unavailable.Summary.RejectionCount(NotificationRejectionReason.PreviewUnavailable));
+        Assert.Equal(1, available.Summary.AcceptedClusterCount);
+        Assert.Equal(1, delivered.Summary.DuplicateEpisodeCount);
+        Assert.Equal(1, deliveryCount);
+    }
+
+    [Fact]
+    public async Task AutomaticSendsTextImmediatelyWhenPreviewIsOptional()
+    {
+        var handler = new NotFoundHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationCandidateEngine engine = CreateEngine(handler, cache);
+        AnomalySnapshot snapshot = Snapshot(
+            Detection(id: "first", longitude: 30, frpMegawatts: 100),
+            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+        PreparedNotificationCandidate? delivered = null;
+
+        NotificationAutomaticProcessingResult result = await engine.ProcessAutomaticAsync(
+            snapshot,
+            (candidate, _) =>
+            {
+                delivered = candidate;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.False(Assert.IsType<PreparedNotificationCandidate>(delivered).Preview.IsAvailable);
+        Assert.Equal(1, result.Summary.AcceptedClusterCount);
+        Assert.Equal(0, result.Summary.RejectedClusterCount);
+    }
+
+    [Fact]
+    public async Task AutomaticRetriesTransientDeliveryThroughNextSnapshotEvaluation()
+    {
+        var handler = new NotFoundHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationCandidateEngine engine = CreateEngine(handler, cache);
+        AnomalySnapshot snapshot = Snapshot(
+            Detection(id: "first", longitude: 30, frpMegawatts: 100),
+            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+        int deliveryCount = 0;
+
+        NotificationAutomaticProcessingResult failed = await engine.ProcessAutomaticAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.RetryLater);
+            },
+            TestContext.Current.CancellationToken);
+        NotificationAutomaticProcessingResult retried = await engine.ProcessAutomaticAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+        NotificationAutomaticProcessingResult delivered = await engine.ProcessAutomaticAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.True(failed.ContinueProcessing);
+        Assert.Equal(1, failed.Summary.SendFailureCount);
+        Assert.Equal(1, retried.Summary.AcceptedClusterCount);
+        Assert.Equal(1, delivered.Summary.DuplicateEpisodeCount);
+        Assert.Equal(2, deliveryCount);
+    }
+
+    [Fact]
+    public async Task AutomaticPreservesStartupBaselineUntilClusterGainsDetection()
+    {
+        var handler = new NotFoundHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationOptions options = DefaultOptions() with { NotifyExistingOnStartup = false };
+        NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
+        Anomaly first = Detection(id: "first", longitude: 30, frpMegawatts: 100);
+        Anomaly second = Detection(id: "second", longitude: 30.02, frpMegawatts: 200);
+        AnomalySnapshot baseline = Snapshot(first, second);
+        int deliveryCount = 0;
+
+        NotificationAutomaticProcessingResult primed = await engine.ProcessAutomaticAsync(
+            baseline,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+        NotificationAutomaticProcessingResult unchanged = await engine.ProcessAutomaticAsync(
+            baseline,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+        NotificationAutomaticProcessingResult extended = await engine.ProcessAutomaticAsync(
+            Snapshot(
+                first,
+                second,
+                Detection(id: "later", longitude: 30.01, frpMegawatts: 150)),
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, primed.Summary.StartupBaselineDetectionCount);
+        Assert.Equal(1, unchanged.Summary.StartupSuppressedClusterCount);
+        Assert.Equal(1, extended.Summary.AcceptedClusterCount);
+        Assert.Equal(1, deliveryCount);
+    }
+
+    [Fact]
+    public async Task DiagnoseExplainsLaterSnapshotReevaluationForUnavailableRequiredPreview()
+    {
+        var handler = new NotFoundHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationOptions options = DefaultOptions() with
+        {
+            Visibility = DefaultOptions().Visibility with { RequirePreview = true }
+        };
+        NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
+        AnomalySnapshot snapshot = Snapshot(
+            Detection(id: "first", longitude: 30, frpMegawatts: 100),
+            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+
+        NotificationDiagnostic diagnostic = Assert.IsType<NotificationDiagnostic>(
+            await engine.DiagnoseAsync(
+                snapshot,
+                anomalyId: "first",
+                TestContext.Current.CancellationToken));
+        NotificationCriterionResult preview = Assert.Single(
+            diagnostic.Criteria,
+            criterion => criterion.Code.Equals(value: "exact-preview", StringComparison.Ordinal));
+
+        Assert.False(diagnostic.IsEligible);
+        Assert.Equal(NotificationCriterionOutcomes.Unavailable, preview.Outcome);
+        Assert.Equal(
+            "No exact-date preview is currently available; automatic processing reevaluates the active cluster after later snapshot publications.",
+            preview.Explanation);
+    }
+
     private static NotificationCandidateEngine CreateEngine(
         HttpMessageHandler handler,
         IMemoryCache cache,
-        HttpMessageHandler? nearbyHandler = null)
+        HttpMessageHandler? nearbyHandler = null,
+        NotificationOptions? options = null)
     {
         var httpClient = new HttpClient(handler)
         {
@@ -158,7 +352,7 @@ public sealed class NotificationCandidateEngineTests
             cache,
             NullLogger<NearbyFeatureClient>.Instance);
         return new(
-            DefaultOptions(),
+            options ?? DefaultOptions(),
             gibsClient,
             nearbyClient,
             new FixedTimeProvider(s_observedAt.AddHours(1)));
@@ -169,8 +363,7 @@ public sealed class NotificationCandidateEngineTests
             NotifyExistingOnStartup: true,
             ClusterRadiusKilometers: 5,
             ClusterTimeWindow: TimeSpan.FromMinutes(minutes: 90),
-            SeenRetention: TimeSpan.FromHours(hours: 48),
-            PreviewRetryWindow: TimeSpan.Zero,
+            DeliveredRetention: TimeSpan.FromHours(hours: 48),
             new(
                 new(WidthKilometers: 30, HeightKilometers: 20),
                 new(WidthKilometers: 45, HeightKilometers: 30),
@@ -266,6 +459,66 @@ public sealed class NotificationCandidateEngineTests
                     Encoding.UTF8,
                     mediaType: "application/json")
             };
+        }
+    }
+
+    private sealed class RecoveringPreviewHandler : HttpMessageHandler
+    {
+        public bool IsPreviewAvailable { get; set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            HttpContent content;
+            if (request.RequestUri!.AbsolutePath.EndsWith(value: ".xml", StringComparison.Ordinal))
+            {
+                content = new StringContent(
+                    content: "<Domains><Domain>2026-07-23</Domain></Domains>",
+                    Encoding.UTF8,
+                    mediaType: "application/xml");
+            }
+            else
+            {
+                string layers = ReadQueryValue(request.RequestUri, name: "LAYERS");
+                bool isComposite = layers.Contains(',', StringComparison.Ordinal);
+                byte[] bytes = isComposite
+                    ? PngTestData.CreateSolidRgba(
+                        width: 900,
+                        height: 600,
+                        red: 30,
+                        green: 80,
+                        blue: 40,
+                        alpha: 255)
+                    : PngTestData.CreateSolidRgba(
+                        width: 64,
+                        height: 64,
+                        red: IsPreviewAvailable ? (byte)30 : (byte)0,
+                        green: IsPreviewAvailable ? (byte)80 : (byte)0,
+                        blue: IsPreviewAvailable ? (byte)40 : (byte)0,
+                        alpha: 255);
+                content = new ByteArrayContent(bytes);
+                content.Headers.ContentType = new MediaTypeHeaderValue(mediaType: "image/png");
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = content,
+                RequestMessage = request
+            });
+        }
+
+        private static string ReadQueryValue(Uri uri, string name)
+        {
+            foreach (string item in uri.Query.TrimStart('?').Split('&'))
+            {
+                string[] pair = item.Split('=', count: 2);
+                if (pair.Length == 2 && pair[0].Equals(name, StringComparison.Ordinal))
+                    return Uri.UnescapeDataString(pair[1]);
+            }
+
+            throw new InvalidOperationException(message: $"Missing {name} query value.");
         }
     }
 }

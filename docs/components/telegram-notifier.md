@@ -17,7 +17,7 @@ The validated bot client and channel ID form the adapter's availability state. B
 
 ## Automatic delivery
 
-The service is the single reader of the snapshot store's bounded update channel. For each update it calls the Core candidate engine and supplies a delivery callback. Core owns ready-snapshot handling, new-observation selection, clustering, metadata and land-cover policy, nearby-feature enrichment, seen/delivered/pending state, preview retries, and delivery acknowledgement.
+The service is the single reader of the snapshot store's bounded update channel. For each update it calls the Core candidate engine and supplies a delivery callback. Core owns ready-snapshot handling, complete active-snapshot clustering, startup-baseline suppression, metadata and land-cover policy, preview evaluation, nearby-feature enrichment, delivered-episode history, and delivery acknowledgement.
 
 For each prepared candidate passed to the callback, Telegram:
 
@@ -25,7 +25,7 @@ For each prepared candidate passed to the callback, Telegram:
 2. Sends a photo when Core supplied preview bytes, otherwise sends text with link previews disabled.
 3. Returns `Delivered`, `RetryLater`, or `Stop` to Core.
 
-Core records delivered-episode history only after `Delivered`. A transient transport failure returns `RetryLater`, so the pending candidate remains and a later snapshot update retries it. Telegram `400`, `401`, or `403` returns `Stop`, clears the validated client, and ends automatic processing until restart. Cancellation stops the hosted service normally.
+Core records delivered-episode history only after `Delivered`. A transient transport failure returns `RetryLater`; Core retains no candidate, and the next snapshot reevaluates the active cluster. Telegram `400`, `401`, or `403` returns `Stop`, clears the validated client, and ends automatic processing until restart. Cancellation stops the hosted service normally.
 
 ## Message construction
 
@@ -39,7 +39,7 @@ When Core supplies one or more nearby features, “Possible nearby sources” ap
 
 `SendTopAsync` requires a validated client and uses a nonblocking semaphore so only one manual operation runs at a time. It asks Core to prepare and rank the requested candidates from `snapshotStore.Current`; it does not wait for or request a FIRMS refresh. Core enriches only the selected representatives after ranking.
 
-Telegram sends an introductory status message and then sends the selected prepared candidates individually. A status-message failure ends the operation with a distinct result. Individual candidate failures are collected by cluster ID without stopping later sends. Core's manual preparation does not inspect or mutate automatic seen IDs, delivered episodes, or pending previews.
+Telegram sends an introductory status message and then sends the selected prepared candidates individually. A status-message failure ends the operation with a distinct result. Individual candidate failures are collected by cluster ID without stopping later sends. Core's manual preparation does not inspect or mutate the automatic startup baseline or delivered episodes.
 
 The endpoint status mapping and input validation remain in [Program.cs](../../src/ThermalWatch.Api/Program.cs). `/api/telegram/send-top` is unauthenticated and side-effecting, so it must be protected by the deployment network boundary.
 

@@ -9,7 +9,7 @@ public sealed class ApplicationConfigurationTests
     [Theory]
     [InlineData("3.00:00:00")]
     [InlineData("72:00:00")]
-    public void FromEnvironmentAllowsSeventyTwoHourActiveWindowAndRaisesDefaultSeenRetention(
+    public void FromEnvironmentAllowsSeventyTwoHourActiveWindowAndRaisesDefaultDeliveredRetention(
         string activeWindow)
     {
         var configuration = ApplicationConfiguration.FromEnvironment(name => name switch
@@ -21,7 +21,7 @@ public sealed class ApplicationConfigurationTests
         });
 
         Assert.Equal(TimeSpan.FromHours(hours: 72), configuration.Firms.ActiveWindow);
-        Assert.Equal(configuration.Firms.ActiveWindow, configuration.Notifications.SeenRetention);
+        Assert.Equal(configuration.Firms.ActiveWindow, configuration.Notifications.DeliveredRetention);
     }
 
     [Fact]
@@ -57,5 +57,19 @@ public sealed class ApplicationConfigurationTests
         Assert.Equal(
             "TELEGRAM_SEEN_RETENTION must be at least FIRMS_ACTIVE_WINDOW.",
             exception.Message);
+    }
+
+    [Fact]
+    public void FromEnvironmentIgnoresRemovedPreviewRetryWindow()
+    {
+        var configuration = ApplicationConfiguration.FromEnvironment(name => name switch
+        {
+            "FIRMS_MAP_KEY" => MapKey,
+            "FIRMS_COUNTRIES" => "UKR",
+            "TELEGRAM_PREVIEW_RETRY_WINDOW" => "not-a-duration",
+            _ => null
+        });
+
+        Assert.Equal(TimeSpan.FromHours(hours: 48), configuration.Notifications.DeliveredRetention);
     }
 }

@@ -59,11 +59,11 @@ See [development guidance](docs/development.md) for prerequisites, safe local se
 
 - Application-specific configuration uses exact uppercase environment names; do not add `appsettings` or commit credentials.
 - When verification or tests need live-provider access, agents may source the ignored repository-root `.env`. The user supplies temporary testing credentials; never echo, log, commit, or reuse them outside the authorized task. Preserve an existing `.env` before, during, and after the task. The user rotates its values when testing ends.
-- State is intentionally in memory. A restart rebuilds the FIRMS snapshot and resets Telegram deduplication, pending previews, and caches.
+- State is intentionally in memory. A restart rebuilds the FIRMS snapshot and resets the Telegram startup baseline, delivery deduplication, and caches; unsent candidates are never retained.
 - `/api/anomalies` exposes all valid active FIRMS observations. Notification filters must never remove or annotate API items.
 - FIRMS segments are isolated by country and source. A failed refresh retains the previous complete segment and marks it stale.
 - Country ingestion is primary. Area fallback is enabled only for a verified country-feature outage and succeeds atomically across all required tiles.
-- Notification land-cover unavailability fails open; an exact preview requirement fails closed after its retry window.
+- Notification land-cover unavailability fails open; an unavailable exact preview requirement fails closed for the current snapshot and is reevaluated after later publications.
 - The browser viewer consumes existing API contracts. Keep provider-specific map code behind its current adapter boundary and preserve common marker behavior.
 - Keep dependency direction `Api -> Viewer -> Core`, `Api -> Telegram -> Core`, and `Api -> Core`; do not make Core depend on host, viewer, or Telegram concerns.
 - Keep the frontend framework-free unless the repository deliberately adopts a frontend toolchain.

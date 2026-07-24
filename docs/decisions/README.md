@@ -29,7 +29,8 @@ An ADR becomes accepted only when the implementation and cited validation suppor
 | ADR | Status | Decision |
 | --- | --- | --- |
 | [0001](0001-server-mediated-viewer-imagery.md) | Accepted | Keep one Api host while Viewer owns assets/routes and Core mediates NASA imagery. |
-| [0002](0002-core-owned-notification-candidates.md) | Accepted | Keep notification candidate policy/lifecycle in Core and Telegram as a message/delivery adapter. |
+| [0002](0002-core-owned-notification-candidates.md) | Superseded | Keep notification candidate policy/lifecycle in Core and Telegram as a message/delivery adapter. |
 | [0003](0003-core-owned-on-demand-nearby-context.md) | Accepted | Keep nearby mapped context on demand in Core and outside raw observations and notification policy. |
+| [0004](0004-snapshot-based-notification-evaluation.md) | Accepted | Reevaluate complete active snapshots without retaining unsent notification candidates. |
 
 `0000-template.md` is a template and is not an architectural decision.

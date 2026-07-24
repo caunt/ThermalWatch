@@ -5,105 +5,147 @@ namespace ThermalWatch.Tests;
 
 public sealed class NotificationClusteringTests
 {
-    private static readonly DateTimeOffset s_observedAt = new(year: 2026, month: 7, day: 18, hour: 12, minute: 0, second: 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset s_observedAt = new(
+        year: 2026,
+        month: 7,
+        day: 18,
+        hour: 12,
+        minute: 0,
+        second: 0,
+        TimeSpan.Zero);
 
     [Fact]
-    public void CreateIncludesRelatedDetectionSeenInEarlierSnapshot()
+    public void CreateIncludesEveryRelatedActiveDetection()
     {
-        Anomaly earlier = Detection(id: "earlier", s_observedAt, latitude: 50.000, longitude: 30.000);
-        Anomaly newlySeen = Detection(id: "new", s_observedAt.AddMinutes(5), latitude: 50.010, longitude: 30.010);
+        Anomaly earlier = Detection(
+            id: "earlier",
+            s_observedAt,
+            latitude: 50,
+            longitude: 30);
+        Anomaly later = Detection(
+            id: "later",
+            s_observedAt.AddMinutes(minutes: 5),
+            latitude: 50.01,
+            longitude: 30.01);
 
-        ImmutableArray<NotificationCluster> clusters = NotificationClustering.CreateCandidates(
-            [earlier, newlySeen],
-            [newlySeen],
+        NotificationCluster cluster = Assert.Single(NotificationClustering.Create(
+            [earlier, later],
             radiusKilometers: 5,
-            timeWindow: TimeSpan.FromMinutes(minutes: 90),
-            includeActiveContext: true);
+            timeWindow: TimeSpan.FromMinutes(minutes: 90)));
 
-        NotificationCluster cluster = Assert.Single(clusters);
         Assert.Equal(2, cluster.Members.Length);
-        Assert.Contains(cluster.Members, member => string.Equals(member.Id, earlier.Id, StringComparison.Ordinal));
-        Assert.Contains(cluster.Members, member => string.Equals(member.Id, newlySeen.Id, StringComparison.Ordinal));
+        Assert.Contains(cluster.Members, member => member.Id.Equals(earlier.Id, StringComparison.Ordinal));
+        Assert.Contains(cluster.Members, member => member.Id.Equals(later.Id, StringComparison.Ordinal));
     }
 
     [Fact]
-    public void CreateAllowsEarlierContextDetectionToRemainRepresentative()
+    public void CreateAllowsEarlierDetectionToRemainRepresentative()
     {
-        Anomaly earlier = Detection(id: "earlier", s_observedAt, latitude: 50.000, longitude: 30.000, frpMegawatts: 200);
-        Anomaly newlySeen = Detection(id: "new", s_observedAt.AddMinutes(5), latitude: 50.010, longitude: 30.010, frpMegawatts: 100);
+        Anomaly earlier = Detection(
+            id: "earlier",
+            s_observedAt,
+            latitude: 50,
+            longitude: 30,
+            frpMegawatts: 200);
+        Anomaly later = Detection(
+            id: "later",
+            s_observedAt.AddMinutes(minutes: 5),
+            latitude: 50.01,
+            longitude: 30.01,
+            frpMegawatts: 100);
 
-        NotificationCluster cluster = Assert.Single(NotificationClustering.CreateCandidates(
-            [earlier, newlySeen],
-            [newlySeen],
+        NotificationCluster cluster = Assert.Single(NotificationClustering.Create(
+            [earlier, later],
             radiusKilometers: 5,
-            timeWindow: TimeSpan.FromMinutes(minutes: 90),
-            includeActiveContext: true));
+            timeWindow: TimeSpan.FromMinutes(minutes: 90)));
 
         Assert.Equal(earlier.Id, cluster.Representative.Id);
     }
 
     [Fact]
-    public void CreateDoesNotReprocessUnrelatedActiveDetection()
+    public void CreateReturnsUnrelatedActiveDetectionsAsSeparateClusters()
     {
-        Anomaly unrelated = Detection(id: "unrelated", s_observedAt, latitude: 40.000, longitude: 20.000);
-        Anomaly newlySeen = Detection(id: "new", s_observedAt.AddMinutes(5), latitude: 50.000, longitude: 30.000);
+        Anomaly first = Detection(
+            id: "first",
+            s_observedAt,
+            latitude: 40,
+            longitude: 20);
+        Anomaly second = Detection(
+            id: "second",
+            s_observedAt.AddMinutes(minutes: 5),
+            latitude: 50,
+            longitude: 30);
 
-        NotificationCluster cluster = Assert.Single(NotificationClustering.CreateCandidates(
-            [unrelated, newlySeen],
-            [newlySeen],
+        ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
+            [first, second],
             radiusKilometers: 5,
-            timeWindow: TimeSpan.FromMinutes(minutes: 90),
-            includeActiveContext: true));
+            timeWindow: TimeSpan.FromMinutes(minutes: 90));
 
-        Assert.Single(cluster.Members);
-        Assert.Equal(newlySeen.Id, cluster.Members[0].Id);
+        Assert.Equal(2, clusters.Length);
+        Assert.All(clusters, cluster => Assert.Single(cluster.Members));
     }
 
     [Fact]
-    public void CreateDoesNotIncludeContextOutsideTimeWindow()
+    public void CreateKeepsNearbyDetectionsOutsideTimeWindowSeparate()
     {
-        Anomaly tooOld = Detection(id: "old", s_observedAt, latitude: 50.000, longitude: 30.000);
-        Anomaly newlySeen = Detection(id: "new", s_observedAt.AddMinutes(91), latitude: 50.010, longitude: 30.010);
+        Anomaly first = Detection(
+            id: "first",
+            s_observedAt,
+            latitude: 50,
+            longitude: 30);
+        Anomaly second = Detection(
+            id: "second",
+            s_observedAt.AddMinutes(minutes: 91),
+            latitude: 50.01,
+            longitude: 30.01);
 
-        NotificationCluster cluster = Assert.Single(NotificationClustering.CreateCandidates(
-            [tooOld, newlySeen],
-            [newlySeen],
+        ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
+            [first, second],
             radiusKilometers: 5,
-            timeWindow: TimeSpan.FromMinutes(minutes: 90),
-            includeActiveContext: true));
+            timeWindow: TimeSpan.FromMinutes(minutes: 90));
 
-        Assert.Single(cluster.Members);
-        Assert.Equal(newlySeen.Id, cluster.Members[0].Id);
+        Assert.Equal(2, clusters.Length);
     }
 
     [Fact]
-    public void CreatePreservesNewDetectionsOnlyBehaviorWhenContextIsDisabled()
+    public void CreateUsesTransitiveLinkage()
     {
-        Anomaly earlier = Detection(id: "earlier", s_observedAt, latitude: 50.000, longitude: 30.000);
-        Anomaly newlySeen = Detection(id: "new", s_observedAt.AddMinutes(5), latitude: 50.010, longitude: 30.010);
+        Anomaly first = Detection(
+            id: "first",
+            s_observedAt,
+            latitude: 0,
+            longitude: 0);
+        Anomaly bridge = Detection(
+            id: "bridge",
+            s_observedAt.AddMinutes(minutes: 5),
+            latitude: 0,
+            longitude: 0.04);
+        Anomaly last = Detection(
+            id: "last",
+            s_observedAt.AddMinutes(minutes: 10),
+            latitude: 0,
+            longitude: 0.08);
 
-        NotificationCluster cluster = Assert.Single(NotificationClustering.CreateCandidates(
-            [earlier, newlySeen],
-            [newlySeen],
+        NotificationCluster cluster = Assert.Single(NotificationClustering.Create(
+            [first, bridge, last],
             radiusKilometers: 5,
-            timeWindow: TimeSpan.FromMinutes(minutes: 90),
-            includeActiveContext: false));
+            timeWindow: TimeSpan.FromMinutes(minutes: 90)));
 
-        Assert.Single(cluster.Members);
-        Assert.Equal(newlySeen.Id, cluster.Members[0].Id);
+        Assert.Equal(3, cluster.Members.Length);
+        Assert.False(NotificationClustering.AreRelated(
+            first,
+            last,
+            radiusKilometers: 5,
+            timeWindow: TimeSpan.FromMinutes(minutes: 90)));
     }
 
     [Fact]
-    public void CreateReturnsNoCandidatesWithoutNewDetections()
+    public void CreateReturnsNoClustersWithoutActiveDetections()
     {
-        Anomaly existing = Detection(id: "existing", s_observedAt, latitude: 50.000, longitude: 30.000);
-
-        ImmutableArray<NotificationCluster> clusters = NotificationClustering.CreateCandidates(
-            [existing],
+        ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
             [],
             radiusKilometers: 5,
-            timeWindow: TimeSpan.FromMinutes(minutes: 90),
-            includeActiveContext: true);
+            timeWindow: TimeSpan.FromMinutes(minutes: 90));
 
         Assert.Empty(clusters);
     }
