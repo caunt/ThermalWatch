@@ -37,15 +37,15 @@ public sealed class NotificationOptionsTests
     ];
 
     [Fact]
-    public void FromEnvironmentUsesExpandedPreviewCoverageDefaults()
+    public void FromEnvironmentUsesPortraitPreviewCoverageDefaults()
     {
         NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(_ => null);
 
         Assert.Equal(
-            new NotificationPreviewSize(WidthKilometers: 60, HeightKilometers: 40),
+            new NotificationPreviewSize(WidthKilometers: 48, HeightKilometers: 60),
             options.Preview.PreviewSize);
         Assert.Equal(
-            new NotificationPreviewSize(WidthKilometers: 90, HeightKilometers: 60),
+            new NotificationPreviewSize(WidthKilometers: 72, HeightKilometers: 90),
             options.Preview.LargePreviewSize);
     }
 

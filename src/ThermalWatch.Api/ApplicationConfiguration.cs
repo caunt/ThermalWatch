@@ -66,11 +66,11 @@ public sealed record ApplicationConfiguration(
             ParseTimeSpan(get, name: "NOTIFICATION_EPISODE_RETENTION", defaultEpisodeRetention, TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 30)),
             new(
                 new(
-                    ParsePositiveDouble(get, name: "NOTIFICATION_PREVIEW_WIDTH_KM", defaultValue: 60),
-                    ParsePositiveDouble(get, name: "NOTIFICATION_PREVIEW_HEIGHT_KM", defaultValue: 40)),
+                    ParsePositiveDouble(get, name: "NOTIFICATION_PREVIEW_WIDTH_KM", defaultValue: 48),
+                    ParsePositiveDouble(get, name: "NOTIFICATION_PREVIEW_HEIGHT_KM", defaultValue: 60)),
                 new(
-                    ParsePositiveDouble(get, name: "NOTIFICATION_LARGE_PREVIEW_WIDTH_KM", defaultValue: 90),
-                    ParsePositiveDouble(get, name: "NOTIFICATION_LARGE_PREVIEW_HEIGHT_KM", defaultValue: 60)),
+                    ParsePositiveDouble(get, name: "NOTIFICATION_LARGE_PREVIEW_WIDTH_KM", defaultValue: 72),
+                    ParsePositiveDouble(get, name: "NOTIFICATION_LARGE_PREVIEW_HEIGHT_KM", defaultValue: 90)),
                 ParsePositiveInt(get, name: "NOTIFICATION_PREVIEW_PIXEL_WIDTH", defaultValue: 3072),
                 ParsePositiveInt(get, name: "NOTIFICATION_PREVIEW_PIXEL_HEIGHT", defaultValue: 3840),
                 ParsePositiveInt(get, name: "NOTIFICATION_LARGE_CLUSTER_MIN_DETECTIONS", defaultValue: 8),
