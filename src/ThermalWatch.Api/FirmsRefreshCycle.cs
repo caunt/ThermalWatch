@@ -14,7 +14,7 @@ internal sealed class FirmsRefreshCycle(
 
     public async Task<FirmsRefreshCycleResult> RefreshAsync(CancellationToken cancellationToken)
     {
-        SegmentKey[] keys = [.. options.Countries.SelectMany(country => FirmsSources.All.Select(source => new SegmentKey(country, source)))];
+        SegmentKey[] keys = [.. options.CountryCodes.SelectMany(countryCode => FirmsSources.All.Select(source => new SegmentKey(countryCode, source)))];
         var results = new SegmentRefreshResult[keys.Length];
 
         await RefreshSegmentAsync(keys, results, index: 0, cancellationToken).ConfigureAwait(false);
@@ -34,7 +34,7 @@ internal sealed class FirmsRefreshCycle(
         AnomalySnapshot snapshot = snapshotStore.Publish(results);
         FirmsPollingLog.SnapshotPublished(
             logger,
-            snapshot.Count,
+            snapshot.AnomalyCount,
             snapshot.IsPartiallyStale);
 
         int successfulSegmentCount = results.Count(result => result.Succeeded);
@@ -60,14 +60,14 @@ internal sealed class FirmsRefreshCycle(
                 key,
                 attemptedAtUtc,
                 timeProvider.GetUtcNow(),
-                segment.Detections,
+                segment.Anomalies,
                 segment.IngestionMode);
             FirmsPollingLog.SegmentRefreshed(
                 logger,
                 key.CountryCode,
                 key.Source,
                 segment.IngestionMode,
-                segment.Detections.Length);
+                segment.Anomalies.Length);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

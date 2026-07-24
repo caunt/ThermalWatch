@@ -20,14 +20,14 @@ public sealed class NotificationEpisodeHistoryTests
     public void SuppressesDifferentSatelliteInTrackedEpisode()
     {
         NotificationEpisodeHistory history = CreateHistory();
-        NotificationCluster delivered = Cluster(Detection(
+        NotificationCluster delivered = Cluster(CreateAnomaly(
             id: "noaa20",
             s_observedAt,
             latitude: 57.94608,
             longitude: 60.06142,
             source: "VIIRS_NOAA20_NRT",
             satellite: "N20"));
-        NotificationCluster laterSatellite = Cluster(Detection(
+        NotificationCluster laterSatellite = Cluster(CreateAnomaly(
             id: "snpp",
             s_observedAt.AddMinutes(minutes: 53),
             latitude: 57.947,
@@ -47,17 +47,17 @@ public sealed class NotificationEpisodeHistoryTests
     public void ExtendsTrackedEpisodeTransitively()
     {
         NotificationEpisodeHistory history = CreateHistory();
-        NotificationCluster first = Cluster(Detection(
+        NotificationCluster first = Cluster(CreateAnomaly(
             id: "first",
             s_observedAt,
             latitude: 0,
             longitude: 0));
-        NotificationCluster bridge = Cluster(Detection(
+        NotificationCluster bridge = Cluster(CreateAnomaly(
             id: "bridge",
             s_observedAt.AddMinutes(minutes: 60),
             latitude: 0,
             longitude: 0.04));
-        NotificationCluster continuation = Cluster(Detection(
+        NotificationCluster continuation = Cluster(CreateAnomaly(
             id: "continuation",
             s_observedAt.AddMinutes(minutes: 120),
             latitude: 0,
@@ -84,12 +84,12 @@ public sealed class NotificationEpisodeHistoryTests
     public void AllowsNewEpisodeOutsideTimeWindow()
     {
         NotificationEpisodeHistory history = CreateHistory();
-        NotificationCluster delivered = Cluster(Detection(
+        NotificationCluster delivered = Cluster(CreateAnomaly(
             id: "delivered",
             s_observedAt,
             latitude: 50,
             longitude: 30));
-        NotificationCluster later = Cluster(Detection(
+        NotificationCluster later = Cluster(CreateAnomaly(
             id: "later",
             s_observedAt.AddMinutes(minutes: 91),
             latitude: 50,
@@ -107,12 +107,12 @@ public sealed class NotificationEpisodeHistoryTests
     public void AllowsNewEpisodeOutsideRadius()
     {
         NotificationEpisodeHistory history = CreateHistory();
-        NotificationCluster delivered = Cluster(Detection(
+        NotificationCluster delivered = Cluster(CreateAnomaly(
             id: "delivered",
             s_observedAt,
             latitude: 0,
             longitude: 0));
-        NotificationCluster distant = Cluster(Detection(
+        NotificationCluster distant = Cluster(CreateAnomaly(
             id: "distant",
             s_observedAt.AddMinutes(minutes: 5),
             latitude: 0,
@@ -130,12 +130,12 @@ public sealed class NotificationEpisodeHistoryTests
     public void AllowsRelatedDetectionAfterHistoryExpires()
     {
         NotificationEpisodeHistory history = CreateHistory();
-        NotificationCluster delivered = Cluster(Detection(
+        NotificationCluster delivered = Cluster(CreateAnomaly(
             id: "delivered",
             s_observedAt,
             latitude: 50,
             longitude: 30));
-        NotificationCluster related = Cluster(Detection(
+        NotificationCluster related = Cluster(CreateAnomaly(
             id: "related",
             s_observedAt.AddMinutes(minutes: 5),
             latitude: 50,
@@ -153,7 +153,7 @@ public sealed class NotificationEpisodeHistoryTests
     public void DoesNotSuppressUndeliveredCluster()
     {
         NotificationEpisodeHistory history = CreateHistory();
-        NotificationCluster cluster = Cluster(Detection(
+        NotificationCluster cluster = Cluster(CreateAnomaly(
             id: "undelivered",
             s_observedAt,
             latitude: 50,
@@ -169,13 +169,13 @@ public sealed class NotificationEpisodeHistoryTests
     private static NotificationEpisodeHistory CreateHistory() =>
         new(RadiusKilometers, s_timeWindow, s_retention);
 
-    private static NotificationCluster Cluster(params Anomaly[] detections) =>
+    private static NotificationCluster Cluster(params Anomaly[] anomalies) =>
         Assert.Single(NotificationClustering.Create(
-            detections,
+            anomalies,
             RadiusKilometers,
             s_timeWindow));
 
-    private static Anomaly Detection(
+    private static Anomaly CreateAnomaly(
         string id,
         DateTimeOffset acquiredAtUtc,
         double latitude,

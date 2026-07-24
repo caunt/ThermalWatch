@@ -62,7 +62,7 @@ public sealed class FirmsPollingServiceTests
     private static FirmsOptions Options(TimeSpan pollInterval) =>
         new(
             MapKey: new string('A', count: 32),
-            Countries: ["UKR"],
+            CountryCodes: ["UKR"],
             pollInterval,
             ActiveWindow: TimeSpan.FromHours(hours: 24),
             RequestTimeout: TimeSpan.FromSeconds(seconds: 45),

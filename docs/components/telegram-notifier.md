@@ -37,7 +37,7 @@ When Core supplies one or more nearby features, “Possible nearby sources” ap
 
 ## Manual send path
 
-`SendTopAsync` requires a validated client and uses a nonblocking semaphore so only one manual operation runs at a time. It asks Core to prepare and rank the requested candidates from `snapshotStore.Current`; it does not wait for or request a FIRMS refresh. Core enriches only the selected representatives after ranking.
+`SendTopClustersAsync` requires a validated client and uses a nonblocking semaphore so only one manual operation runs at a time. It asks Core to prepare and rank the requested candidates from `snapshotStore.Current`; it does not wait for or request a FIRMS refresh. Core enriches only the selected representatives after ranking.
 
 Telegram sends an introductory status message and then sends the selected prepared candidates individually. A status-message failure ends the operation with a distinct result. Individual candidate failures are collected by cluster ID without stopping later sends. Core's manual preparation does not inspect or mutate automatic startup incidents or delivered episodes.
 

@@ -5,8 +5,8 @@ internal sealed class NotificationEpisodeHistory(
     TimeSpan timeWindow,
     TimeSpan retention)
 {
-    private const int MaximumTrackedDetections = 100_000;
-    private readonly Dictionary<string, TrackedDetection> _tracked = new(StringComparer.Ordinal);
+    private const int MaximumTrackedAnomalies = 100_000;
+    private readonly Dictionary<string, TrackedAnomaly> _tracked = new(StringComparer.Ordinal);
 
     public void Expire(DateTimeOffset now)
     {
@@ -46,16 +46,16 @@ internal sealed class NotificationEpisodeHistory(
 
     private void Track(NotificationCluster cluster, DateTimeOffset now)
     {
-        foreach (Anomaly detection in cluster.Members)
+        foreach (Anomaly anomaly in cluster.Members)
         {
-            _tracked[detection.Id] = new(
-                detection.Latitude,
-                detection.Longitude,
-                detection.AcquiredAtUtc,
+            _tracked[anomaly.Id] = new(
+                anomaly.Latitude,
+                anomaly.Longitude,
+                anomaly.AcquiredAtUtc,
                 now);
         }
 
-        int excess = _tracked.Count - MaximumTrackedDetections;
+        int excess = _tracked.Count - MaximumTrackedAnomalies;
         if (excess <= 0)
             return;
 
@@ -70,7 +70,7 @@ internal sealed class NotificationEpisodeHistory(
         }
     }
 
-    private sealed record TrackedDetection(
+    private sealed record TrackedAnomaly(
         double Latitude,
         double Longitude,
         DateTimeOffset AcquiredAtUtc,

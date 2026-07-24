@@ -4,7 +4,7 @@ namespace ThermalWatch.Core;
 
 public sealed record FirmsOptions(
     string MapKey,
-    ImmutableArray<string> Countries,
+    ImmutableArray<string> CountryCodes,
     TimeSpan PollInterval,
     TimeSpan ActiveWindow,
     TimeSpan RequestTimeout,

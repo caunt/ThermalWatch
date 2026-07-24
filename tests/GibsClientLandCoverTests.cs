@@ -24,11 +24,11 @@ public sealed class GibsClientLandCoverTests
         };
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         var client = new GibsClient(httpClient, cache, NullLogger<GibsClient>.Instance);
-        Anomaly detection = Detection(latitude: 55.737840, longitude: 38.421440);
+        Anomaly anomaly = CreateAnomaly(latitude: 55.737840, longitude: 38.421440);
 
-        GibsLandCoverResult first = await client.GetLandCoverAsync([detection], builtUpProximityKilometers: 2, TestContext.Current.CancellationToken);
+        GibsLandCoverResult first = await client.GetLandCoverAsync([anomaly], builtUpProximityKilometers: 2, TestContext.Current.CancellationToken);
         int requestCount = handler.RequestCount;
-        GibsLandCoverResult second = await client.GetLandCoverAsync([detection], builtUpProximityKilometers: 2, TestContext.Current.CancellationToken);
+        GibsLandCoverResult second = await client.GetLandCoverAsync([anomaly], builtUpProximityKilometers: 2, TestContext.Current.CancellationToken);
 
         Assert.True(first.IsAvailable);
         Assert.Equal(2024, first.Year);
@@ -59,7 +59,7 @@ public sealed class GibsClientLandCoverTests
         var client = new GibsClient(httpClient, cache, NullLogger<GibsClient>.Instance);
 
         GibsLandCoverResult result = await client.GetLandCoverAsync(
-            [Detection(latitude: 55.737840, longitude: 38.421440)],
+            [CreateAnomaly(latitude: 55.737840, longitude: 38.421440)],
             builtUpProximityKilometers: 2,
             TestContext.Current.CancellationToken);
 
@@ -122,16 +122,16 @@ public sealed class GibsClientLandCoverTests
         var client = new GibsClient(httpClient, cache, NullLogger<GibsClient>.Instance);
 
         GibsLandCoverResult result = await client.GetLandCoverAsync(
-            [Detection(latitude: 55.737840, longitude: 38.421440)],
+            [CreateAnomaly(latitude: 55.737840, longitude: 38.421440)],
             builtUpProximityKilometers: 2,
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsAvailable);
     }
 
-    private static Anomaly Detection(double latitude, double longitude) =>
+    private static Anomaly CreateAnomaly(double latitude, double longitude) =>
         new(
-            Id: "detection",
+            Id: "anomaly",
             CountryCode: "RUS",
             Source: "VIIRS_SNPP_NRT",
             Satellite: "Suomi-NPP",

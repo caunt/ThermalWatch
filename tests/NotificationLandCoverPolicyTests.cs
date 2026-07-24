@@ -11,7 +11,7 @@ public sealed class NotificationLandCoverPolicyTests
     public void EvaluateSuppressesStrongMultiSatelliteLargeVegetationClusterByDefault()
     {
         var members = Enumerable.Range(start: 0, count: 12)
-            .Select(index => Detection(
+            .Select(index => CreateAnomaly(
                 index.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 index == 0 ? 10_000 : 100,
                 index % 2 == 0 ? "Suomi-NPP" : "NOAA-20"))
@@ -34,10 +34,10 @@ public sealed class NotificationLandCoverPolicyTests
     [Fact]
     public void EvaluateSuppressesVegetationWhenFrpIsMissing()
     {
-        Anomaly detection = Detection(id: "missing-frp", frpMegawatts: null, satellite: "Suomi-NPP");
+        Anomaly anomaly = CreateAnomaly(id: "missing-frp", frpMegawatts: null, satellite: "Suomi-NPP");
 
         NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
-            new(Id: "cluster", detection, [detection]),
+            new(Id: "cluster", anomaly, [anomaly]),
             DefaultOptions(),
             AvailableLandCover([1, 15]));
 
@@ -48,10 +48,10 @@ public sealed class NotificationLandCoverPolicyTests
     [Fact]
     public void EvaluateRetainsClusterWithBuiltUpPixelNearby()
     {
-        Anomaly detection = Detection(id: "urban", frpMegawatts: 100, satellite: "Suomi-NPP");
+        Anomaly anomaly = CreateAnomaly(id: "urban", frpMegawatts: 100, satellite: "Suomi-NPP");
 
         NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
-            new(Id: "cluster", detection, [detection]),
+            new(Id: "cluster", anomaly, [anomaly]),
             DefaultOptions(),
             AvailableLandCover([1, 2, 13], hasBuiltUp: true));
 
@@ -63,10 +63,10 @@ public sealed class NotificationLandCoverPolicyTests
     [Fact]
     public void EvaluateRetainsClusterBelowVegetationThreshold()
     {
-        Anomaly detection = Detection(id: "mixed", frpMegawatts: 100, satellite: "Suomi-NPP");
+        Anomaly anomaly = CreateAnomaly(id: "mixed", frpMegawatts: 100, satellite: "Suomi-NPP");
 
         NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
-            new(Id: "cluster", detection, [detection]),
+            new(Id: "cluster", anomaly, [anomaly]),
             DefaultOptions(),
             AvailableLandCover([1, 15, 16]));
 
@@ -78,10 +78,10 @@ public sealed class NotificationLandCoverPolicyTests
     [Fact]
     public void EvaluateUsesExactlyTheConfiguredIgbpVegetationClasses()
     {
-        Anomaly detection = Detection(id: "classes", frpMegawatts: 100, satellite: "Suomi-NPP");
+        Anomaly anomaly = CreateAnomaly(id: "classes", frpMegawatts: 100, satellite: "Suomi-NPP");
 
         NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
-            new(Id: "cluster", detection, [detection]),
+            new(Id: "cluster", anomaly, [anomaly]),
             DefaultOptions(vegetationPercentThreshold: 75),
             AvailableLandCover([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]));
 
@@ -92,11 +92,11 @@ public sealed class NotificationLandCoverPolicyTests
     [Fact]
     public void EvaluateHonorsExplicitHighFrpVegetationException()
     {
-        Anomaly detection = Detection(id: "strong", frpMegawatts: 500, satellite: "Suomi-NPP");
+        Anomaly anomaly = CreateAnomaly(id: "strong", frpMegawatts: 500, satellite: "Suomi-NPP");
         NotificationLandCoverOptions options = DefaultOptions() with { KeepHighFrpVegetation = true };
 
         NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
-            new(Id: "cluster", detection, [detection]),
+            new(Id: "cluster", anomaly, [anomaly]),
             options,
             AvailableLandCover([1]));
 
@@ -107,8 +107,8 @@ public sealed class NotificationLandCoverPolicyTests
     [Fact]
     public void EvaluateHonorsExplicitMultiSatelliteVegetationException()
     {
-        Anomaly first = Detection(id: "first", frpMegawatts: 100, satellite: "Suomi-NPP");
-        Anomaly second = Detection(id: "second", frpMegawatts: 90, satellite: "NOAA-20");
+        Anomaly first = CreateAnomaly(id: "first", frpMegawatts: 100, satellite: "Suomi-NPP");
+        Anomaly second = CreateAnomaly(id: "second", frpMegawatts: 90, satellite: "NOAA-20");
         NotificationLandCoverOptions options = DefaultOptions() with { KeepMultiSatelliteVegetation = true };
 
         NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
@@ -130,10 +130,10 @@ public sealed class NotificationLandCoverPolicyTests
         int? year,
         byte[] sampledClasses)
     {
-        Anomaly detection = Detection(id: "unavailable", frpMegawatts: 100, satellite: "Suomi-NPP");
+        Anomaly anomaly = CreateAnomaly(id: "unavailable", frpMegawatts: 100, satellite: "Suomi-NPP");
 
         NotificationLandCoverResult result = NotificationLandCoverPolicy.Evaluate(
-            new(Id: "cluster", detection, [detection]),
+            new(Id: "cluster", anomaly, [anomaly]),
             DefaultOptions(),
             new(isAvailable, year, [.. sampledClasses], false));
 
@@ -158,7 +158,7 @@ public sealed class NotificationLandCoverPolicyTests
         bool hasBuiltUp = false) =>
         new(IsAvailable: true, Year: 2024, [.. sampledClasses], hasBuiltUp);
 
-    private static Anomaly Detection(
+    private static Anomaly CreateAnomaly(
         string id,
         double? frpMegawatts,
         string satellite) =>

@@ -17,7 +17,7 @@ public sealed class NotificationPolicyTests
     public void ExplainMetadataReportsEveryFailure()
     {
         NotificationCluster cluster = Assert.Single(NotificationClustering.Create(
-            [Detection(
+            [CreateAnomaly(
                 id: "missing",
                 dayNight: "N",
                 frpMegawatts: null,
@@ -42,7 +42,7 @@ public sealed class NotificationPolicyTests
     public void ExplainMetadataMarksEveryCriterionDisabledWithTheVisibilityPolicy()
     {
         NotificationCluster cluster = Assert.Single(NotificationClustering.Create(
-            [Detection(id: "detection")],
+            [CreateAnomaly(id: "anomaly")],
             radiusKilometers: 5,
             timeWindow: TimeSpan.FromMinutes(minutes: 90)));
 
@@ -72,36 +72,36 @@ public sealed class NotificationPolicyTests
         NotificationRejectionReason? expectedReason,
         string? expectedCriterionCode)
     {
-        Anomaly detection = scenario switch
+        Anomaly anomaly = scenario switch
         {
-            "nighttime" => Detection(id: scenario, dayNight: "N"),
-            "viirs-missing-confidence" => Detection(id: scenario, confidenceCategory: null),
-            "viirs-low-confidence" => Detection(id: scenario, confidenceCategory: "low"),
-            "modis-missing-confidence" => Detection(
+            "nighttime" => CreateAnomaly(id: scenario, dayNight: "N"),
+            "viirs-missing-confidence" => CreateAnomaly(id: scenario, confidenceCategory: null),
+            "viirs-low-confidence" => CreateAnomaly(id: scenario, confidenceCategory: "low"),
+            "modis-missing-confidence" => CreateAnomaly(
                 id: scenario,
                 source: "MODIS_NRT",
                 confidenceCategory: null,
                 confidencePercent: null),
-            "modis-low-confidence" => Detection(
+            "modis-low-confidence" => CreateAnomaly(
                 id: scenario,
                 source: "MODIS_NRT",
                 confidenceCategory: null,
                 confidencePercent: 59),
-            "missing-frp" => Detection(id: scenario, frpMegawatts: null),
-            "low-frp" => Detection(id: scenario, frpMegawatts: 49),
-            "missing-contrast" => Detection(id: scenario, brightnessKelvin: null),
-            "low-contrast" => Detection(id: scenario, brightnessKelvin: 319),
-            _ => Detection(id: scenario)
+            "missing-frp" => CreateAnomaly(id: scenario, frpMegawatts: null),
+            "low-frp" => CreateAnomaly(id: scenario, frpMegawatts: 49),
+            "missing-contrast" => CreateAnomaly(id: scenario, brightnessKelvin: null),
+            "low-contrast" => CreateAnomaly(id: scenario, brightnessKelvin: 319),
+            _ => CreateAnomaly(id: scenario)
         };
         int detectionCount = scenario.Equals(value: "insufficient", StringComparison.Ordinal) ? 1 : 2;
-        NotificationCluster cluster = Cluster(detection, detectionCount);
+        NotificationCluster cluster = Cluster(anomaly, detectionCount);
         NotificationVisibilityOptions options = DefaultVisibility();
 
         NotificationMetadataEvaluation evaluation = NotificationPolicy.EvaluateMetadata(cluster, options);
         NotificationCriterionResult? firstBlocking = NotificationPolicy.ExplainMetadata(cluster, options)
             .FirstOrDefault(criterion => criterion.IsBlocking);
 
-        Assert.Equal(expectedReason is null, evaluation.IsAccepted);
+        Assert.Equal(expectedReason is null, evaluation.IsEligible);
         Assert.Equal(expectedReason, evaluation.RejectionReason);
         Assert.Equal(expectedCriterionCode, firstBlocking?.Code);
     }
@@ -110,7 +110,7 @@ public sealed class NotificationPolicyTests
     public void EvaluateMetadataAcceptsWhenVisibilityPolicyIsDisabled()
     {
         NotificationCluster cluster = Cluster(
-            Detection(
+            CreateAnomaly(
                 id: "disabled",
                 dayNight: "N",
                 frpMegawatts: null,
@@ -122,7 +122,7 @@ public sealed class NotificationPolicyTests
             cluster,
             DefaultVisibility() with { Enabled = false });
 
-        Assert.True(evaluation.IsAccepted);
+        Assert.True(evaluation.IsEligible);
         Assert.Null(evaluation.RejectionReason);
     }
 
@@ -137,7 +137,7 @@ public sealed class NotificationPolicyTests
             RequireDaytime: true,
             RequirePreview: true);
 
-    private static Anomaly Detection(
+    private static Anomaly CreateAnomaly(
         string id,
         string dayNight = "D",
         double? frpMegawatts = 100,
@@ -166,21 +166,21 @@ public sealed class NotificationPolicyTests
             Version: "2.0NRT",
             GoogleMapsUrl: $"https://example.test/{id}");
 
-    private static NotificationCluster Cluster(Anomaly detection, int detectionCount)
+    private static NotificationCluster Cluster(Anomaly anomaly, int detectionCount)
     {
-        Anomaly[] detections = detectionCount == 1
-            ? [detection]
+        Anomaly[] anomalies = detectionCount == 1
+            ? [anomaly]
             :
             [
-                detection,
-                detection with
+                anomaly,
+                anomaly with
                 {
-                    Id = $"{detection.Id}-context",
-                    AcquiredAtUtc = detection.AcquiredAtUtc.AddMinutes(-1)
+                    Id = $"{anomaly.Id}-context",
+                    AcquiredAtUtc = anomaly.AcquiredAtUtc.AddMinutes(-1)
                 }
             ];
         return Assert.Single(NotificationClustering.Create(
-            detections,
+            anomalies,
             radiusKilometers: 5,
             timeWindow: TimeSpan.FromMinutes(minutes: 90)));
     }

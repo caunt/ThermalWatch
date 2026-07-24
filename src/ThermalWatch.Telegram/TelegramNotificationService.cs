@@ -34,7 +34,7 @@ public sealed class TelegramNotificationService(
                 if (!ReferenceEquals(Volatile.Read(ref _validated), validated))
                     return;
 
-                NotificationAutomaticProcessingResult result = await candidateEngine.ProcessAutomaticAsync(
+                AutomaticNotificationProcessingResult result = await candidateEngine.ProcessAutomaticNotificationsAsync(
                     snapshot,
                     (candidate, cancellationToken) => TryDeliverAutomaticAsync(
                         validated,
@@ -52,8 +52,8 @@ public sealed class TelegramNotificationService(
         }
     }
 
-    public async Task<ManualTelegramSendResult> SendTopAsync(
-        int requestedCount,
+    public async Task<ManualTelegramSendResult> SendTopClustersAsync(
+        int requestedClusterCount,
         CancellationToken cancellationToken)
     {
         if (Volatile.Read(ref _validated) is null)
@@ -70,7 +70,7 @@ public sealed class TelegramNotificationService(
 
             return await ExecuteManualSendAsync(
                 validated,
-                requestedCount,
+                requestedClusterCount,
                 cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -126,69 +126,69 @@ public sealed class TelegramNotificationService(
 
     private async Task<ManualTelegramSendResult> ExecuteManualSendAsync(
         ValidatedTelegram validated,
-        int requestedCount,
+        int requestedClusterCount,
         CancellationToken cancellationToken)
     {
-        ManualNotificationCandidates preparation = await candidateEngine.PrepareManualAsync(
+        ManualNotificationCandidateSelection preparation = await candidateEngine.PrepareManualCandidatesAsync(
             snapshotStore.Current,
-            requestedCount,
+            requestedClusterCount,
             cancellationToken).ConfigureAwait(false);
-        if (preparation.Selected.IsEmpty)
+        if (preparation.SelectedCandidates.IsEmpty)
         {
             return await CompleteEmptyManualSendAsync(
                 validated,
-                requestedCount,
-                preparation.EligibleCount,
+                requestedClusterCount,
+                preparation.EligibleClusterCount,
                 cancellationToken).ConfigureAwait(false);
         }
 
         if (!await TrySendManualStatusAsync(
             validated,
-            message: $"🔥 <b>Sending top {preparation.Selected.Length} anomalies manually</b>",
+            message: $"🔥 <b>Sending top {preparation.SelectedCandidates.Length} anomaly clusters manually</b>",
             cancellationToken).ConfigureAwait(false))
         {
             var response = new ManualTelegramSendResponse(
-                requestedCount,
-                preparation.EligibleCount,
-                preparation.Selected.Length,
-                SentCount: 0,
-                FailedCount: 0,
+                requestedClusterCount,
+                preparation.EligibleClusterCount,
+                preparation.SelectedCandidates.Length,
+                SentClusterCount: 0,
+                FailedClusterCount: 0,
                 []);
             LogManualSendSummary(response);
             return ManualTelegramSendResult.StatusMessageFailed;
         }
 
-        (int sentCount, List<string> failedIds) = await SendManualNotificationsAsync(
+        (int sentClusterCount, List<string> failedClusterIds) = await SendManualNotificationsAsync(
             validated,
-            preparation.Selected,
+            preparation.SelectedCandidates,
             cancellationToken).ConfigureAwait(false);
         var completedResponse = new ManualTelegramSendResponse(
-            requestedCount,
-            preparation.EligibleCount,
-            preparation.Selected.Length,
-            sentCount,
-            failedIds.Count,
-            [.. failedIds]);
+            requestedClusterCount,
+            preparation.EligibleClusterCount,
+            preparation.SelectedCandidates.Length,
+            sentClusterCount,
+            failedClusterIds.Count,
+            [.. failedClusterIds]);
         LogManualSendSummary(completedResponse);
         return ManualTelegramSendResult.Completed(completedResponse);
     }
 
     private async Task<ManualTelegramSendResult> CompleteEmptyManualSendAsync(
         ValidatedTelegram validated,
-        int requestedCount,
-        int eligibleCount,
+        int requestedClusterCount,
+        int eligibleClusterCount,
         CancellationToken cancellationToken)
     {
         var response = new ManualTelegramSendResponse(
-            requestedCount,
-            eligibleCount,
-            SelectedCount: 0,
-            SentCount: 0,
-            FailedCount: 0,
+            requestedClusterCount,
+            eligibleClusterCount,
+            SelectedClusterCount: 0,
+            SentClusterCount: 0,
+            FailedClusterCount: 0,
             []);
         bool statusSent = await TrySendManualStatusAsync(
             validated,
-            message: "ℹ️ <b>No anomalies currently pass all filters</b>",
+            message: "ℹ️ <b>No anomaly clusters currently pass all filters</b>",
             cancellationToken).ConfigureAwait(false);
         LogManualSendSummary(response);
         return statusSent
@@ -196,19 +196,19 @@ public sealed class TelegramNotificationService(
             : ManualTelegramSendResult.StatusMessageFailed;
     }
 
-    private async Task<(int SentCount, List<string> FailedIds)> SendManualNotificationsAsync(
+    private async Task<(int SentClusterCount, List<string> FailedClusterIds)> SendManualNotificationsAsync(
         ValidatedTelegram validated,
-        IReadOnlyList<PreparedNotificationCandidate> selected,
+        IReadOnlyList<PreparedNotificationCandidate> selectedCandidates,
         CancellationToken cancellationToken)
     {
-        int sentCount = 0;
-        var failedIds = new List<string>();
-        foreach (PreparedNotificationCandidate candidate in selected)
+        int sentClusterCount = 0;
+        var failedClusterIds = new List<string>();
+        foreach (PreparedNotificationCandidate candidate in selectedCandidates)
         {
             try
             {
                 await SendNotificationAsync(validated, candidate, cancellationToken).ConfigureAwait(false);
-                sentCount++;
+                sentClusterCount++;
                 TelegramNotificationLog.ManualNotificationSent(logger, candidate.Cluster.Id);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -217,12 +217,12 @@ public sealed class TelegramNotificationService(
             }
             catch (Exception)
             {
-                failedIds.Add(candidate.Cluster.Id);
+                failedClusterIds.Add(candidate.Cluster.Id);
                 TelegramNotificationLog.ManualNotificationFailed(logger, candidate.Cluster.Id);
             }
         }
 
-        return (sentCount, failedIds);
+        return (sentClusterCount, failedClusterIds);
     }
 
     private async Task<bool> TrySendManualStatusAsync(
@@ -342,11 +342,11 @@ public sealed class TelegramNotificationService(
     private void DisableValidatedTelegram(ValidatedTelegram validated) =>
         Interlocked.CompareExchange(ref _validated, value: null, validated);
 
-    private void LogProcessingSummary(NotificationProcessingSummary summary)
+    private void LogProcessingSummary(AutomaticNotificationProcessingSummary summary)
     {
         if (logger.IsEnabled(LogLevel.Information)
             && (summary.ActiveClusterCount > 0
-            || summary.AcceptedClusterCount > 0
+            || summary.DeliveredClusterCount > 0
             || summary.RejectedClusterCount > 0
             || summary.DuplicateEpisodeCount > 0
             || summary.SendFailureCount > 0))
@@ -362,7 +362,7 @@ public sealed class TelegramNotificationService(
                 logger,
                 summary.ActiveClusterCount,
                 summary.EvaluatedClusterCount,
-                summary.AcceptedClusterCount,
+                summary.DeliveredClusterCount,
                 summary.RejectedClusterCount,
                 summary.StartupSuppressedIncidentCount,
                 summary.DuplicateEpisodeCount,
@@ -391,11 +391,11 @@ public sealed class TelegramNotificationService(
     {
         TelegramNotificationLog.ManualSendSummary(
             logger,
-            response.RequestedCount,
-            response.EligibleCount,
-            response.SelectedCount,
-            response.SentCount,
-            response.FailedCount);
+            response.RequestedClusterCount,
+            response.EligibleClusterCount,
+            response.SelectedClusterCount,
+            response.SentClusterCount,
+            response.FailedClusterCount);
     }
 
     private sealed record ValidatedTelegram(TelegramBotClient Client, ChatId ChatId);

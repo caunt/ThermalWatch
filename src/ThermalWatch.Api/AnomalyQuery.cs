@@ -8,7 +8,7 @@ using ThermalWatch.Core;
 namespace ThermalWatch.Api;
 
 public sealed record AnomalyQuery(
-    FrozenSet<string>? Countries,
+    FrozenSet<string>? CountryCodes,
     FrozenSet<string>? Sources,
     FrozenSet<string>? Satellites,
     DateTimeOffset? Since,
@@ -35,8 +35,8 @@ public sealed record AnomalyQuery(
             return false;
         }
 
-        if (!TryParseList(query, name: "country", value => value.ToUpperInvariant(), out FrozenSet<string>? countries, out error)
-            || countries is not null && countries.Any(country => !CountryCatalog.IsValid(country)))
+        if (!TryParseList(query, name: "country", value => value.ToUpperInvariant(), out FrozenSet<string>? countryCodes, out error)
+            || countryCodes is not null && countryCodes.Any(countryCode => !CountryCatalog.IsValid(countryCode)))
         {
             error ??= "country must contain comma-separated ISO alpha-3 country codes.";
             return false;
@@ -58,7 +58,7 @@ public sealed record AnomalyQuery(
             return false;
         }
 
-        parsed = new(countries, sources, satellites, since, dayNight);
+        parsed = new(countryCodes, sources, satellites, since, dayNight);
         return true;
     }
 
@@ -113,16 +113,16 @@ public sealed record AnomalyQuery(
         return false;
     }
 
-    public ImmutableArray<Anomaly> Apply(IEnumerable<Anomaly> detections) =>
+    public ImmutableArray<Anomaly> Apply(IEnumerable<Anomaly> anomalies) =>
     [
-        .. detections
-            .Where(detection => Countries is null || Countries.Contains(detection.CountryCode))
-            .Where(detection => Sources is null || Sources.Contains(detection.Source))
-            .Where(detection => Satellites is null || Satellites.Contains(detection.Satellite))
-            .Where(detection => Since is null || detection.AcquiredAtUtc >= Since)
-            .Where(detection => DayNight is null || string.Equals(detection.DayNight, DayNight, StringComparison.Ordinal))
-            .OrderByDescending(detection => detection.AcquiredAtUtc)
-            .ThenBy(detection => detection.Id, StringComparer.Ordinal)
+        .. anomalies
+            .Where(anomaly => CountryCodes is null || CountryCodes.Contains(anomaly.CountryCode))
+            .Where(anomaly => Sources is null || Sources.Contains(anomaly.Source))
+            .Where(anomaly => Satellites is null || Satellites.Contains(anomaly.Satellite))
+            .Where(anomaly => Since is null || anomaly.AcquiredAtUtc >= Since)
+            .Where(anomaly => DayNight is null || string.Equals(anomaly.DayNight, DayNight, StringComparison.Ordinal))
+            .OrderByDescending(anomaly => anomaly.AcquiredAtUtc)
+            .ThenBy(anomaly => anomaly.Id, StringComparer.Ordinal)
     ];
 
     private static bool TryParseList(

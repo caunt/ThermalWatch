@@ -1,11 +1,11 @@
 namespace ThermalWatch.Core;
 
 public readonly record struct NotificationMetadataEvaluation(
-    bool IsAccepted,
+    bool IsEligible,
     NotificationRejectionReason? RejectionReason)
 {
-    public static NotificationMetadataEvaluation Accepted { get; } = new(IsAccepted: true, RejectionReason: null);
+    public static NotificationMetadataEvaluation Eligible { get; } = new(IsEligible: true, RejectionReason: null);
 
     public static NotificationMetadataEvaluation Reject(NotificationRejectionReason reason) =>
-        new(IsAccepted: false, reason);
+        new(IsEligible: false, reason);
 }

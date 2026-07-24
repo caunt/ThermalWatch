@@ -45,7 +45,7 @@ public static class ViewerEndpoints
         EligibleNotificationClusters eligibleClusters;
         try
         {
-            eligibleClusters = await candidateEngine.GetEligibleClustersAsync(
+            eligibleClusters = await candidateEngine.GetEligibleNotificationClustersAsync(
                 snapshot,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -67,7 +67,7 @@ public static class ViewerEndpoints
         NotificationDiagnostic? diagnostic;
         try
         {
-            diagnostic = await candidateEngine.DiagnoseAsync(
+            diagnostic = await candidateEngine.GetNotificationDiagnosticAsync(
                 snapshotStore.Current,
                 anomalyId,
                 cancellationToken).ConfigureAwait(false);

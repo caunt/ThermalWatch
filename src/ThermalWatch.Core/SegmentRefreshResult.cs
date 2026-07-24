@@ -7,7 +7,7 @@ public sealed record SegmentRefreshResult(
     DateTimeOffset AttemptedAtUtc,
     DateTimeOffset CompletedAtUtc,
     bool Succeeded,
-    ImmutableArray<Anomaly> Detections,
+    ImmutableArray<Anomaly> Anomalies,
     string? Error,
     string IngestionMode)
 {
@@ -15,9 +15,9 @@ public sealed record SegmentRefreshResult(
         SegmentKey key,
         DateTimeOffset attemptedAtUtc,
         DateTimeOffset completedAtUtc,
-        ImmutableArray<Anomaly> detections,
+        ImmutableArray<Anomaly> anomalies,
         string ingestionMode) =>
-        new(key, attemptedAtUtc, completedAtUtc, Succeeded: true, detections, Error: null, ingestionMode);
+        new(key, attemptedAtUtc, completedAtUtc, Succeeded: true, anomalies, Error: null, ingestionMode);
 
     public static SegmentRefreshResult Failure(
         SegmentKey key,

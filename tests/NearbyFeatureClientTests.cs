@@ -34,7 +34,7 @@ public sealed class NearbyFeatureClientTests
         using NearbyFeatureClient client = CreateClient(handler, cache);
 
         ImmutableArray<NearbyFeature> features = await client.FindNearbyAsync(
-            Detection(latitude: 0, longitude: 0),
+            CreateAnomaly(latitude: 0, longitude: 0),
             TestContext.Current.CancellationToken);
 
         Assert.Equal([2, 3, 4, 1, 5], features.Select(feature => feature.OsmId));
@@ -58,10 +58,10 @@ public sealed class NearbyFeatureClientTests
         using NearbyFeatureClient successfulClient = CreateClient(successfulHandler, successCache);
 
         await successfulClient.FindNearbyAsync(
-            Detection(latitude: 10.0000001, longitude: 20.0000001),
+            CreateAnomaly(latitude: 10.0000001, longitude: 20.0000001),
             TestContext.Current.CancellationToken);
         await successfulClient.FindNearbyAsync(
-            Detection(latitude: 10.0000002, longitude: 20.0000002),
+            CreateAnomaly(latitude: 10.0000002, longitude: 20.0000002),
             TestContext.Current.CancellationToken);
 
         Assert.Equal(1, successfulHandler.RequestCount);
@@ -73,10 +73,10 @@ public sealed class NearbyFeatureClientTests
         using NearbyFeatureClient failedClient = CreateClient(failedHandler, failureCache, logger);
 
         ImmutableArray<NearbyFeature> first = await failedClient.FindNearbyAsync(
-            Detection(latitude: 30, longitude: 40),
+            CreateAnomaly(latitude: 30, longitude: 40),
             TestContext.Current.CancellationToken);
         ImmutableArray<NearbyFeature> second = await failedClient.FindNearbyAsync(
-            Detection(latitude: 30, longitude: 40),
+            CreateAnomaly(latitude: 30, longitude: 40),
             TestContext.Current.CancellationToken);
 
         Assert.Empty(first);
@@ -94,7 +94,7 @@ public sealed class NearbyFeatureClientTests
         using NearbyFeatureClient malformedClient = CreateClient(malformedHandler, malformedCache, logger);
 
         ImmutableArray<NearbyFeature> malformed = await malformedClient.FindNearbyAsync(
-            Detection(latitude: 1, longitude: 1),
+            CreateAnomaly(latitude: 1, longitude: 1),
             TestContext.Current.CancellationToken);
 
         var oversizedHandler = new RecordingHandler((_, _) =>
@@ -107,7 +107,7 @@ public sealed class NearbyFeatureClientTests
         using NearbyFeatureClient oversizedClient = CreateClient(oversizedHandler, oversizedCache, logger);
 
         ImmutableArray<NearbyFeature> oversized = await oversizedClient.FindNearbyAsync(
-            Detection(latitude: 2, longitude: 2),
+            CreateAnomaly(latitude: 2, longitude: 2),
             TestContext.Current.CancellationToken);
 
         Assert.Empty(malformed);
@@ -131,11 +131,11 @@ public sealed class NearbyFeatureClientTests
         using NearbyFeatureClient client = CreateClient(handler, cache);
 
         Task<ImmutableArray<NearbyFeature>> first = client.FindNearbyAsync(
-            Detection(latitude: 10, longitude: 10),
+            CreateAnomaly(latitude: 10, longitude: 10),
             TestContext.Current.CancellationToken);
         await firstStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
         Task<ImmutableArray<NearbyFeature>> second = client.FindNearbyAsync(
-            Detection(latitude: 20, longitude: 20),
+            CreateAnomaly(latitude: 20, longitude: 20),
             TestContext.Current.CancellationToken);
 
         Assert.Equal(1, handler.RequestCount);
@@ -147,7 +147,7 @@ public sealed class NearbyFeatureClientTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.FindNearbyAsync(
-            Detection(latitude: 30, longitude: 30),
+            CreateAnomaly(latitude: 30, longitude: 30),
             cancellation.Token));
     }
 
@@ -179,7 +179,7 @@ public sealed class NearbyFeatureClientTests
         return Uri.UnescapeDataString(requestBody[5..].Replace(oldChar: '+', newChar: ' '));
     }
 
-    private static Anomaly Detection(double latitude, double longitude) =>
+    private static Anomaly CreateAnomaly(double latitude, double longitude) =>
         new(
             Id: $"{latitude},{longitude}",
             CountryCode: "UKR",

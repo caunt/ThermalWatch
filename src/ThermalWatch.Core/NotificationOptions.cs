@@ -1,7 +1,7 @@
 namespace ThermalWatch.Core;
 
 public sealed record NotificationOptions(
-    bool NotifyExistingOnStartup,
+    bool SendExistingOnStartup,
     double ClusterRadiusKilometers,
     TimeSpan ClusterTimeWindow,
     TimeSpan EpisodeRetention,

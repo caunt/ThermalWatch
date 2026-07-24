@@ -42,7 +42,7 @@ public sealed class ApplicationConfigurationTests
     }
 
     [Fact]
-    public void FromEnvironmentRejectsExplicitSeenRetentionShorterThanActiveWindow()
+    public void FromEnvironmentRejectsExplicitEpisodeRetentionShorterThanActiveWindow()
     {
         ApplicationConfigurationException exception = Assert.Throws<ApplicationConfigurationException>(() =>
             ApplicationConfiguration.FromEnvironment(name => name switch
@@ -50,12 +50,12 @@ public sealed class ApplicationConfigurationTests
                 "FIRMS_MAP_KEY" => MapKey,
                 "FIRMS_COUNTRIES" => "UKR",
                 "FIRMS_ACTIVE_WINDOW" => "3.00:00:00",
-                "TELEGRAM_SEEN_RETENTION" => "2.00:00:00",
+                "NOTIFICATION_EPISODE_RETENTION" => "2.00:00:00",
                 _ => null
             }));
 
         Assert.Equal(
-            "TELEGRAM_SEEN_RETENTION must be at least FIRMS_ACTIVE_WINDOW.",
+            "NOTIFICATION_EPISODE_RETENTION must be at least FIRMS_ACTIVE_WINDOW.",
             exception.Message);
     }
 

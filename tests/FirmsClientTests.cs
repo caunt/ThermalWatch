@@ -46,7 +46,7 @@ public sealed class FirmsClientTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(IngestionModes.Country, result.IngestionMode);
-        Assert.Single(result.Detections);
+        Assert.Single(result.Anomalies);
         Assert.Equal(1, handler.RequestCount);
         Assert.Equal(0, handler.AreaRequestCount);
     }
@@ -80,7 +80,7 @@ public sealed class FirmsClientTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(IngestionModes.Country, result.IngestionMode);
-        Assert.Single(result.Detections);
+        Assert.Single(result.Anomalies);
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public sealed class FirmsClientTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(IngestionModes.AreaFallback, result.IngestionMode);
-        Assert.Single(result.Detections);
+        Assert.Single(result.Anomalies);
         Assert.Equal(1, handler.AreaRequestCount);
         Assert.Equal(3, handler.RequestCount);
         Assert.Equal(1, handler.MaximumConcurrency);
@@ -140,7 +140,7 @@ public sealed class FirmsClientTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(IngestionModes.AreaFallback, result.IngestionMode);
-        Assert.Single(result.Detections);
+        Assert.Single(result.Anomalies);
         Assert.Equal(1, handler.AreaRequestCount);
         Assert.NotNull(areaBounds);
         string[] coordinates = areaBounds.Split(',');
@@ -204,7 +204,7 @@ public sealed class FirmsClientTests
             source: "MODIS_NRT",
             TestContext.Current.CancellationToken).ConfigureAwait(true);
         Assert.Equal(IngestionModes.Country, recovered.IngestionMode);
-        Assert.Single(recovered.Detections);
+        Assert.Single(recovered.Anomalies);
         Assert.Equal(2, handler.RequestCount);
     }
 
@@ -246,7 +246,7 @@ public sealed class FirmsClientTests
             source: "MODIS_NRT",
             TestContext.Current.CancellationToken).ConfigureAwait(true);
         Assert.Equal(IngestionModes.AreaFallback, recovered.IngestionMode);
-        Assert.Single(recovered.Detections);
+        Assert.Single(recovered.Anomalies);
         Assert.Equal(2, handler.AreaRequestCount);
         Assert.Equal(1, handler.MaximumConcurrency);
     }
@@ -282,7 +282,7 @@ public sealed class FirmsClientTests
     {
         FirmsOptions options = new(
             MapKey: new string('A', count: 32),
-            Countries: [countryCode],
+            CountryCodes: [countryCode],
             PollInterval: TimeSpan.FromMinutes(minutes: 5),
             ActiveWindow: activeWindow ?? TimeSpan.FromHours(hours: 24),
             RequestTimeout: requestTimeout ?? TimeSpan.FromSeconds(seconds: 45),

@@ -14,10 +14,10 @@ public static class CountryCatalog
 
     private static readonly Lazy<FrozenDictionary<string, string>> s_displayNames = new(CreateDisplayNames);
 
-    public static bool IsValid(string code) => s_codes.Contains(code);
+    public static bool IsValid(string countryCode) => s_codes.Contains(countryCode);
 
-    public static string GetDisplayName(string code) =>
-        s_displayNames.Value.GetValueOrDefault(code, code);
+    public static string GetDisplayName(string countryCode) =>
+        s_displayNames.Value.GetValueOrDefault(countryCode, countryCode);
 
     private static FrozenDictionary<string, string> CreateDisplayNames()
     {

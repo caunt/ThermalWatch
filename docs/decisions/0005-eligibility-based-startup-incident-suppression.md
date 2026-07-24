@@ -53,7 +53,7 @@ When `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` is true, the first ready snapshot fol
 
 - [Core candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs)
 - [Episode history](../../src/ThermalWatch.Core/NotificationEpisodeHistory.cs)
-- [Processing summary](../../src/ThermalWatch.Core/NotificationProcessingSummary.cs)
+- [Automatic processing summary](../../src/ThermalWatch.Core/AutomaticNotificationProcessingSummary.cs)
 - [Telegram notifier](../components/telegram-notifier.md)
 - [Operations](../operations.md)
 

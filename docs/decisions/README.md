@@ -33,5 +33,6 @@ An ADR becomes accepted only when the implementation and cited validation suppor
 | [0003](0003-core-owned-on-demand-nearby-context.md) | Accepted | Keep nearby mapped context on demand in Core and outside raw observations and notification policy. |
 | [0004](0004-snapshot-based-notification-evaluation.md) | Superseded | Reevaluate complete active snapshots without retaining unsent notification candidates. |
 | [0005](0005-eligibility-based-startup-incident-suppression.md) | Accepted | Suppress only eligible startup incidents while leaving initially ineligible incidents retryable. |
+| [0006](0006-domain-explicit-public-naming.md) | Accepted | Use domain-explicit HTTP, configuration, code, and diagnostic naming without compatibility aliases. |
 
 `0000-template.md` is a template and is not an architectural decision.

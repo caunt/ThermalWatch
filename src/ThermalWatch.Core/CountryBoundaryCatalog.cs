@@ -19,11 +19,11 @@ public sealed class CountryBoundaryCatalog
 
     public CountryBoundaryCatalog(FirmsOptions options)
     {
-        var requested = options.Countries.ToHashSet(StringComparer.Ordinal);
-        Dictionary<string, List<Geometry>> geometries = LoadGeometries(requested);
+        var requestedCountryCodes = options.CountryCodes.ToHashSet(StringComparer.Ordinal);
+        Dictionary<string, List<Geometry>> geometries = LoadGeometries(requestedCountryCodes);
         var boundaries = new Dictionary<string, CountryBoundary>(StringComparer.Ordinal);
 
-        foreach (string countryCode in options.Countries)
+        foreach (string countryCode in options.CountryCodes)
         {
             if (!geometries.TryGetValue(countryCode, out List<Geometry>? parts) || parts.Count == 0)
             {
@@ -63,7 +63,7 @@ public sealed class CountryBoundaryCatalog
 
     internal CountryBoundary Get(string countryCode) => _boundaries[countryCode];
 
-    private static Dictionary<string, List<Geometry>> LoadGeometries(HashSet<string> requested)
+    private static Dictionary<string, List<Geometry>> LoadGeometries(HashSet<string> requestedCountryCodes)
     {
         try
         {
@@ -82,7 +82,7 @@ public sealed class CountryBoundaryCatalog
                     .Select(name => properties.TryGetProperty(name, out JsonElement property)
                         ? property.GetString()
                         : null)
-                    .Where(code => code is not null && requested.Contains(code))
+                    .Where(code => code is not null && requestedCountryCodes.Contains(code))
                     .Distinct(StringComparer.Ordinal)];
                 if (countryCodes.Length == 0)
                     continue;

@@ -10,30 +10,30 @@ public static class NotificationPolicy
         NotificationVisibilityOptions options)
     {
         if (!options.Enabled)
-            return NotificationMetadataEvaluation.Accepted;
+            return NotificationMetadataEvaluation.Eligible;
 
-        if (EvaluateDaytime(cluster.Representative, options) is { IsAccepted: false } daytimeResult)
+        if (EvaluateDaytime(cluster.Representative, options) is { IsEligible: false } daytimeResult)
             return daytimeResult;
 
-        if (EvaluateDetectionCount(cluster, options) is { IsAccepted: false } detectionCountResult)
+        if (EvaluateDetectionCount(cluster, options) is { IsEligible: false } detectionCountResult)
             return detectionCountResult;
 
-        if (EvaluateConfidence(cluster.Representative, options) is { IsAccepted: false } confidenceResult)
+        if (EvaluateConfidence(cluster.Representative, options) is { IsEligible: false } confidenceResult)
             return confidenceResult;
 
         if (options.MinimumFrpMegawatts > 0
-            && EvaluateFrp(cluster.Representative, options) is { IsAccepted: false } frpResult)
+            && EvaluateFrp(cluster.Representative, options) is { IsEligible: false } frpResult)
         {
             return frpResult;
         }
 
         if (options.MinimumThermalContrastKelvin > 0
-            && EvaluateThermalContrast(cluster.Representative, options) is { IsAccepted: false } thermalContrastResult)
+            && EvaluateThermalContrast(cluster.Representative, options) is { IsEligible: false } thermalContrastResult)
         {
             return thermalContrastResult;
         }
 
-        return NotificationMetadataEvaluation.Accepted;
+        return NotificationMetadataEvaluation.Eligible;
     }
 
     public static ImmutableArray<NotificationCriterionResult> ExplainMetadata(
@@ -70,13 +70,13 @@ public static class NotificationPolicy
         if (anomaly.Source.Equals(value: "MODIS_NRT", StringComparison.Ordinal))
         {
             if (options.MinimumModisConfidencePercent == 0)
-                return NotificationMetadataEvaluation.Accepted;
+                return NotificationMetadataEvaluation.Eligible;
 
             if (anomaly.ConfidencePercent is not { } modisConfidence)
                 return NotificationMetadataEvaluation.Reject(NotificationRejectionReason.MissingRequiredValue);
 
             return modisConfidence >= options.MinimumModisConfidencePercent
-                ? NotificationMetadataEvaluation.Accepted
+                ? NotificationMetadataEvaluation.Eligible
                 : NotificationMetadataEvaluation.Reject(NotificationRejectionReason.LowConfidence);
         }
 
@@ -86,7 +86,7 @@ public static class NotificationPolicy
         NotificationViirsConfidenceLevel? viirsConfidence = ParseViirsConfidence(category);
         return viirsConfidence is { } value
             && (int)value >= (int)options.MinimumViirsConfidence
-                ? NotificationMetadataEvaluation.Accepted
+                ? NotificationMetadataEvaluation.Eligible
                 : NotificationMetadataEvaluation.Reject(NotificationRejectionReason.LowConfidence);
     }
 
@@ -94,14 +94,14 @@ public static class NotificationPolicy
         Anomaly anomaly,
         NotificationVisibilityOptions options) =>
         !options.RequireDaytime || anomaly.DayNight.Equals(value: "D", StringComparison.Ordinal)
-            ? NotificationMetadataEvaluation.Accepted
+            ? NotificationMetadataEvaluation.Eligible
             : NotificationMetadataEvaluation.Reject(NotificationRejectionReason.Nighttime);
 
     private static NotificationMetadataEvaluation EvaluateDetectionCount(
         NotificationCluster cluster,
         NotificationVisibilityOptions options) =>
         cluster.Members.Length >= options.MinimumClusterDetections
-            ? NotificationMetadataEvaluation.Accepted
+            ? NotificationMetadataEvaluation.Eligible
             : NotificationMetadataEvaluation.Reject(NotificationRejectionReason.InsufficientDetections);
 
     private static NotificationMetadataEvaluation EvaluateFrp(
@@ -129,7 +129,7 @@ public static class NotificationPolicy
             return NotificationMetadataEvaluation.Reject(NotificationRejectionReason.MissingRequiredValue);
 
         return value >= minimum
-            ? NotificationMetadataEvaluation.Accepted
+            ? NotificationMetadataEvaluation.Eligible
             : NotificationMetadataEvaluation.Reject(lowValueReason);
     }
 
@@ -140,7 +140,7 @@ public static class NotificationPolicy
         if (!options.RequireDaytime)
             return NotificationCriterionResult.Disabled(code: "daytime", label: "Daytime pass");
 
-        bool passed = EvaluateDaytime(representative, options).IsAccepted;
+        bool passed = EvaluateDaytime(representative, options).IsEligible;
         string actual = representative.DayNight switch
         {
             "D" => "Daytime",
@@ -154,15 +154,15 @@ public static class NotificationPolicy
             actual,
             requirement: "Daytime",
             explanation: passed
-                ? "The representative detection is from a daytime pass."
-                : "The representative detection is not from a daytime pass.");
+                ? "The representative anomaly is from a daytime pass."
+                : "The representative anomaly is not from a daytime pass.");
     }
 
     private static NotificationCriterionResult ExplainDetectionCount(
         NotificationCluster cluster,
         NotificationVisibilityOptions options)
     {
-        bool passed = EvaluateDetectionCount(cluster, options).IsAccepted;
+        bool passed = EvaluateDetectionCount(cluster, options).IsEligible;
         return Criterion(
             code: "cluster-detections",
             label: "Cluster detections",
@@ -183,7 +183,7 @@ public static class NotificationPolicy
             if (options.MinimumModisConfidencePercent == 0)
                 return NotificationCriterionResult.Disabled(code: "confidence", label: "Representative confidence");
 
-            bool passed = EvaluateConfidence(representative, options).IsAccepted;
+            bool passed = EvaluateConfidence(representative, options).IsEligible;
             return Criterion(
                 code: "confidence",
                 label: "Representative confidence",
@@ -202,7 +202,7 @@ public static class NotificationPolicy
         NotificationViirsConfidenceLevel? actualLevel = representative.ConfidenceCategory is { } category
             ? ParseViirsConfidence(category)
             : null;
-        bool viirsPassed = EvaluateConfidence(representative, options).IsAccepted;
+        bool viirsPassed = EvaluateConfidence(representative, options).IsEligible;
         return Criterion(
             code: "confidence",
             label: "Representative confidence",
@@ -223,7 +223,7 @@ public static class NotificationPolicy
         if (options.MinimumFrpMegawatts == 0)
             return NotificationCriterionResult.Disabled(code: "frp", label: "Representative FRP");
 
-        bool passed = EvaluateFrp(representative, options).IsAccepted;
+        bool passed = EvaluateFrp(representative, options).IsEligible;
         return Criterion(
             code: "frp",
             label: "Representative FRP",
@@ -246,7 +246,7 @@ public static class NotificationPolicy
         if (options.MinimumThermalContrastKelvin == 0)
             return NotificationCriterionResult.Disabled(code: "thermal-contrast", label: "Thermal contrast");
 
-        bool passed = EvaluateThermalContrast(representative, options).IsAccepted;
+        bool passed = EvaluateThermalContrast(representative, options).IsEligible;
         return Criterion(
             code: "thermal-contrast",
             label: "Thermal contrast",

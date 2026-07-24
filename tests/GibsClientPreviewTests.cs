@@ -23,7 +23,7 @@ public sealed class GibsClientPreviewTests
         var handler = new PreviewHandler(_ => PngTestData.CreateSolidRgba(width: 64, height: 64, red: 30, green: 80, blue: 40, alpha: 255));
         using MemoryCache cache = CreateCache();
         GibsClient client = CreateClient(handler, cache);
-        Anomaly anomaly = Detection(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20");
+        Anomaly anomaly = CreateAnomaly(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20");
 
         GibsPreview first = await client.GetPreviewAsync(
             anomaly,
@@ -53,7 +53,7 @@ public sealed class GibsClientPreviewTests
         GibsClient client = CreateClient(handler, cache);
 
         GibsPreview preview = await client.GetPreviewAsync(
-            Detection(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
+            CreateAnomaly(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
             s_dimensions,
             TestContext.Current.CancellationToken);
 
@@ -73,7 +73,7 @@ public sealed class GibsClientPreviewTests
         GibsClient client = CreateClient(handler, cache);
 
         GibsPreview preview = await client.GetPreviewAsync(
-            Detection(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
+            CreateAnomaly(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
             s_dimensions,
             TestContext.Current.CancellationToken);
 
@@ -95,7 +95,7 @@ public sealed class GibsClientPreviewTests
         GibsClient client = CreateClient(handler, cache);
 
         GibsPreview preview = await client.GetPreviewAsync(
-            Detection(source: "MODIS_NRT", satellite: "Terra"),
+            CreateAnomaly(source: "MODIS_NRT", satellite: "Terra"),
             s_dimensions,
             TestContext.Current.CancellationToken);
 
@@ -118,7 +118,7 @@ public sealed class GibsClientPreviewTests
         GibsClient client = CreateClient(handler, cache);
 
         GibsPreview preview = await client.GetPreviewAsync(
-            Detection(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
+            CreateAnomaly(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
             s_dimensions,
             TestContext.Current.CancellationToken);
 
@@ -141,7 +141,7 @@ public sealed class GibsClientPreviewTests
         GibsClient client = CreateClient(handler, cache);
 
         GibsPreview preview = await client.GetPreviewAsync(
-            Detection(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
+            CreateAnomaly(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
             s_dimensions,
             TestContext.Current.CancellationToken);
 
@@ -161,7 +161,7 @@ public sealed class GibsClientPreviewTests
         GibsClient client = CreateClient(handler, cache);
 
         GibsPreview preview = await client.GetPreviewAsync(
-            Detection(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
+            CreateAnomaly(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
             s_dimensions,
             TestContext.Current.CancellationToken);
 
@@ -178,7 +178,7 @@ public sealed class GibsClientPreviewTests
             : PngTestData.CreateSolidRgba(width: 64, height: 64, red: 0, green: 0, blue: 0, alpha: 255));
         using MemoryCache cache = CreateCache();
         GibsClient client = CreateClient(handler, cache);
-        Anomaly anomaly = Detection(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20");
+        Anomaly anomaly = CreateAnomaly(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20");
 
         GibsPreview first = await client.GetPreviewAsync(
             anomaly,
@@ -206,7 +206,7 @@ public sealed class GibsClientPreviewTests
             truncatedComposite);
         using MemoryCache cache = CreateCache();
         GibsClient client = CreateClient(handler, cache);
-        Anomaly anomaly = Detection(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20");
+        Anomaly anomaly = CreateAnomaly(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20");
 
         GibsPreview first = await client.GetPreviewAsync(
             anomaly,
@@ -234,7 +234,7 @@ public sealed class GibsClientPreviewTests
         GibsClient client = CreateClient(handler, cache);
 
         GibsPreview preview = await client.GetPreviewAsync(
-            Detection(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20") with { DayNight = "N" },
+            CreateAnomaly(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20") with { DayNight = "N" },
             s_dimensions,
             TestContext.Current.CancellationToken);
 
@@ -256,7 +256,7 @@ public sealed class GibsClientPreviewTests
         GibsClient client = CreateClient(handler, cache);
 
         GibsPreview preview = await client.GetPreviewAsync(
-            Detection(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
+            CreateAnomaly(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
             s_dimensions,
             TestContext.Current.CancellationToken);
 
@@ -282,7 +282,7 @@ public sealed class GibsClientPreviewTests
         GibsClient client = CreateClient(handler, cache);
 
         GibsPreview preview = await client.GetPreviewAsync(
-            Detection(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
+            CreateAnomaly(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
             s_dimensions,
             TestContext.Current.CancellationToken);
 
@@ -304,9 +304,9 @@ public sealed class GibsClientPreviewTests
         return new(httpClient, cache, NullLogger<GibsClient>.Instance);
     }
 
-    private static Anomaly Detection(string source, string satellite) =>
+    private static Anomaly CreateAnomaly(string source, string satellite) =>
         new(
-            Id: "detection",
+            Id: "anomaly",
             CountryCode: "RUS",
             source,
             satellite,

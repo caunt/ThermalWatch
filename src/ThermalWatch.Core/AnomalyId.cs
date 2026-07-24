@@ -7,7 +7,7 @@ namespace ThermalWatch.Core;
 public static class AnomalyId
 {
     public static string Create(
-        string country,
+        string countryCode,
         string source,
         string satellite,
         DateTimeOffset acquiredAtUtc,
@@ -15,7 +15,7 @@ public static class AnomalyId
         double longitude)
     {
         string canonical = string.Join('|',
-            country,
+            countryCode,
             source,
             satellite,
             acquiredAtUtc.UtcDateTime.ToString(format: "yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture),

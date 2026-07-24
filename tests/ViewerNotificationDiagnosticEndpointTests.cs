@@ -119,7 +119,7 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
         var timeProvider = new FixedTimeProvider(s_now);
         var firmsOptions = new FirmsOptions(
             MapKey: new string('a', count: 32),
-            Countries: ["RUS"],
+            CountryCodes: ["RUS"],
             PollInterval: TimeSpan.FromMinutes(minutes: 5),
             ActiveWindow: TimeSpan.FromHours(hours: 24),
             RequestTimeout: TimeSpan.FromSeconds(seconds: 45),
@@ -159,8 +159,8 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
                     attemptedAtUtc: s_now,
                     completedAtUtc: s_now,
                     [
-                        Detection(id: "first", longitude: 30, frpMegawatts: 100),
-                        Detection(id: "second", longitude: 30.02, frpMegawatts: 200)
+                        CreateAnomaly(id: "first", longitude: 30, frpMegawatts: 100),
+                        CreateAnomaly(id: "second", longitude: 30.02, frpMegawatts: 200)
                     ],
                     IngestionModes.Country)
             ]);
@@ -172,7 +172,7 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
 
     private static NotificationOptions DefaultNotificationOptions() =>
         new(
-            NotifyExistingOnStartup: false,
+            SendExistingOnStartup: false,
             ClusterRadiusKilometers: 5,
             ClusterTimeWindow: TimeSpan.FromMinutes(minutes: 90),
             EpisodeRetention: TimeSpan.FromHours(hours: 48),
@@ -201,7 +201,7 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
                 RequireDaytime: true,
                 RequirePreview: false));
 
-    private static Anomaly Detection(string id, double longitude, double frpMegawatts) =>
+    private static Anomaly CreateAnomaly(string id, double longitude, double frpMegawatts) =>
         new(
             id,
             CountryCode: "RUS",

@@ -244,17 +244,17 @@ public sealed partial class GibsClient(
     }
 
     public async Task<GibsLandCoverResult> GetLandCoverAsync(
-        IReadOnlyList<Anomaly> detections,
+        IReadOnlyList<Anomaly> anomalies,
         double builtUpProximityKilometers,
         CancellationToken cancellationToken)
     {
-        if (detections.Count == 0)
+        if (anomalies.Count == 0)
             return GibsLandCoverResult.Unavailable();
 
         try
         {
             HashSet<LandCoverPixel>? requiredPixels = CollectRequiredPixels(
-                detections,
+                anomalies,
                 builtUpProximityKilometers);
             if (requiredPixels is null)
                 return GibsLandCoverResult.Unavailable();
@@ -300,18 +300,18 @@ public sealed partial class GibsClient(
     }
 
     private static HashSet<LandCoverPixel>? CollectRequiredPixels(
-        IReadOnlyList<Anomaly> detections,
+        IReadOnlyList<Anomaly> anomalies,
         double builtUpProximityKilometers)
     {
-        var requiredPixels = detections
-            .Select(detection => ToLandCoverPixel(detection.Latitude, detection.Longitude))
+        var requiredPixels = anomalies
+            .Select(anomaly => ToLandCoverPixel(anomaly.Latitude, anomaly.Longitude))
             .ToHashSet();
 
-        foreach (Anomaly detection in detections)
+        foreach (Anomaly anomaly in anomalies)
         {
             foreach (LandCoverPixel pixel in PixelsWithinProximity(
-                detection.Latitude,
-                detection.Longitude,
+                anomaly.Latitude,
+                anomaly.Longitude,
                 builtUpProximityKilometers))
             {
                 requiredPixels.Add(pixel);

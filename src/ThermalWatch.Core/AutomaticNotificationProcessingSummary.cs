@@ -2,10 +2,10 @@ using System.Collections.Immutable;
 
 namespace ThermalWatch.Core;
 
-public sealed record NotificationProcessingSummary(
+public sealed record AutomaticNotificationProcessingSummary(
     int ActiveClusterCount,
     int EvaluatedClusterCount,
-    int AcceptedClusterCount,
+    int DeliveredClusterCount,
     int RejectedClusterCount,
     int StartupSuppressedIncidentCount,
     int DuplicateEpisodeCount,

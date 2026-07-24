@@ -7,7 +7,7 @@ public sealed record AnomalySnapshot(
     double ActiveWindowHours,
     bool IsReady,
     bool IsPartiallyStale,
-    ImmutableArray<string> ConfiguredCountries,
-    ImmutableArray<SourceStatus> Sources,
-    int Count,
-    ImmutableArray<Anomaly> Items);
+    ImmutableArray<string> ConfiguredCountryCodes,
+    ImmutableArray<SegmentStatus> Segments,
+    int AnomalyCount,
+    ImmutableArray<Anomaly> Anomalies);

@@ -17,12 +17,12 @@ public sealed class NotificationClusteringTests
     [Fact]
     public void CreateIncludesEveryRelatedActiveDetection()
     {
-        Anomaly earlier = Detection(
+        Anomaly earlier = CreateAnomaly(
             id: "earlier",
             s_observedAt,
             latitude: 50,
             longitude: 30);
-        Anomaly later = Detection(
+        Anomaly later = CreateAnomaly(
             id: "later",
             s_observedAt.AddMinutes(minutes: 5),
             latitude: 50.01,
@@ -41,13 +41,13 @@ public sealed class NotificationClusteringTests
     [Fact]
     public void CreateAllowsEarlierDetectionToRemainRepresentative()
     {
-        Anomaly earlier = Detection(
+        Anomaly earlier = CreateAnomaly(
             id: "earlier",
             s_observedAt,
             latitude: 50,
             longitude: 30,
             frpMegawatts: 200);
-        Anomaly later = Detection(
+        Anomaly later = CreateAnomaly(
             id: "later",
             s_observedAt.AddMinutes(minutes: 5),
             latitude: 50.01,
@@ -65,12 +65,12 @@ public sealed class NotificationClusteringTests
     [Fact]
     public void CreateReturnsUnrelatedActiveDetectionsAsSeparateClusters()
     {
-        Anomaly first = Detection(
+        Anomaly first = CreateAnomaly(
             id: "first",
             s_observedAt,
             latitude: 40,
             longitude: 20);
-        Anomaly second = Detection(
+        Anomaly second = CreateAnomaly(
             id: "second",
             s_observedAt.AddMinutes(minutes: 5),
             latitude: 50,
@@ -88,12 +88,12 @@ public sealed class NotificationClusteringTests
     [Fact]
     public void CreateKeepsNearbyDetectionsOutsideTimeWindowSeparate()
     {
-        Anomaly first = Detection(
+        Anomaly first = CreateAnomaly(
             id: "first",
             s_observedAt,
             latitude: 50,
             longitude: 30);
-        Anomaly second = Detection(
+        Anomaly second = CreateAnomaly(
             id: "second",
             s_observedAt.AddMinutes(minutes: 91),
             latitude: 50.01,
@@ -110,17 +110,17 @@ public sealed class NotificationClusteringTests
     [Fact]
     public void CreateUsesTransitiveLinkage()
     {
-        Anomaly first = Detection(
+        Anomaly first = CreateAnomaly(
             id: "first",
             s_observedAt,
             latitude: 0,
             longitude: 0);
-        Anomaly bridge = Detection(
+        Anomaly bridge = CreateAnomaly(
             id: "bridge",
             s_observedAt.AddMinutes(minutes: 5),
             latitude: 0,
             longitude: 0.04);
-        Anomaly last = Detection(
+        Anomaly last = CreateAnomaly(
             id: "last",
             s_observedAt.AddMinutes(minutes: 10),
             latitude: 0,
@@ -150,7 +150,7 @@ public sealed class NotificationClusteringTests
         Assert.Empty(clusters);
     }
 
-    private static Anomaly Detection(
+    private static Anomaly CreateAnomaly(
         string id,
         DateTimeOffset acquiredAtUtc,
         double latitude,

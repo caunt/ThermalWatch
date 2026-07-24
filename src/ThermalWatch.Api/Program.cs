@@ -160,8 +160,8 @@ try
             return Results.BadRequest(new { error });
         }
 
-        ImmutableArray<Anomaly> items = query!.Apply(snapshot.Items);
-        return Results.Ok(snapshot with { Count = items.Length, Items = items });
+        ImmutableArray<Anomaly> anomalies = query!.Apply(snapshot.Anomalies);
+        return Results.Ok(snapshot with { AnomalyCount = anomalies.Length, Anomalies = anomalies });
     });
 
     app.MapGet(pattern: "/api/telegram/send-top", async (
@@ -177,7 +177,7 @@ try
             });
         }
 
-        ManualTelegramSendResult result = await telegram.SendTopAsync(count, cancellationToken).ConfigureAwait(false);
+        ManualTelegramSendResult result = await telegram.SendTopClustersAsync(count, cancellationToken).ConfigureAwait(false);
         return result.Status switch
         {
             ManualTelegramSendStatus.Completed => Results.Ok(result.Response),

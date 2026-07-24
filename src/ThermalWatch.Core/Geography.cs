@@ -26,16 +26,16 @@ public static class Geography
         return EarthRadiusKilometers * 2 * Math.Atan2(Math.Sqrt(haversine), Math.Sqrt(1 - haversine));
     }
 
-    public static double ClusterDiameterKilometers(IReadOnlyList<Anomaly> detections)
+    public static double ClusterDiameterKilometers(IReadOnlyList<Anomaly> anomalies)
     {
         double diameter = 0d;
-        for (int first = 0; first < detections.Count; first++)
+        for (int first = 0; first < anomalies.Count; first++)
         {
-            for (int second = first + 1; second < detections.Count; second++)
+            for (int second = first + 1; second < anomalies.Count; second++)
             {
                 diameter = Math.Max(
                     diameter,
-                    HaversineKilometers(detections[first], detections[second]));
+                    HaversineKilometers(anomalies[first], anomalies[second]));
             }
         }
 

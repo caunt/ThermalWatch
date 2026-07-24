@@ -19,12 +19,12 @@ public sealed class NotificationCandidateEngine(
         options.EpisodeRetention);
     private bool _firstReadySnapshot = true;
 
-    public async Task<NotificationAutomaticProcessingResult> ProcessAutomaticAsync(
+    public async Task<AutomaticNotificationProcessingResult> ProcessAutomaticNotificationsAsync(
         AnomalySnapshot snapshot,
         Func<PreparedNotificationCandidate, CancellationToken, Task<NotificationDeliveryOutcome>> deliverAsync,
         CancellationToken cancellationToken)
     {
-        var summary = new ProcessingSummaryBuilder();
+        var summary = new AutomaticProcessingSummaryBuilder();
         if (!snapshot.IsReady)
             return new(ContinueProcessing: true, summary.Build());
 
@@ -33,14 +33,14 @@ public sealed class NotificationCandidateEngine(
         _deliveryHistory.Expire(now);
 
         ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
-            snapshot.Items,
+            snapshot.Anomalies,
             options.ClusterRadiusKilometers,
             options.ClusterTimeWindow);
         summary.ActiveClusterCount = clusters.Length;
 
         bool isFirstReadySnapshot = _firstReadySnapshot;
         _firstReadySnapshot = false;
-        if (isFirstReadySnapshot && !options.NotifyExistingOnStartup)
+        if (isFirstReadySnapshot && !options.SendExistingOnStartup)
         {
             await PrimeStartupIncidentsAsync(
                 clusters,
@@ -58,9 +58,9 @@ public sealed class NotificationCandidateEngine(
             cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<NotificationAutomaticProcessingResult> ProcessClustersAsync(
+    private async Task<AutomaticNotificationProcessingResult> ProcessClustersAsync(
         ImmutableArray<NotificationCluster> clusters,
-        ProcessingSummaryBuilder summary,
+        AutomaticProcessingSummaryBuilder summary,
         DateTimeOffset now,
         Func<PreparedNotificationCandidate, CancellationToken, Task<NotificationDeliveryOutcome>> deliverAsync,
         CancellationToken cancellationToken)
@@ -92,7 +92,7 @@ public sealed class NotificationCandidateEngine(
             if (outcome == NotificationDeliveryOutcome.Delivered)
             {
                 _deliveryHistory.RecordIncident(cluster, timeProvider.GetUtcNow());
-                summary.AcceptedClusterCount++;
+                summary.DeliveredClusterCount++;
                 continue;
             }
 
@@ -105,7 +105,7 @@ public sealed class NotificationCandidateEngine(
 
     private async Task PrimeStartupIncidentsAsync(
         ImmutableArray<NotificationCluster> clusters,
-        ProcessingSummaryBuilder summary,
+        AutomaticProcessingSummaryBuilder summary,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -128,7 +128,7 @@ public sealed class NotificationCandidateEngine(
 
     private async Task<PreparedNotificationCandidate?> PrepareAutomaticCandidateAsync(
         NotificationCluster cluster,
-        ProcessingSummaryBuilder summary,
+        AutomaticProcessingSummaryBuilder summary,
         CancellationToken cancellationToken)
     {
         NotificationCandidateReadiness? readiness = await EvaluateCandidateReadinessAsync(
@@ -152,7 +152,7 @@ public sealed class NotificationCandidateEngine(
 
     private async Task<NotificationCandidateReadiness?> EvaluateCandidateReadinessAsync(
         NotificationCluster cluster,
-        ProcessingSummaryBuilder summary,
+        AutomaticProcessingSummaryBuilder summary,
         bool includeOptionalPreview,
         CancellationToken cancellationToken)
     {
@@ -161,7 +161,7 @@ public sealed class NotificationCandidateEngine(
             cluster,
             cancellationToken).ConfigureAwait(false);
         summary.RecordLandCover(evaluation.LandCoverResult);
-        if (!evaluation.IsAccepted)
+        if (!evaluation.IsEligible)
         {
             if (evaluation.RejectionReason is { } rejectionReason)
                 summary.Reject(rejectionReason);
@@ -189,22 +189,22 @@ public sealed class NotificationCandidateEngine(
             evaluation.LandCoverResult?.FormattingSummary);
     }
 
-    public async Task<ManualNotificationCandidates> PrepareManualAsync(
+    public async Task<ManualNotificationCandidateSelection> PrepareManualCandidatesAsync(
         AnomalySnapshot snapshot,
-        int requestedCount,
+        int requestedClusterCount,
         CancellationToken cancellationToken)
     {
         ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
-            snapshot.Items,
+            snapshot.Anomalies,
             options.ClusterRadiusKilometers,
             options.ClusterTimeWindow);
-        var eligible = new List<PreparedNotificationCandidate>();
+        var eligibleCandidates = new List<PreparedNotificationCandidate>();
         foreach (NotificationCluster cluster in clusters)
         {
             NotificationClusterEvaluation evaluation = await EvaluateClusterAsync(
                 cluster,
                 cancellationToken).ConfigureAwait(false);
-            if (!evaluation.IsAccepted)
+            if (!evaluation.IsEligible)
                 continue;
 
             NotificationPreviewSelection previewSelection = SelectPreview(cluster);
@@ -215,7 +215,7 @@ public sealed class NotificationCandidateEngine(
             if (!preview.IsAvailable && IsPreviewRequired)
                 continue;
 
-            eligible.Add(new(
+            eligibleCandidates.Add(new(
                 cluster,
                 preview,
                 previewSelection,
@@ -226,15 +226,15 @@ public sealed class NotificationCandidateEngine(
         PreparedNotificationCandidate[] selectedWithoutNearby =
         [
             .. OrderByNotificationPriority(
-                    candidates: eligible,
+                    candidates: eligibleCandidates,
                     frpSelector: static candidate => candidate.Cluster.Representative.FrpMegawatts,
                     detectionCountSelector: static candidate => candidate.Cluster.Members.Length,
                     diameterSelector: static candidate => candidate.PreviewSelection.ClusterDiameterKilometers,
                     acquisitionSelector: static candidate => candidate.Cluster.Representative.AcquiredAtUtc,
                     clusterIdSelector: static candidate => candidate.Cluster.Id)
-                .Take(requestedCount)
+                .Take(requestedClusterCount)
         ];
-        ImmutableArray<PreparedNotificationCandidate>.Builder selected =
+        ImmutableArray<PreparedNotificationCandidate>.Builder selectedCandidates =
             ImmutableArray.CreateBuilder<PreparedNotificationCandidate>(
             selectedWithoutNearby.Length);
         foreach (PreparedNotificationCandidate candidate in selectedWithoutNearby)
@@ -242,18 +242,18 @@ public sealed class NotificationCandidateEngine(
             ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
                 candidate.Cluster.Representative,
                 cancellationToken).ConfigureAwait(false);
-            selected.Add(candidate with { NearbyFeatures = nearbyFeatures });
+            selectedCandidates.Add(candidate with { NearbyFeatures = nearbyFeatures });
         }
 
-        return new(eligible.Count, selected.MoveToImmutable());
+        return new(eligibleCandidates.Count, selectedCandidates.MoveToImmutable());
     }
 
-    public async Task<EligibleNotificationClusters> GetEligibleClustersAsync(
+    public async Task<EligibleNotificationClusters> GetEligibleNotificationClustersAsync(
         AnomalySnapshot snapshot,
         CancellationToken cancellationToken)
     {
         ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
-            snapshot.Items,
+            snapshot.Anomalies,
             options.ClusterRadiusKilometers,
             options.ClusterTimeWindow);
         ImmutableArray<EligibleNotificationCluster>.Builder eligible =
@@ -264,7 +264,7 @@ public sealed class NotificationCandidateEngine(
             NotificationClusterEvaluation evaluation = await EvaluateClusterAsync(
                 cluster,
                 cancellationToken).ConfigureAwait(false);
-            if (!evaluation.IsAccepted)
+            if (!evaluation.IsEligible)
                 continue;
 
             NotificationPreviewSelection previewSelection = SelectPreview(cluster);
@@ -310,7 +310,7 @@ public sealed class NotificationCandidateEngine(
             ordered);
     }
 
-    public async Task<NotificationDiagnostic?> DiagnoseAsync(
+    public async Task<NotificationDiagnostic?> GetNotificationDiagnosticAsync(
         AnomalySnapshot snapshot,
         string anomalyId,
         CancellationToken cancellationToken)
@@ -379,13 +379,13 @@ public sealed class NotificationCandidateEngine(
         AnomalySnapshot snapshot,
         string anomalyId)
     {
-        Anomaly? selectedAnomaly = snapshot.Items.FirstOrDefault(candidate =>
+        Anomaly? selectedAnomaly = snapshot.Anomalies.FirstOrDefault(candidate =>
             candidate.Id.Equals(anomalyId, StringComparison.Ordinal));
         if (selectedAnomaly is null)
             return null;
 
         NotificationCluster? cluster = NotificationClustering.Create(
-                snapshot.Items,
+                snapshot.Anomalies,
                 options.ClusterRadiusKilometers,
                 options.ClusterTimeWindow)
             .FirstOrDefault(candidate => candidate.Members.Any(member =>
@@ -418,11 +418,11 @@ public sealed class NotificationCandidateEngine(
         NotificationMetadataEvaluation visibility = NotificationPolicy.EvaluateMetadata(
             cluster,
             options.Visibility);
-        if (!visibility.IsAccepted)
-            return new(IsAccepted: false, visibility.RejectionReason, LandCoverResult: null);
+        if (!visibility.IsEligible)
+            return new(IsEligible: false, visibility.RejectionReason, LandCoverResult: null);
 
         if (!options.LandCover.Enabled)
-            return NotificationClusterEvaluation.Accepted;
+            return NotificationClusterEvaluation.Eligible;
 
         NotificationLandCoverResult landCover = await NotificationLandCoverPolicy.EvaluateAsync(
             cluster,
@@ -522,12 +522,12 @@ public sealed class NotificationCandidateEngine(
     }
 
     private readonly record struct NotificationClusterEvaluation(
-        bool IsAccepted,
+        bool IsEligible,
         NotificationRejectionReason? RejectionReason,
         NotificationLandCoverResult? LandCoverResult)
     {
-        public static NotificationClusterEvaluation Accepted { get; } = new(
-            IsAccepted: true,
+        public static NotificationClusterEvaluation Eligible { get; } = new(
+            IsEligible: true,
             RejectionReason: null,
             LandCoverResult: null);
     }
@@ -537,7 +537,7 @@ public sealed class NotificationCandidateEngine(
         NotificationPreviewSelection PreviewSelection,
         string? LandCoverSummary);
 
-    private sealed class ProcessingSummaryBuilder
+    private sealed class AutomaticProcessingSummaryBuilder
     {
         private readonly Dictionary<NotificationRejectionReason, int> _rejectionCounts = [];
 
@@ -545,7 +545,7 @@ public sealed class NotificationCandidateEngine(
 
         public int EvaluatedClusterCount { get; set; }
 
-        public int AcceptedClusterCount { get; set; }
+        public int DeliveredClusterCount { get; set; }
 
         public int RejectedClusterCount { get; set; }
 
@@ -583,11 +583,11 @@ public sealed class NotificationCandidateEngine(
                 VegetationSuppressedCount++;
         }
 
-        public NotificationProcessingSummary Build() =>
+        public AutomaticNotificationProcessingSummary Build() =>
             new(
                 ActiveClusterCount,
                 EvaluatedClusterCount,
-                AcceptedClusterCount,
+                DeliveredClusterCount,
                 RejectedClusterCount,
                 StartupSuppressedIncidentCount,
                 DuplicateEpisodeCount,

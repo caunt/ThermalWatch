@@ -13,7 +13,7 @@ The HTTP API is the raw-observation boundary:
 
 - It returns every valid FIRMS observation in the active snapshot, across MODIS and all three VIIRS feeds.
 - It may apply only caller-requested query filters from [AnomalyQuery.cs](../../src/ThermalWatch.Api/AnomalyQuery.cs).
-- Notification visibility, land-cover, preview, nearby mapped context, deduplication, and clustering state never remove or annotate API items.
+- Notification visibility, land-cover, preview, nearby mapped context, deduplication, and clustering state never remove or annotate API anomalies.
 
 An anomaly ID is a deterministic truncated SHA-256 hash of country, source, satellite, UTC acquisition second, latitude, and longitude. Thermal contrast is primary brightness minus secondary/background brightness only when both values exist. [AnomalyId.cs](../../src/ThermalWatch.Core/AnomalyId.cs) and [Anomaly.cs](../../src/ThermalWatch.Core/Anomaly.cs) define these contracts.
 
@@ -36,14 +36,14 @@ After an automatic message sends successfully, its members establish a delivered
 On each ready snapshot:
 
 1. Expire startup-incident and delivered-episode histories, then build connected clusters from every observation in the current active snapshot.
-2. On the first ready snapshot with `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` disabled, apply the complete metadata, land-cover, and required-preview policy to every cluster. Record each eligible cluster as a startup incident without sending it. Leave every ineligible cluster unrecorded so later snapshots can reevaluate it.
+2. On the first ready snapshot with `NOTIFICATION_SEND_EXISTING_ON_STARTUP` disabled, apply the complete metadata, land-cover, and required-preview policy to every cluster. Record each eligible cluster as a startup incident without sending it. Leave every ineligible cluster unrecorded so later snapshots can reevaluate it.
 3. On later snapshots, suppress and extend clusters continuing a recorded startup incident without rerunning filters or imagery work.
 4. If a cluster continues an already delivered episode, suppress it and extend that episode without rerunning filters or imagery work.
 5. For every remaining cluster, apply representative metadata visibility rules, then evaluate NASA land cover for every cluster member when enabled.
 6. Attempt the current exact-date preview once. A missing required preview rejects the cluster for this snapshot; when previews are optional, continue with a text candidate immediately.
 7. Look up nearby mapped context around the representative and send. Only successful automatic delivery establishes a delivered episode; rejection, nearby-context failure, and send failure do not.
 
-Every later snapshot repeats eligibility evaluation from its complete current data for incidents that have not been startup-suppressed or delivered. A cluster rejected at startup or later because imagery is unavailable can therefore qualify after a later publication without retaining an unsent candidate. A transient send failure likewise records no delivered episode and remains retryable. Startup incidents and delivered episodes use the same configured radius, time window, legacy-named seen retention, transitive extension, and 100,000-detection per-history cap.
+Every later snapshot repeats eligibility evaluation from its complete current data for incidents that have not been startup-suppressed or delivered. A cluster rejected at startup or later because imagery is unavailable can therefore qualify after a later publication without retaining an unsent candidate. A transient send failure likewise records no delivered episode and remains retryable. Startup incidents and delivered episodes use the same configured radius, time window, episode retention, transitive extension, and 100,000-anomaly per-history cap.
 
 ## Visibility policy
 

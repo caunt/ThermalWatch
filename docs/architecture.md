@@ -47,7 +47,7 @@ The route definitions and status mappings in [Program.cs](../src/ThermalWatch.Ap
 - `GET /api/viewer/imagery/gibs/{z}/{x}/{y}.png` validates Web Mercator coordinates and returns a composed PNG plus coverage and cache headers.
 - `GET /api/viewer/eligible-notification-clusters` captures the current snapshot and returns notification-priority-ordered representative summaries for clusters passing every enabled content criterion. Enabled land-cover and required exact-preview checks can cause bounded, cached GIBS requests; the query neither looks up nearby features nor applies delivery lifecycle suppression.
 - `GET /api/viewer/notification-diagnostics/{anomalyId}` returns the selected anomaly's active-snapshot cluster, current criterion outcomes, and up to five nearby named OSM features, or `404` when the anomaly is no longer present. Enabled land-cover and exact-preview criteria can cause bounded, cached GIBS requests; every valid selection can cause a bounded, cached Overpass request.
-- `GET /api/anomalies` returns the current snapshot with optional local filters. Partial upstream failures remain successful responses with source-level stale diagnostics.
+- `GET /api/anomalies` returns the current snapshot with optional local filters. Its contract names the anomaly collection/count and country/source segment statuses explicitly; partial upstream failures remain successful responses with segment-level stale diagnostics.
 - `GET /api/telegram/send-top` is an unauthenticated, side-effecting manual Telegram operation. See [operations](operations.md) before exposing it beyond a trusted network boundary.
 
 All API routes use camel-case JSON. The host currently permits cross-origin `GET` requests and binds plain HTTP on port `8080`.
@@ -55,10 +55,10 @@ All API routes use camel-case JSON. The host currently permits cross-origin `GET
 ## State and invariants
 
 - Anomaly segments, current snapshot, GIBS preview/land-cover/viewer-tile cache entries, Overpass lookup cache entries, startup-incident history, and delivered-episode history exist only in process memory. Unsent notification candidates are not retained. Restart is the only persistence boundary.
-- The anomaly API exposes every valid active FIRMS observation. Notification filters do not delete or annotate API items.
+- The anomaly API exposes every valid active FIRMS observation. Notification filters do not delete or annotate API anomalies.
 - MODIS and the three VIIRS feeds remain distinct observations because their sensors and acquisition characteristics differ.
 - Anomaly and cluster IDs are deterministic hashes of stable observation inputs; see [AnomalyId.cs](../src/ThermalWatch.Core/AnomalyId.cs).
-- Snapshot items are bounded from `now - active window` through `now`, deduplicated by anomaly ID, and sorted deterministically.
+- Snapshot anomalies are bounded from `now - active window` through `now`, deduplicated by anomaly ID, and sorted deterministically.
 - `IsReady` means at least one configured segment has succeeded. Once ready, any stale segment makes the snapshot partially stale.
 
 ## External and failure boundaries

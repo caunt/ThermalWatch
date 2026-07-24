@@ -20,18 +20,18 @@ public sealed class NotificationCandidateEngineTests
         TimeSpan.Zero);
 
     [Fact]
-    public async Task DiagnoseAsyncBuildsTransitiveClusterAndDoesNotConsumeAutomaticCandidates()
+    public async Task GetNotificationDiagnosticAsyncBuildsTransitiveClusterAndDoesNotConsumeAutomaticCandidates()
     {
         var handler = new NotFoundHandler();
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         NotificationCandidateEngine engine = CreateEngine(handler, cache);
         AnomalySnapshot snapshot = Snapshot(
-            Detection(id: "first", longitude: 30, frpMegawatts: 100),
-            Detection(id: "bridge", longitude: 30.03, frpMegawatts: 200),
-            Detection(id: "last", longitude: 30.06, frpMegawatts: 150));
+            CreateAnomaly(id: "first", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "bridge", longitude: 30.03, frpMegawatts: 200),
+            CreateAnomaly(id: "last", longitude: 30.06, frpMegawatts: 150));
 
         NotificationDiagnostic diagnostic = Assert.IsType<NotificationDiagnostic>(
-            await engine.DiagnoseAsync(
+            await engine.GetNotificationDiagnosticAsync(
                 snapshot,
                 anomalyId: "first",
                 TestContext.Current.CancellationToken));
@@ -44,7 +44,7 @@ public sealed class NotificationCandidateEngineTests
         Assert.Equal(0, handler.RequestCount);
 
         PreparedNotificationCandidate? delivered = null;
-        NotificationAutomaticProcessingResult processing = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult processing = await engine.ProcessAutomaticNotificationsAsync(
             snapshot,
             (candidate, _) =>
             {
@@ -56,18 +56,18 @@ public sealed class NotificationCandidateEngineTests
         Assert.True(processing.ContinueProcessing);
         Assert.NotNull(delivered);
         Assert.Equal(3, delivered.Cluster.Members.Length);
-        Assert.Equal(1, processing.Summary.AcceptedClusterCount);
+        Assert.Equal(1, processing.Summary.DeliveredClusterCount);
     }
 
     [Fact]
-    public async Task DiagnoseAsyncReturnsNullForAnomalyOutsideTheSnapshot()
+    public async Task GetNotificationDiagnosticAsyncReturnsNullForAnomalyOutsideTheSnapshot()
     {
         var handler = new NotFoundHandler();
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         NotificationCandidateEngine engine = CreateEngine(handler, cache);
 
-        NotificationDiagnostic? diagnostic = await engine.DiagnoseAsync(
-            Snapshot(Detection(id: "present", longitude: 30, frpMegawatts: 100)),
+        NotificationDiagnostic? diagnostic = await engine.GetNotificationDiagnosticAsync(
+            Snapshot(CreateAnomaly(id: "present", longitude: 30, frpMegawatts: 100)),
             anomalyId: "missing",
             TestContext.Current.CancellationToken);
 
@@ -76,18 +76,18 @@ public sealed class NotificationCandidateEngineTests
     }
 
     [Fact]
-    public async Task DiagnoseAsyncLooksUpNearbyFeaturesForSelectedAnomalyInsteadOfRepresentative()
+    public async Task GetNotificationDiagnosticAsyncLooksUpNearbyFeaturesForSelectedAnomalyInsteadOfRepresentative()
     {
         var gibsHandler = new NotFoundHandler();
         var nearbyHandler = new NearbyHandler();
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         NotificationCandidateEngine engine = CreateEngine(gibsHandler, cache, nearbyHandler);
         AnomalySnapshot snapshot = Snapshot(
-            Detection(id: "selected", longitude: 30, frpMegawatts: 100),
-            Detection(id: "representative", longitude: 30.02, frpMegawatts: 200));
+            CreateAnomaly(id: "selected", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "representative", longitude: 30.02, frpMegawatts: 200));
 
         NotificationDiagnostic diagnostic = Assert.IsType<NotificationDiagnostic>(
-            await engine.DiagnoseAsync(
+            await engine.GetNotificationDiagnosticAsync(
                 snapshot,
                 anomalyId: "selected",
                 TestContext.Current.CancellationToken));
@@ -108,10 +108,10 @@ public sealed class NotificationCandidateEngineTests
             automaticCache,
             automaticNearby);
         AnomalySnapshot automaticSnapshot = Snapshot(
-            Detection(id: "lower", longitude: 30, frpMegawatts: 100),
-            Detection(id: "higher", longitude: 30.02, frpMegawatts: 200));
+            CreateAnomaly(id: "lower", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "higher", longitude: 30.02, frpMegawatts: 200));
 
-        await automaticEngine.ProcessAutomaticAsync(
+        await automaticEngine.ProcessAutomaticNotificationsAsync(
             automaticSnapshot,
             (_, _) => Task.FromResult(NotificationDeliveryOutcome.Delivered),
             TestContext.Current.CancellationToken);
@@ -124,19 +124,19 @@ public sealed class NotificationCandidateEngineTests
         using var manualCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         NotificationCandidateEngine manualEngine = CreateEngine(manualGibs, manualCache, manualNearby);
         AnomalySnapshot manualSnapshot = Snapshot(
-            Detection(id: "low", longitude: 30, frpMegawatts: 100),
-            Detection(id: "low-context", longitude: 30.01, frpMegawatts: 90),
-            Detection(id: "highest", longitude: 31, frpMegawatts: 300),
-            Detection(id: "highest-context", longitude: 31.01, frpMegawatts: 290),
-            Detection(id: "middle", longitude: 32, frpMegawatts: 200),
-            Detection(id: "middle-context", longitude: 32.01, frpMegawatts: 190));
+            CreateAnomaly(id: "low", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "low-context", longitude: 30.01, frpMegawatts: 90),
+            CreateAnomaly(id: "highest", longitude: 31, frpMegawatts: 300),
+            CreateAnomaly(id: "highest-context", longitude: 31.01, frpMegawatts: 290),
+            CreateAnomaly(id: "middle", longitude: 32, frpMegawatts: 200),
+            CreateAnomaly(id: "middle-context", longitude: 32.01, frpMegawatts: 190));
 
-        ManualNotificationCandidates manual = await manualEngine.PrepareManualAsync(
+        ManualNotificationCandidateSelection manual = await manualEngine.PrepareManualCandidatesAsync(
             manualSnapshot,
-            requestedCount: 1,
+            requestedClusterCount: 1,
             TestContext.Current.CancellationToken);
 
-        Assert.Single(manual.Selected);
+        Assert.Single(manual.SelectedCandidates);
         string manualQuery = Assert.Single(manualNearby.Queries);
         Assert.Contains("around:2000,50.000000,31.000000", manualQuery, StringComparison.Ordinal);
     }
@@ -147,22 +147,22 @@ public sealed class NotificationCandidateEngineTests
         var gibsHandler = new NotFoundHandler();
         var nearbyHandler = new NearbyHandler();
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
-        NotificationOptions options = DefaultOptions() with { NotifyExistingOnStartup = false };
+        NotificationOptions options = DefaultOptions() with { SendExistingOnStartup = false };
         NotificationCandidateEngine engine = CreateEngine(
             gibsHandler,
             cache,
             nearbyHandler,
             options);
         AnomalySnapshot snapshot = Snapshot(
-            Detection(id: "low", longitude: 30, frpMegawatts: 100),
-            Detection(id: "low-context", longitude: 30.01, frpMegawatts: 90),
-            Detection(id: "highest", longitude: 31, frpMegawatts: 300),
-            Detection(id: "highest-context", longitude: 31.01, frpMegawatts: 290),
-            Detection(id: "middle", longitude: 32, frpMegawatts: 200),
-            Detection(id: "middle-context", longitude: 32.01, frpMegawatts: 190),
-            Detection(id: "filtered-singleton", longitude: 33, frpMegawatts: 500));
+            CreateAnomaly(id: "low", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "low-context", longitude: 30.01, frpMegawatts: 90),
+            CreateAnomaly(id: "highest", longitude: 31, frpMegawatts: 300),
+            CreateAnomaly(id: "highest-context", longitude: 31.01, frpMegawatts: 290),
+            CreateAnomaly(id: "middle", longitude: 32, frpMegawatts: 200),
+            CreateAnomaly(id: "middle-context", longitude: 32.01, frpMegawatts: 190),
+            CreateAnomaly(id: "filtered-singleton", longitude: 33, frpMegawatts: 500));
 
-        EligibleNotificationClusters result = await engine.GetEligibleClustersAsync(
+        EligibleNotificationClusters result = await engine.GetEligibleNotificationClustersAsync(
             snapshot,
             TestContext.Current.CancellationToken);
 
@@ -182,7 +182,7 @@ public sealed class NotificationCandidateEngineTests
         Assert.Empty(nearbyHandler.Queries);
 
         int deliveryCount = 0;
-        NotificationAutomaticProcessingResult processing = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult processing = await engine.ProcessAutomaticNotificationsAsync(
             snapshot,
             (_, _) =>
             {
@@ -209,14 +209,14 @@ public sealed class NotificationCandidateEngineTests
         };
         NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
         AnomalySnapshot snapshot = Snapshot(
-            Detection(id: "first", longitude: 30, frpMegawatts: 100),
-            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+            CreateAnomaly(id: "first", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "second", longitude: 30.02, frpMegawatts: 200));
 
-        EligibleNotificationClusters unavailable = await engine.GetEligibleClustersAsync(
+        EligibleNotificationClusters unavailable = await engine.GetEligibleNotificationClustersAsync(
             snapshot,
             TestContext.Current.CancellationToken);
         handler.IsPreviewAvailable = true;
-        EligibleNotificationClusters available = await engine.GetEligibleClustersAsync(
+        EligibleNotificationClusters available = await engine.GetEligibleNotificationClustersAsync(
             snapshot,
             TestContext.Current.CancellationToken);
 
@@ -235,10 +235,10 @@ public sealed class NotificationCandidateEngineTests
         };
         NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
         AnomalySnapshot snapshot = Snapshot(
-            Detection(id: "first", longitude: 30, frpMegawatts: 100),
-            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+            CreateAnomaly(id: "first", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "second", longitude: 30.02, frpMegawatts: 200));
 
-        EligibleNotificationClusters result = await engine.GetEligibleClustersAsync(
+        EligibleNotificationClusters result = await engine.GetEligibleNotificationClustersAsync(
             snapshot,
             TestContext.Current.CancellationToken);
 
@@ -257,11 +257,11 @@ public sealed class NotificationCandidateEngineTests
         };
         NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
         AnomalySnapshot snapshot = Snapshot(
-            Detection(id: "first", longitude: 30, frpMegawatts: 100),
-            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+            CreateAnomaly(id: "first", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "second", longitude: 30.02, frpMegawatts: 200));
         int deliveryCount = 0;
 
-        NotificationAutomaticProcessingResult unavailable = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult unavailable = await engine.ProcessAutomaticNotificationsAsync(
             snapshot,
             (_, _) =>
             {
@@ -270,7 +270,7 @@ public sealed class NotificationCandidateEngineTests
             },
             TestContext.Current.CancellationToken);
         handler.IsPreviewAvailable = true;
-        NotificationAutomaticProcessingResult available = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult available = await engine.ProcessAutomaticNotificationsAsync(
             snapshot,
             (_, _) =>
             {
@@ -278,7 +278,7 @@ public sealed class NotificationCandidateEngineTests
                 return Task.FromResult(NotificationDeliveryOutcome.Delivered);
             },
             TestContext.Current.CancellationToken);
-        NotificationAutomaticProcessingResult delivered = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult delivered = await engine.ProcessAutomaticNotificationsAsync(
             snapshot,
             (_, _) =>
             {
@@ -287,9 +287,9 @@ public sealed class NotificationCandidateEngineTests
             },
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(0, unavailable.Summary.AcceptedClusterCount);
+        Assert.Equal(0, unavailable.Summary.DeliveredClusterCount);
         Assert.Equal(1, unavailable.Summary.RejectionCount(NotificationRejectionReason.PreviewUnavailable));
-        Assert.Equal(1, available.Summary.AcceptedClusterCount);
+        Assert.Equal(1, available.Summary.DeliveredClusterCount);
         Assert.Equal(1, delivered.Summary.DuplicateEpisodeCount);
         Assert.Equal(1, deliveryCount);
     }
@@ -301,16 +301,16 @@ public sealed class NotificationCandidateEngineTests
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         NotificationOptions options = DefaultOptions() with
         {
-            NotifyExistingOnStartup = false,
+            SendExistingOnStartup = false,
             Visibility = DefaultOptions().Visibility with { RequirePreview = true }
         };
         NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
         AnomalySnapshot snapshot = Snapshot(
-            Detection(id: "first", longitude: 30, frpMegawatts: 100),
-            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+            CreateAnomaly(id: "first", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "second", longitude: 30.02, frpMegawatts: 200));
         int deliveryCount = 0;
 
-        NotificationAutomaticProcessingResult unavailable = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult unavailable = await engine.ProcessAutomaticNotificationsAsync(
             snapshot,
             (_, _) =>
             {
@@ -319,7 +319,7 @@ public sealed class NotificationCandidateEngineTests
             },
             TestContext.Current.CancellationToken);
         handler.IsPreviewAvailable = true;
-        NotificationAutomaticProcessingResult available = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult available = await engine.ProcessAutomaticNotificationsAsync(
             snapshot,
             (_, _) =>
             {
@@ -327,7 +327,7 @@ public sealed class NotificationCandidateEngineTests
                 return Task.FromResult(NotificationDeliveryOutcome.Delivered);
             },
             TestContext.Current.CancellationToken);
-        NotificationAutomaticProcessingResult delivered = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult delivered = await engine.ProcessAutomaticNotificationsAsync(
             snapshot,
             (_, _) =>
             {
@@ -338,7 +338,7 @@ public sealed class NotificationCandidateEngineTests
 
         Assert.Equal(0, unavailable.Summary.StartupSuppressedIncidentCount);
         Assert.Equal(1, unavailable.Summary.RejectionCount(NotificationRejectionReason.PreviewUnavailable));
-        Assert.Equal(1, available.Summary.AcceptedClusterCount);
+        Assert.Equal(1, available.Summary.DeliveredClusterCount);
         Assert.Equal(1, delivered.Summary.DuplicateEpisodeCount);
         Assert.Equal(1, deliveryCount);
     }
@@ -350,11 +350,11 @@ public sealed class NotificationCandidateEngineTests
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         NotificationCandidateEngine engine = CreateEngine(handler, cache);
         AnomalySnapshot snapshot = Snapshot(
-            Detection(id: "first", longitude: 30, frpMegawatts: 100),
-            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+            CreateAnomaly(id: "first", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "second", longitude: 30.02, frpMegawatts: 200));
         PreparedNotificationCandidate? delivered = null;
 
-        NotificationAutomaticProcessingResult result = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult result = await engine.ProcessAutomaticNotificationsAsync(
             snapshot,
             (candidate, _) =>
             {
@@ -364,7 +364,7 @@ public sealed class NotificationCandidateEngineTests
             TestContext.Current.CancellationToken);
 
         Assert.False(Assert.IsType<PreparedNotificationCandidate>(delivered).Preview.IsAvailable);
-        Assert.Equal(1, result.Summary.AcceptedClusterCount);
+        Assert.Equal(1, result.Summary.DeliveredClusterCount);
         Assert.Equal(0, result.Summary.RejectedClusterCount);
     }
 
@@ -375,11 +375,11 @@ public sealed class NotificationCandidateEngineTests
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         NotificationCandidateEngine engine = CreateEngine(handler, cache);
         AnomalySnapshot snapshot = Snapshot(
-            Detection(id: "first", longitude: 30, frpMegawatts: 100),
-            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+            CreateAnomaly(id: "first", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "second", longitude: 30.02, frpMegawatts: 200));
         int deliveryCount = 0;
 
-        NotificationAutomaticProcessingResult failed = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult failed = await engine.ProcessAutomaticNotificationsAsync(
             snapshot,
             (_, _) =>
             {
@@ -387,7 +387,7 @@ public sealed class NotificationCandidateEngineTests
                 return Task.FromResult(NotificationDeliveryOutcome.RetryLater);
             },
             TestContext.Current.CancellationToken);
-        NotificationAutomaticProcessingResult retried = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult retried = await engine.ProcessAutomaticNotificationsAsync(
             snapshot,
             (_, _) =>
             {
@@ -395,7 +395,7 @@ public sealed class NotificationCandidateEngineTests
                 return Task.FromResult(NotificationDeliveryOutcome.Delivered);
             },
             TestContext.Current.CancellationToken);
-        NotificationAutomaticProcessingResult delivered = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult delivered = await engine.ProcessAutomaticNotificationsAsync(
             snapshot,
             (_, _) =>
             {
@@ -406,7 +406,7 @@ public sealed class NotificationCandidateEngineTests
 
         Assert.True(failed.ContinueProcessing);
         Assert.Equal(1, failed.Summary.SendFailureCount);
-        Assert.Equal(1, retried.Summary.AcceptedClusterCount);
+        Assert.Equal(1, retried.Summary.DeliveredClusterCount);
         Assert.Equal(1, delivered.Summary.DuplicateEpisodeCount);
         Assert.Equal(2, deliveryCount);
     }
@@ -417,18 +417,18 @@ public sealed class NotificationCandidateEngineTests
         var handler = new NotFoundHandler();
         var nearbyHandler = new NearbyHandler();
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
-        NotificationOptions options = DefaultOptions() with { NotifyExistingOnStartup = false };
+        NotificationOptions options = DefaultOptions() with { SendExistingOnStartup = false };
         NotificationCandidateEngine engine = CreateEngine(
             handler,
             cache,
             nearbyHandler,
             options);
-        Anomaly first = Detection(id: "first", longitude: 30, frpMegawatts: 100);
-        Anomaly second = Detection(id: "second", longitude: 30.02, frpMegawatts: 200);
+        Anomaly first = CreateAnomaly(id: "first", longitude: 30, frpMegawatts: 100);
+        Anomaly second = CreateAnomaly(id: "second", longitude: 30.02, frpMegawatts: 200);
         AnomalySnapshot startupSnapshot = Snapshot(first, second);
         int deliveryCount = 0;
 
-        NotificationAutomaticProcessingResult startup = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult startup = await engine.ProcessAutomaticNotificationsAsync(
             startupSnapshot,
             (_, _) =>
             {
@@ -436,7 +436,7 @@ public sealed class NotificationCandidateEngineTests
                 return Task.FromResult(NotificationDeliveryOutcome.Delivered);
             },
             TestContext.Current.CancellationToken);
-        NotificationAutomaticProcessingResult unchanged = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult unchanged = await engine.ProcessAutomaticNotificationsAsync(
             startupSnapshot,
             (_, _) =>
             {
@@ -444,11 +444,11 @@ public sealed class NotificationCandidateEngineTests
                 return Task.FromResult(NotificationDeliveryOutcome.Delivered);
             },
             TestContext.Current.CancellationToken);
-        NotificationAutomaticProcessingResult extended = await engine.ProcessAutomaticAsync(
+        AutomaticNotificationProcessingResult extended = await engine.ProcessAutomaticNotificationsAsync(
             Snapshot(
                 first,
                 second,
-                Detection(id: "later", longitude: 30.01, frpMegawatts: 150)),
+                CreateAnomaly(id: "later", longitude: 30.01, frpMegawatts: 150)),
             (_, _) =>
             {
                 deliveryCount++;
@@ -460,14 +460,14 @@ public sealed class NotificationCandidateEngineTests
         Assert.Equal(1, startup.Summary.StartupSuppressedIncidentCount);
         Assert.Equal(1, unchanged.Summary.StartupSuppressedIncidentCount);
         Assert.Equal(1, extended.Summary.StartupSuppressedIncidentCount);
-        Assert.Equal(0, extended.Summary.AcceptedClusterCount);
+        Assert.Equal(0, extended.Summary.DeliveredClusterCount);
         Assert.Equal(0, deliveryCount);
         Assert.Equal(0, handler.RequestCount);
         Assert.Empty(nearbyHandler.Queries);
     }
 
     [Fact]
-    public async Task DiagnoseExplainsLaterSnapshotReevaluationForUnavailableRequiredPreview()
+    public async Task GetNotificationDiagnosticAsyncExplainsLaterSnapshotReevaluationForUnavailableRequiredPreview()
     {
         var handler = new NotFoundHandler();
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
@@ -477,11 +477,11 @@ public sealed class NotificationCandidateEngineTests
         };
         NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
         AnomalySnapshot snapshot = Snapshot(
-            Detection(id: "first", longitude: 30, frpMegawatts: 100),
-            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+            CreateAnomaly(id: "first", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "second", longitude: 30.02, frpMegawatts: 200));
 
         NotificationDiagnostic diagnostic = Assert.IsType<NotificationDiagnostic>(
-            await engine.DiagnoseAsync(
+            await engine.GetNotificationDiagnosticAsync(
                 snapshot,
                 anomalyId: "first",
                 TestContext.Current.CancellationToken));
@@ -523,7 +523,7 @@ public sealed class NotificationCandidateEngineTests
 
     private static NotificationOptions DefaultOptions() =>
         new(
-            NotifyExistingOnStartup: true,
+            SendExistingOnStartup: true,
             ClusterRadiusKilometers: 5,
             ClusterTimeWindow: TimeSpan.FromMinutes(minutes: 90),
             EpisodeRetention: TimeSpan.FromHours(hours: 48),
@@ -552,18 +552,18 @@ public sealed class NotificationCandidateEngineTests
                 RequireDaytime: true,
                 RequirePreview: false));
 
-    private static AnomalySnapshot Snapshot(params Anomaly[] detections) =>
+    private static AnomalySnapshot Snapshot(params Anomaly[] anomalies) =>
         new(
             s_observedAt.AddHours(1),
             ActiveWindowHours: 24,
             IsReady: true,
             IsPartiallyStale: false,
-            ConfiguredCountries: ["RUS"],
-            Sources: [],
-            Count: detections.Length,
-            Items: [.. detections]);
+            ConfiguredCountryCodes: ["RUS"],
+            Segments: [],
+            AnomalyCount: anomalies.Length,
+            Anomalies: [.. anomalies]);
 
-    private static Anomaly Detection(string id, double longitude, double frpMegawatts) =>
+    private static Anomaly CreateAnomaly(string id, double longitude, double frpMegawatts) =>
         new(
             id,
             CountryCode: "RUS",

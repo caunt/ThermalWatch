@@ -29,10 +29,10 @@ public sealed record ApplicationConfiguration(
                 safeMessage: "FIRMS_MAP_KEY must be a valid 32-character MAP_KEY.");
         }
 
-        ImmutableArray<string> countries = ParseCountries(Required(get, name: "FIRMS_COUNTRIES"));
+        ImmutableArray<string> countryCodes = ParseCountryCodes(Required(get, name: "FIRMS_COUNTRIES"));
         var firms = new FirmsOptions(
             mapKey,
-            countries,
+            countryCodes,
             ParseTimeSpan(get, name: "FIRMS_POLL_INTERVAL", TimeSpan.FromMinutes(minutes: 5), TimeSpan.FromSeconds(seconds: 10), TimeSpan.FromDays(days: 1)),
             ParseTimeSpan(get, name: "FIRMS_ACTIVE_WINDOW", TimeSpan.FromHours(hours: 24), TimeSpan.FromMinutes(minutes: 1), s_maximumActiveWindow),
             ParseTimeSpan(get, name: "FIRMS_REQUEST_TIMEOUT", TimeSpan.FromSeconds(seconds: 45), TimeSpan.FromSeconds(seconds: 5), TimeSpan.FromMinutes(minutes: 5)),
@@ -47,7 +47,7 @@ public sealed record ApplicationConfiguration(
         if (notifications.EpisodeRetention < firms.ActiveWindow)
         {
             throw new ApplicationConfigurationException(
-                safeMessage: "TELEGRAM_SEEN_RETENTION must be at least FIRMS_ACTIVE_WINDOW.");
+                safeMessage: "NOTIFICATION_EPISODE_RETENTION must be at least FIRMS_ACTIVE_WINDOW.");
         }
 
         return new(firms, notifications, telegram, viewer, ParseLogLevel(get));
@@ -60,61 +60,61 @@ public sealed record ApplicationConfiguration(
         Func<string, string?> get,
         TimeSpan defaultEpisodeRetention) =>
         new(
-            ParseBool(get, name: "TELEGRAM_NOTIFY_EXISTING_ON_STARTUP", defaultValue: false),
-            ParseDouble(get, name: "TELEGRAM_CLUSTER_RADIUS_KM", defaultValue: 5, minimum: 0.01, maximum: 100),
-            ParseTimeSpan(get, name: "TELEGRAM_CLUSTER_TIME_WINDOW", TimeSpan.FromMinutes(minutes: 90), TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 1)),
-            ParseTimeSpan(get, name: "TELEGRAM_SEEN_RETENTION", defaultEpisodeRetention, TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 30)),
+            ParseBool(get, name: "NOTIFICATION_SEND_EXISTING_ON_STARTUP", defaultValue: false),
+            ParseDouble(get, name: "NOTIFICATION_CLUSTER_RADIUS_KM", defaultValue: 5, minimum: 0.01, maximum: 100),
+            ParseTimeSpan(get, name: "NOTIFICATION_CLUSTER_TIME_WINDOW", TimeSpan.FromMinutes(minutes: 90), TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 1)),
+            ParseTimeSpan(get, name: "NOTIFICATION_EPISODE_RETENTION", defaultEpisodeRetention, TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 30)),
             new(
                 new(
-                    ParsePositiveDouble(get, name: "TELEGRAM_PREVIEW_WIDTH_KM", defaultValue: 60),
-                    ParsePositiveDouble(get, name: "TELEGRAM_PREVIEW_HEIGHT_KM", defaultValue: 40)),
+                    ParsePositiveDouble(get, name: "NOTIFICATION_PREVIEW_WIDTH_KM", defaultValue: 60),
+                    ParsePositiveDouble(get, name: "NOTIFICATION_PREVIEW_HEIGHT_KM", defaultValue: 40)),
                 new(
-                    ParsePositiveDouble(get, name: "TELEGRAM_LARGE_PREVIEW_WIDTH_KM", defaultValue: 90),
-                    ParsePositiveDouble(get, name: "TELEGRAM_LARGE_PREVIEW_HEIGHT_KM", defaultValue: 60)),
-                ParsePositiveInt(get, name: "TELEGRAM_PREVIEW_PIXEL_WIDTH", defaultValue: 3840),
-                ParsePositiveInt(get, name: "TELEGRAM_PREVIEW_PIXEL_HEIGHT", defaultValue: 2560),
-                ParsePositiveInt(get, name: "TELEGRAM_LARGE_CLUSTER_MIN_DETECTIONS", defaultValue: 8),
-                ParseNonNegativeDouble(get, name: "TELEGRAM_LARGE_CLUSTER_MIN_FRP_MW", defaultValue: 500),
-                ParseNonNegativeDouble(get, name: "TELEGRAM_LARGE_CLUSTER_MIN_DIAMETER_KM", defaultValue: 8)),
+                    ParsePositiveDouble(get, name: "NOTIFICATION_LARGE_PREVIEW_WIDTH_KM", defaultValue: 90),
+                    ParsePositiveDouble(get, name: "NOTIFICATION_LARGE_PREVIEW_HEIGHT_KM", defaultValue: 60)),
+                ParsePositiveInt(get, name: "NOTIFICATION_PREVIEW_PIXEL_WIDTH", defaultValue: 3840),
+                ParsePositiveInt(get, name: "NOTIFICATION_PREVIEW_PIXEL_HEIGHT", defaultValue: 2560),
+                ParsePositiveInt(get, name: "NOTIFICATION_LARGE_CLUSTER_MIN_DETECTIONS", defaultValue: 8),
+                ParseNonNegativeDouble(get, name: "NOTIFICATION_LARGE_CLUSTER_MIN_FRP_MW", defaultValue: 500),
+                ParseNonNegativeDouble(get, name: "NOTIFICATION_LARGE_CLUSTER_MIN_DIAMETER_KM", defaultValue: 8)),
             new(
-                ParseBool(get, name: "TELEGRAM_LAND_COVER_FILTER_ENABLED", defaultValue: true),
-                ParseDouble(get, name: "TELEGRAM_VEGETATION_PERCENT_THRESHOLD", defaultValue: 50, minimum: 0, maximum: 100),
-                ParseDouble(get, name: "TELEGRAM_BUILT_UP_PROXIMITY_KM", defaultValue: 2, minimum: 0, maximum: 100),
-                ParseNonNegativeDouble(get, name: "TELEGRAM_VEGETATION_MAX_FRP_MW", defaultValue: 300),
-                ParseBool(get, name: "TELEGRAM_KEEP_HIGH_FRP_VEGETATION", defaultValue: false),
-                ParseBool(get, name: "TELEGRAM_KEEP_MULTI_SATELLITE_VEGETATION", defaultValue: false)),
+                ParseBool(get, name: "NOTIFICATION_LAND_COVER_FILTER_ENABLED", defaultValue: true),
+                ParseDouble(get, name: "NOTIFICATION_VEGETATION_PERCENT_THRESHOLD", defaultValue: 50, minimum: 0, maximum: 100),
+                ParseDouble(get, name: "NOTIFICATION_BUILT_UP_PROXIMITY_KM", defaultValue: 2, minimum: 0, maximum: 100),
+                ParseNonNegativeDouble(get, name: "NOTIFICATION_VEGETATION_MAX_FRP_MW", defaultValue: 300),
+                ParseBool(get, name: "NOTIFICATION_KEEP_HIGH_FRP_VEGETATION", defaultValue: false),
+                ParseBool(get, name: "NOTIFICATION_KEEP_MULTI_SATELLITE_VEGETATION", defaultValue: false)),
             new(
-                ParseBool(get, name: "TELEGRAM_VISIBILITY_FILTER_ENABLED", defaultValue: true),
-                ParseNonNegativeDouble(get, name: "TELEGRAM_MIN_FRP_MW", defaultValue: 50),
-                ParseNonNegativeDouble(get, name: "TELEGRAM_MIN_THERMAL_CONTRAST_K", defaultValue: 20),
-                ParsePositiveInt(get, name: "TELEGRAM_MIN_CLUSTER_DETECTIONS", defaultValue: 2),
-                ParseDouble(get, name: "TELEGRAM_MIN_MODIS_CONFIDENCE_PERCENT", defaultValue: 60, minimum: 0, maximum: 100),
+                ParseBool(get, name: "NOTIFICATION_VISIBILITY_FILTER_ENABLED", defaultValue: true),
+                ParseNonNegativeDouble(get, name: "NOTIFICATION_MIN_FRP_MW", defaultValue: 50),
+                ParseNonNegativeDouble(get, name: "NOTIFICATION_MIN_THERMAL_CONTRAST_K", defaultValue: 20),
+                ParsePositiveInt(get, name: "NOTIFICATION_MIN_CLUSTER_DETECTIONS", defaultValue: 2),
+                ParseDouble(get, name: "NOTIFICATION_MIN_MODIS_CONFIDENCE_PERCENT", defaultValue: 60, minimum: 0, maximum: 100),
                 ParseViirsConfidence(get),
-                ParseBool(get, name: "TELEGRAM_REQUIRE_DAYTIME", defaultValue: true),
-                ParseBool(get, name: "TELEGRAM_REQUIRE_PREVIEW", defaultValue: true)));
+                ParseBool(get, name: "NOTIFICATION_REQUIRE_DAYTIME", defaultValue: true),
+                ParseBool(get, name: "NOTIFICATION_REQUIRE_PREVIEW", defaultValue: true)));
 
-    private static ImmutableArray<string> ParseCountries(string value)
+    private static ImmutableArray<string> ParseCountryCodes(string value)
     {
         string[] entries = value.Split(',');
         if (entries.Any(string.IsNullOrWhiteSpace))
             throw new ApplicationConfigurationException(safeMessage: "FIRMS_COUNTRIES contains an empty country code.");
 
-        var countries = entries
+        var countryCodes = entries
             .Select(entry => entry.Trim().ToUpperInvariant())
             .Distinct(StringComparer.Ordinal)
             .ToImmutableArray();
 
-        if (countries.Length == 0)
+        if (countryCodes.Length == 0)
             throw new ApplicationConfigurationException(safeMessage: "FIRMS_COUNTRIES must contain at least one country.");
 
-        string? invalid = countries.FirstOrDefault(country => !CountryCatalog.IsValid(country));
+        string? invalid = countryCodes.FirstOrDefault(countryCode => !CountryCatalog.IsValid(countryCode));
         if (invalid is not null)
         {
             throw new ApplicationConfigurationException(
                 safeMessage: $"FIRMS_COUNTRIES contains invalid ISO alpha-3 code '{invalid}'.");
         }
 
-        return countries;
+        return countryCodes;
     }
 
     private static string Required(Func<string, string?> get, string name)
@@ -228,13 +228,13 @@ public sealed record ApplicationConfiguration(
 
     private static NotificationViirsConfidenceLevel ParseViirsConfidence(
         Func<string, string?> get) =>
-        Normalize(get("TELEGRAM_MIN_VIIRS_CONFIDENCE"))?.ToLowerInvariant() switch
+        Normalize(get("NOTIFICATION_MIN_VIIRS_CONFIDENCE"))?.ToLowerInvariant() switch
         {
             null or "n" => NotificationViirsConfidenceLevel.Nominal,
             "l" => NotificationViirsConfidenceLevel.Low,
             "h" => NotificationViirsConfidenceLevel.High,
             _ => throw new ApplicationConfigurationException(
-                safeMessage: "TELEGRAM_MIN_VIIRS_CONFIDENCE must be l, n, or h.")
+                safeMessage: "NOTIFICATION_MIN_VIIRS_CONFIDENCE must be l, n, or h.")
         };
 
     private static TimeSpan ParseTimeSpan(

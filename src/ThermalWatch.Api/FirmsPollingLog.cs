@@ -5,26 +5,26 @@ namespace ThermalWatch.Api;
 internal static partial class FirmsPollingLog
 {
     [LoggerMessage(EventId = 1, Level = LogLevel.Information,
-        Message = "Published FIRMS snapshot with {DetectionCount} detections; partially stale: {IsPartiallyStale}")]
+        Message = "Published FIRMS snapshot with {AnomalyCount} anomalies; partially stale: {IsPartiallyStale}")]
     internal static partial void SnapshotPublished(
         ILogger logger,
-        int detectionCount,
+        int anomalyCount,
         bool isPartiallyStale);
 
     [LoggerMessage(EventId = 2, Level = LogLevel.Information,
-        Message = "Refreshed FIRMS segment {Country} {Source} in {IngestionMode} mode with {DetectionCount} detections")]
+        Message = "Refreshed FIRMS segment {CountryCode} {Source} in {IngestionMode} mode with {AnomalyCount} anomalies")]
     internal static partial void SegmentRefreshed(
         ILogger logger,
-        string country,
+        string countryCode,
         string source,
         string ingestionMode,
-        int detectionCount);
+        int anomalyCount);
 
     [LoggerMessage(EventId = 3, Level = LogLevel.Warning,
-        Message = "FIRMS segment refresh failed for {Country} {Source}: {SafeError}")]
+        Message = "FIRMS segment refresh failed for {CountryCode} {Source}: {SafeError}")]
     internal static partial void SegmentRefreshFailed(
         ILogger logger,
-        string country,
+        string countryCode,
         string source,
         string safeError);
 

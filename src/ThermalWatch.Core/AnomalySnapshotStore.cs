@@ -19,8 +19,8 @@ public sealed class AnomalySnapshotStore
         _timeProvider = timeProvider;
         _orderedKeys =
         [
-            .. options.Countries
-                .SelectMany(country => FirmsSources.All.Select(source => new SegmentKey(country, source)))
+            .. options.CountryCodes
+                .SelectMany(countryCode => FirmsSources.All.Select(source => new SegmentKey(countryCode, source)))
         ];
         _segments = _orderedKeys.ToDictionary(
             key => key,
@@ -52,21 +52,21 @@ public sealed class AnomalySnapshotStore
 
                 _segments[result.Key] = result.Succeeded
                     ? new(
-                        result.Detections,
+                        result.Anomalies,
                         new(
                             result.Key.CountryCode,
                             result.Key.Source,
                             result.AttemptedAtUtc,
                             result.CompletedAtUtc,
-                            Stale: false,
+                            IsStale: false,
                             Error: null,
                             result.IngestionMode))
                     : existing with
                     {
                         Status = existing.Status with
                         {
-                            LastAttemptUtc = result.AttemptedAtUtc,
-                            Stale = true,
+                            LastAttemptAtUtc = result.AttemptedAtUtc,
+                            IsStale = true,
                             Error = result.Error
                         }
                     };
@@ -82,30 +82,30 @@ public sealed class AnomalySnapshotStore
     private AnomalySnapshot CreateSnapshot(DateTimeOffset now)
     {
         DateTimeOffset cutoff = now - _options.ActiveWindow;
-        var statuses = _orderedKeys
+        var segmentStatuses = _orderedKeys
             .Select(key => _segments[key].Status)
             .ToImmutableArray();
-        var items = _orderedKeys
-            .SelectMany(key => _segments[key].Detections)
-            .Where(detection => detection.AcquiredAtUtc >= cutoff && detection.AcquiredAtUtc <= now)
-            .DistinctBy(detection => detection.Id)
-            .OrderByDescending(detection => detection.AcquiredAtUtc)
-            .ThenBy(detection => detection.Id, StringComparer.Ordinal)
+        var anomalies = _orderedKeys
+            .SelectMany(key => _segments[key].Anomalies)
+            .Where(anomaly => anomaly.AcquiredAtUtc >= cutoff && anomaly.AcquiredAtUtc <= now)
+            .DistinctBy(anomaly => anomaly.Id)
+            .OrderByDescending(anomaly => anomaly.AcquiredAtUtc)
+            .ThenBy(anomaly => anomaly.Id, StringComparer.Ordinal)
             .ToImmutableArray();
-        bool isReady = statuses.Any(status => status.LastSuccessUtc is not null);
+        bool isReady = segmentStatuses.Any(status => status.LastSuccessAtUtc is not null);
 
         return new(
             now,
             _options.ActiveWindow.TotalHours,
             isReady,
-            isReady && statuses.Any(status => status.Stale),
-            _options.Countries,
-            statuses,
-            items.Length,
-            items);
+            isReady && segmentStatuses.Any(status => status.IsStale),
+            _options.CountryCodes,
+            segmentStatuses,
+            anomalies.Length,
+            anomalies);
     }
 
     private sealed record SegmentState(
-        ImmutableArray<Anomaly> Detections,
-        SourceStatus Status);
+        ImmutableArray<Anomaly> Anomalies,
+        SegmentStatus Status);
 }

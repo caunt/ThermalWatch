@@ -39,7 +39,7 @@ public sealed class FirmsRefreshCycleTests
         });
         FirmsOptions options = new(
             MapKey: new string('A', count: 32),
-            Countries: ["UKR"],
+            CountryCodes: ["UKR"],
             PollInterval: TimeSpan.FromMinutes(minutes: 5),
             ActiveWindow: TimeSpan.FromHours(hours: 72),
             RequestTimeout: TimeSpan.FromSeconds(seconds: 45),
@@ -68,10 +68,10 @@ public sealed class FirmsRefreshCycleTests
 
         Assert.Equal(4, result.SuccessfulSegmentCount);
         Assert.Equal(0, result.FailedSegmentCount);
-        Assert.Equal(4, snapshotStore.Current.Count);
+        Assert.Equal(expected: 4, snapshotStore.Current.AnomalyCount);
         Assert.All(
-            snapshotStore.Current.Items,
-            detection => Assert.Equal(
+            snapshotStore.Current.Anomalies,
+            anomaly => Assert.Equal(
                 new DateTimeOffset(
                     year: 2026,
                     month: 7,
@@ -80,7 +80,7 @@ public sealed class FirmsRefreshCycleTests
                     minute: 2,
                     second: 0,
                     TimeSpan.Zero),
-                detection.AcquiredAtUtc));
+                anomaly.AcquiredAtUtc));
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public sealed class FirmsRefreshCycleTests
         });
         FirmsOptions options = new(
             MapKey: new string('A', count: 32),
-            Countries: ["UKR", "RUS"],
+            CountryCodes: ["UKR", "RUS"],
             PollInterval: TimeSpan.FromMinutes(minutes: 5),
             ActiveWindow: TimeSpan.FromHours(hours: 24),
             RequestTimeout: TimeSpan.FromSeconds(seconds: 45),

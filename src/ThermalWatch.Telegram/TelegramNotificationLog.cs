@@ -21,22 +21,22 @@ internal static partial class TelegramNotificationLog
     internal static partial void ValidationFailed(ILogger logger);
 
     [LoggerMessage(EventId = 6, Level = LogLevel.Information,
-        Message = "Sent manual Telegram notification {NotificationId}")]
-    internal static partial void ManualNotificationSent(ILogger logger, string notificationId);
+        Message = "Sent manual Telegram notification for cluster {ClusterId}")]
+    internal static partial void ManualNotificationSent(ILogger logger, string clusterId);
 
     [LoggerMessage(EventId = 7, Level = LogLevel.Warning,
-        Message = "Manual Telegram notification failed for {NotificationId}")]
-    internal static partial void ManualNotificationFailed(ILogger logger, string notificationId);
+        Message = "Manual Telegram notification failed for cluster {ClusterId}")]
+    internal static partial void ManualNotificationFailed(ILogger logger, string clusterId);
 
     [LoggerMessage(EventId = 8, Level = LogLevel.Warning,
         Message = "Manual Telegram introductory message failed")]
     internal static partial void ManualStatusFailed(ILogger logger);
 
     [LoggerMessage(EventId = 18, Level = LogLevel.Information,
-        Message = "Sent Telegram notification {NotificationId} for {Satellite} at {AcquiredAtUtc}")]
+        Message = "Sent Telegram notification for cluster {ClusterId}, {Satellite} at {AcquiredAtUtc}")]
     internal static partial void NotificationSent(
         ILogger logger,
-        string notificationId,
+        string clusterId,
         string satellite,
         DateTimeOffset acquiredAtUtc);
 
@@ -45,16 +45,16 @@ internal static partial class TelegramNotificationLog
     internal static partial void PermanentSendFailure(ILogger logger);
 
     [LoggerMessage(EventId = 20, Level = LogLevel.Warning,
-        Message = "Telegram send failed transiently for notification {NotificationId}")]
-    internal static partial void TransientSendFailure(ILogger logger, string notificationId);
+        Message = "Telegram send failed transiently for cluster {ClusterId}")]
+    internal static partial void TransientSendFailure(ILogger logger, string clusterId);
 
     [LoggerMessage(EventId = 22, Level = LogLevel.Information,
-        Message = "Notification policy processed {ActiveClusterCount} active clusters; evaluated {EvaluatedClusterCount}; delivered {AcceptedClusterCount}; rejected {RejectedClusterCount}; startup incidents suppressed {StartupSuppressedIncidentCount}; duplicate delivered episodes {DuplicateEpisodeCount}; send failures {SendFailureCount}. Rejections: nighttime {NighttimeCount}; insufficient detections {InsufficientDetectionsCount}; low confidence {LowConfidenceCount}; low FRP {LowFrpCount}; low thermal contrast {LowThermalContrastCount}; missing required value {MissingRequiredValueCount}; preview unavailable {PreviewUnavailableCount}")]
+        Message = "Notification policy processed {ActiveClusterCount} active clusters; evaluated {EvaluatedClusterCount}; delivered {DeliveredClusterCount}; rejected {RejectedClusterCount}; startup incidents suppressed {StartupSuppressedIncidentCount}; duplicate delivered episodes {DuplicateEpisodeCount}; send failures {SendFailureCount}. Rejections: nighttime {NighttimeCount}; insufficient detections {InsufficientDetectionsCount}; low confidence {LowConfidenceCount}; low FRP {LowFrpCount}; low thermal contrast {LowThermalContrastCount}; missing required value {MissingRequiredValueCount}; preview unavailable {PreviewUnavailableCount}")]
     internal static partial void VisibilitySummary(
         ILogger logger,
         int activeClusterCount,
         int evaluatedClusterCount,
-        int acceptedClusterCount,
+        int deliveredClusterCount,
         int rejectedClusterCount,
         int startupSuppressedIncidentCount,
         int duplicateEpisodeCount,
@@ -77,12 +77,12 @@ internal static partial class TelegramNotificationLog
         int? landCoverYear);
 
     [LoggerMessage(EventId = 24, Level = LogLevel.Information,
-        Message = "Manual Telegram send processed {RequestedCount} requested clusters; eligible {EligibleCount}; selected {SelectedCount}; sent {SentCount}; failed {FailedCount}")]
+        Message = "Manual Telegram send processed {RequestedClusterCount} requested clusters; eligible {EligibleClusterCount}; selected {SelectedClusterCount}; sent {SentClusterCount}; failed {FailedClusterCount}")]
     internal static partial void ManualSendSummary(
         ILogger logger,
-        int requestedCount,
-        int eligibleCount,
-        int selectedCount,
-        int sentCount,
-        int failedCount);
+        int requestedClusterCount,
+        int eligibleClusterCount,
+        int selectedClusterCount,
+        int sentClusterCount,
+        int failedClusterCount);
 }

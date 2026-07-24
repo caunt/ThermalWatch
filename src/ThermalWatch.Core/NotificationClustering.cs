@@ -5,33 +5,33 @@ namespace ThermalWatch.Core;
 public static class NotificationClustering
 {
     public static ImmutableArray<NotificationCluster> Create(
-        IReadOnlyList<Anomaly> detections,
+        IReadOnlyList<Anomaly> anomalies,
         double radiusKilometers,
         TimeSpan timeWindow)
     {
-        if (detections.Count == 0)
+        if (anomalies.Count == 0)
             return [];
 
-        int[] parents = [.. Enumerable.Range(start: 0, detections.Count)];
+        int[] parents = [.. Enumerable.Range(start: 0, anomalies.Count)];
 
-        for (int first = 0; first < detections.Count; first++)
+        for (int first = 0; first < anomalies.Count; first++)
         {
-            for (int second = first + 1; second < detections.Count; second++)
+            for (int second = first + 1; second < anomalies.Count; second++)
             {
-                if ((detections[first].AcquiredAtUtc - detections[second].AcquiredAtUtc).Duration() > timeWindow)
+                if ((anomalies[first].AcquiredAtUtc - anomalies[second].AcquiredAtUtc).Duration() > timeWindow)
                     continue;
 
-                if (Geography.HaversineKilometers(detections[first], detections[second]) <= radiusKilometers)
+                if (Geography.HaversineKilometers(anomalies[first], anomalies[second]) <= radiusKilometers)
                     Union(parents, first, second);
             }
         }
 
         return
         [
-            .. detections
-                .Select((detection, index) => (Detection: detection, Root: Find(parents, index)))
+            .. anomalies
+                .Select((anomaly, index) => (Anomaly: anomaly, Root: Find(parents, index)))
                 .GroupBy(item => item.Root)
-                .Select(group => BuildCluster(group.Select(item => item.Detection)))
+                .Select(group => BuildCluster(group.Select(item => item.Anomaly)))
                 .OrderByDescending(cluster => cluster.Representative.AcquiredAtUtc)
                 .ThenBy(cluster => cluster.Id, StringComparer.Ordinal)
         ];
@@ -45,17 +45,17 @@ public static class NotificationClustering
         (first.AcquiredAtUtc - second.AcquiredAtUtc).Duration() <= timeWindow
         && Geography.HaversineKilometers(first, second) <= radiusKilometers;
 
-    private static NotificationCluster BuildCluster(IEnumerable<Anomaly> detections)
+    private static NotificationCluster BuildCluster(IEnumerable<Anomaly> anomalies)
     {
-        var members = detections
-            .OrderByDescending(detection => detection.AcquiredAtUtc)
-            .ThenBy(detection => detection.Id, StringComparer.Ordinal)
+        var members = anomalies
+            .OrderByDescending(anomaly => anomaly.AcquiredAtUtc)
+            .ThenBy(anomaly => anomaly.Id, StringComparer.Ordinal)
             .ToImmutableArray();
 
         Anomaly representative = members
-            .OrderByDescending(detection => detection.FrpMegawatts ?? double.NegativeInfinity)
-            .ThenByDescending(detection => detection.AcquiredAtUtc)
-            .ThenBy(detection => detection.Id, StringComparer.Ordinal)
+            .OrderByDescending(anomaly => anomaly.FrpMegawatts ?? double.NegativeInfinity)
+            .ThenByDescending(anomaly => anomaly.AcquiredAtUtc)
+            .ThenBy(anomaly => anomaly.Id, StringComparer.Ordinal)
             .First();
 
         return new(AnomalyId.CreateClusterId(members.Select(member => member.Id)), representative, members);

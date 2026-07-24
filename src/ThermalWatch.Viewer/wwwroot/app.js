@@ -96,13 +96,13 @@
     activeWindowHours: "Active window (hours)",
     isReady: "Snapshot ready",
     isPartiallyStale: "Partially stale",
-    configuredCountries: "Configured countries",
-    count: "API anomaly count",
-    country: "Status country",
-    lastAttemptUtc: "Last attempt (UTC)",
-    lastSuccessUtc: "Last success (UTC)",
-    stale: "Source stale",
-    error: "Source error",
+    configuredCountryCodes: "Configured country codes",
+    anomalyCount: "API anomaly count",
+    countryCode: "Segment country code",
+    lastAttemptAtUtc: "Last attempt (UTC)",
+    lastSuccessAtUtc: "Last success (UTC)",
+    isStale: "Segment stale",
+    error: "Segment error",
     ingestionMode: "Ingestion mode"
   };
 
@@ -548,14 +548,14 @@
   }
 
   function applySnapshot(snapshot) {
-    if (!snapshot || typeof snapshot !== "object" || !Array.isArray(snapshot.items))
-      throw new Error("Expected an object with an items array.");
+    if (!snapshot || typeof snapshot !== "object" || !Array.isArray(snapshot.anomalies))
+      throw new Error("Expected an object with an anomalies array.");
 
     const occurrences = new Map();
     const points = [];
     let malformedCount = 0;
 
-    snapshot.items.forEach((anomaly, index) => {
+    snapshot.anomalies.forEach((anomaly, index) => {
       if (!anomaly || typeof anomaly !== "object"
           || typeof anomaly.latitude !== "number"
           || typeof anomaly.longitude !== "number"
@@ -602,7 +602,7 @@
       setNotice(
         "snapshot",
         "warning",
-        "Some FIRMS sources are stale. Markers use the most recent complete data retained by the API.");
+        "Some FIRMS segments are stale. Markers use the most recent complete data retained by the API.");
     } else if (state.snapshot?.isReady === false) {
       setNotice(
         "snapshot",
@@ -718,10 +718,10 @@
       return;
     }
 
-    const returnedItems = Array.isArray(state.snapshot?.items) ? state.snapshot.items : [];
+    const returnedAnomalies = Array.isArray(state.snapshot?.anomalies) ? state.snapshot.anomalies : [];
     renderEmptyDetails(
-      returnedItems.length === 0 ? "No current anomalies" : "No mappable anomalies",
-      returnedItems.length === 0
+      returnedAnomalies.length === 0 ? "No current anomalies" : "No mappable anomalies",
+      returnedAnomalies.length === 0
         ? "The current API snapshot contains no heat anomalies."
         : "Every returned observation has malformed coordinates and was omitted from the map.");
   }
@@ -806,7 +806,7 @@
   }
 
   function renderSnapshotSummary() {
-    const returnedCount = state.snapshot.items.length;
+    const returnedCount = state.snapshot.anomalies.length;
     elements.countSummary.textContent = state.malformedCount > 0
       ? `${state.points.length} mapped · ${returnedCount} returned`
       : `${returnedCount} ${plural(returnedCount, "anomaly", "anomalies")}`;
@@ -884,19 +884,19 @@
       ["activeWindowHours", state.snapshot?.activeWindowHours],
       ["isReady", state.snapshot?.isReady],
       ["isPartiallyStale", state.snapshot?.isPartiallyStale],
-      ["configuredCountries", state.snapshot?.configuredCountries],
-      ["count", state.snapshot?.count]
+      ["configuredCountryCodes", state.snapshot?.configuredCountryCodes],
+      ["anomalyCount", state.snapshot?.anomalyCount]
     ]));
 
-    const sourceStatus = Array.isArray(state.snapshot?.sources)
-      ? state.snapshot.sources.find(status =>
-          status?.country === anomaly.countryCode && status?.source === anomaly.source)
+    const segmentStatus = Array.isArray(state.snapshot?.segments)
+      ? state.snapshot.segments.find(status =>
+          status?.countryCode === anomaly.countryCode && status?.source === anomaly.source)
       : null;
 
-    debugSection.append(textElement("h3", "Matching source status"));
-    debugSection.append(sourceStatus
-      ? fieldList(Object.entries(sourceStatus))
-      : textElement("p", "No matching source status was returned.", "details-subtitle"));
+    debugSection.append(textElement("h3", "Matching segment status"));
+    debugSection.append(segmentStatus
+      ? fieldList(Object.entries(segmentStatus))
+      : textElement("p", "No matching segment status was returned.", "details-subtitle"));
     wrapper.append(debugSection);
 
     const rawSection = section("Raw record");

@@ -36,40 +36,40 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | unset | Telegram bot credential. Notifications require this and `TELEGRAM_CHANNEL_ID`. |
 | `TELEGRAM_CHANNEL_ID` | unset | Numeric channel ID or a value beginning with `@`; notifications require this and the bot token. |
-| `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` | `false` | When false, evaluate the first ready snapshot but suppress only incidents that already pass every enabled content criterion; initially ineligible incidents remain retryable. When true, eligible first-snapshot incidents can be delivered. |
-| `TELEGRAM_CLUSTER_RADIUS_KM` | `5` | Finite number from `0.01` through `100`. |
-| `TELEGRAM_CLUSTER_TIME_WINDOW` | `01:30:00` | Duration from 1 minute through 1 day. |
-| `TELEGRAM_SEEN_RETENTION` | `48:00:00`, or `FIRMS_ACTIVE_WINDOW` when longer | Legacy-named startup-incident and delivered-episode retention from 1 minute through 30 days and at least `FIRMS_ACTIVE_WINDOW`. |
-| `TELEGRAM_PREVIEW_WIDTH_KM` | `60` | Positive finite number. |
-| `TELEGRAM_PREVIEW_HEIGHT_KM` | `40` | Positive finite number. |
-| `TELEGRAM_LARGE_PREVIEW_WIDTH_KM` | `90` | Positive finite number. |
-| `TELEGRAM_LARGE_PREVIEW_HEIGHT_KM` | `60` | Positive finite number. |
-| `TELEGRAM_PREVIEW_PIXEL_WIDTH` | `3840` | Integer greater than or equal to 1. |
-| `TELEGRAM_PREVIEW_PIXEL_HEIGHT` | `2560` | Integer greater than or equal to 1. |
-| `TELEGRAM_LARGE_CLUSTER_MIN_DETECTIONS` | `8` | Integer greater than or equal to 1. |
-| `TELEGRAM_LARGE_CLUSTER_MIN_FRP_MW` | `500` | Non-negative finite number. |
-| `TELEGRAM_LARGE_CLUSTER_MIN_DIAMETER_KM` | `8` | Non-negative finite number. |
+| `NOTIFICATION_SEND_EXISTING_ON_STARTUP` | `false` | When false, evaluate the first ready snapshot but suppress only incidents that already pass every enabled content criterion; initially ineligible incidents remain retryable. When true, eligible first-snapshot incidents can be delivered. |
+| `NOTIFICATION_CLUSTER_RADIUS_KM` | `5` | Finite number from `0.01` through `100`. |
+| `NOTIFICATION_CLUSTER_TIME_WINDOW` | `01:30:00` | Duration from 1 minute through 1 day. |
+| `NOTIFICATION_EPISODE_RETENTION` | `48:00:00`, or `FIRMS_ACTIVE_WINDOW` when longer | Startup-incident and delivered-episode retention from 1 minute through 30 days and at least `FIRMS_ACTIVE_WINDOW`. |
+| `NOTIFICATION_PREVIEW_WIDTH_KM` | `60` | Positive finite number. |
+| `NOTIFICATION_PREVIEW_HEIGHT_KM` | `40` | Positive finite number. |
+| `NOTIFICATION_LARGE_PREVIEW_WIDTH_KM` | `90` | Positive finite number. |
+| `NOTIFICATION_LARGE_PREVIEW_HEIGHT_KM` | `60` | Positive finite number. |
+| `NOTIFICATION_PREVIEW_PIXEL_WIDTH` | `3840` | Integer greater than or equal to 1. |
+| `NOTIFICATION_PREVIEW_PIXEL_HEIGHT` | `2560` | Integer greater than or equal to 1. |
+| `NOTIFICATION_LARGE_CLUSTER_MIN_DETECTIONS` | `8` | Integer greater than or equal to 1. |
+| `NOTIFICATION_LARGE_CLUSTER_MIN_FRP_MW` | `500` | Non-negative finite number. |
+| `NOTIFICATION_LARGE_CLUSTER_MIN_DIAMETER_KM` | `8` | Non-negative finite number. |
 
 ### Notification land-cover and visibility policy
 
 | Variable | Default | Contract |
 | --- | --- | --- |
-| `TELEGRAM_LAND_COVER_FILTER_ENABLED` | `true` | Boolean. |
-| `TELEGRAM_VEGETATION_PERCENT_THRESHOLD` | `50` | Finite percentage from 0 through 100. |
-| `TELEGRAM_BUILT_UP_PROXIMITY_KM` | `2` | Finite number from 0 through 100. |
-| `TELEGRAM_VEGETATION_MAX_FRP_MW` | `300` | Non-negative finite number used only when the high-FRP exception is enabled. |
-| `TELEGRAM_KEEP_HIGH_FRP_VEGETATION` | `false` | Boolean enabling the configured high-FRP vegetation exception. |
-| `TELEGRAM_KEEP_MULTI_SATELLITE_VEGETATION` | `false` | Boolean enabling the configured multi-satellite vegetation exception. |
-| `TELEGRAM_VISIBILITY_FILTER_ENABLED` | `true` | Boolean. |
-| `TELEGRAM_MIN_FRP_MW` | `50` | Non-negative finite number; zero disables this requirement. |
-| `TELEGRAM_MIN_THERMAL_CONTRAST_K` | `20` | Non-negative finite number; zero disables this requirement. |
-| `TELEGRAM_MIN_CLUSTER_DETECTIONS` | `2` | Integer greater than or equal to 1. |
-| `TELEGRAM_MIN_MODIS_CONFIDENCE_PERCENT` | `60` | Finite percentage from 0 through 100; zero disables the MODIS requirement. |
-| `TELEGRAM_MIN_VIIRS_CONFIDENCE` | `n` | `l`, `n`, or `h`, case-insensitive. |
-| `TELEGRAM_REQUIRE_DAYTIME` | `true` | Boolean. |
-| `TELEGRAM_REQUIRE_PREVIEW` | `true` | Boolean controlling whether unavailable exact imagery rejects the cluster for the current snapshot; when false, the cluster sends as text immediately. |
+| `NOTIFICATION_LAND_COVER_FILTER_ENABLED` | `true` | Boolean. |
+| `NOTIFICATION_VEGETATION_PERCENT_THRESHOLD` | `50` | Finite percentage from 0 through 100. |
+| `NOTIFICATION_BUILT_UP_PROXIMITY_KM` | `2` | Finite number from 0 through 100. |
+| `NOTIFICATION_VEGETATION_MAX_FRP_MW` | `300` | Non-negative finite number used only when the high-FRP exception is enabled. |
+| `NOTIFICATION_KEEP_HIGH_FRP_VEGETATION` | `false` | Boolean enabling the configured high-FRP vegetation exception. |
+| `NOTIFICATION_KEEP_MULTI_SATELLITE_VEGETATION` | `false` | Boolean enabling the configured multi-satellite vegetation exception. |
+| `NOTIFICATION_VISIBILITY_FILTER_ENABLED` | `true` | Boolean. |
+| `NOTIFICATION_MIN_FRP_MW` | `50` | Non-negative finite number; zero disables this requirement. |
+| `NOTIFICATION_MIN_THERMAL_CONTRAST_K` | `20` | Non-negative finite number; zero disables this requirement. |
+| `NOTIFICATION_MIN_CLUSTER_DETECTIONS` | `2` | Integer greater than or equal to 1. |
+| `NOTIFICATION_MIN_MODIS_CONFIDENCE_PERCENT` | `60` | Finite percentage from 0 through 100; zero disables the MODIS requirement. |
+| `NOTIFICATION_MIN_VIIRS_CONFIDENCE` | `n` | `l`, `n`, or `h`, case-insensitive. |
+| `NOTIFICATION_REQUIRE_DAYTIME` | `true` | Boolean. |
+| `NOTIFICATION_REQUIRE_PREVIEW` | `true` | Boolean controlling whether unavailable exact imagery rejects the cluster for the current snapshot; when false, the cluster sends as text immediately. |
 
-The `TELEGRAM_*` policy names are retained as deployment compatibility keys, but the API host parses them into neutral Core notification options. Every policy option is parsed even when Telegram credentials are absent because Viewer diagnostics use the same configuration. An invalid optional value can therefore stop startup while Telegram delivery would otherwise be disabled.
+Shared policy and lifecycle settings use the provider-neutral `NOTIFICATION_*` prefix because Core applies them to Viewer eligibility/diagnostics as well as Telegram candidates. Only `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHANNEL_ID` remain Telegram-specific. Names are exact and have no legacy aliases; an old `TELEGRAM_*` policy setting is ignored. Every policy option is parsed even when Telegram credentials are absent, so an invalid recognized value can stop startup while Telegram delivery would otherwise be disabled.
 
 No credentials disables Telegram without affecting the API. Supplying only one credential logs a warning and leaves it disabled. With both values, startup calls Telegram to validate the bot, channel type, membership, and permission to post. Validation failure disables notifications until process restart; it does not terminate the API.
 
@@ -97,7 +97,7 @@ Live provider availability, data ranges, and error bodies change independently o
 
 Serilog writes structured console events. `LOGGING_MINIMUM_LEVEL` controls the application minimum while the host suppresses noisy ASP.NET and HTTP-client categories and excludes Polly's per-attempt resilience telemetry at every level. Retry and timeout attempts therefore do not emit exception stacks; component-owned final failures remain visible as safe summaries. FIRMS logs report cycle duration/result counts/next delay, failed fallback envelope requests, segment refreshes, and snapshot publication; successful envelope timings are Debug-level. Successful viewer imagery requests are also Debug-level to keep map navigation from flooding normal logs. Other request summaries remain Information unless they fail. Logs also report notification filtering, preview state, nearby-feature unavailability, and sends; they must never include credential values.
 
-There is no health/readiness route, metrics endpoint, tracing, external log sink, alert, or dashboard. `/api/anomalies` source statuses are the only built-in structured operational diagnostics. A viewer refresh rereads the snapshot and does not force an upstream poll.
+There is no health/readiness route, metrics endpoint, tracing, external log sink, alert, or dashboard. `/api/anomalies` segment statuses are the only built-in structured operational diagnostics. A viewer refresh rereads the snapshot and does not force an upstream poll.
 
 All current HTTP endpoints are unauthenticated. Cross-origin `GET` is allowed:
 
@@ -144,7 +144,7 @@ The repository contains no production deployment manifests, immutable release ta
 | Condition | Runtime behavior | Recovery |
 | --- | --- | --- |
 | Invalid application option or requested country geometry | Process prints a safe startup error and exits with code 1. | Correct environment configuration or embedded data, then restart. |
-| FIRMS segment failure | Fail the country/source envelope atomically, retain its previous complete data, mark it stale, and continue other segments. | A later completion-delayed poll retries automatically. Inspect source statuses and logs. |
+| FIRMS segment failure | Fail the country/source envelope atomically, retain its previous complete data, mark it stale, and continue other segments. | A later completion-delayed poll retries automatically. Inspect segment statuses and logs. |
 | Complete FIRMS cycle failure | Publish retained stale state, then exponentially increase the next base delay up to the configured cap. | The first later cycle with any successful segment resets the normal interval. |
 | Verified country-feature outage | Switch globally to polygon-clipped area fallback and probe the country API after one hour. | Automatic when the country API succeeds again. |
 | GIBS preview unavailable or base crop is mostly no-data | Try other supported same-date, pass-matched satellite bases; if none is usable, reject the cluster for this snapshot when preview is required or send text immediately when optional. | The next published snapshot reevaluates the complete active cluster and retries uncached spatial probes. |

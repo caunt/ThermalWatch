@@ -51,13 +51,13 @@ The client bounds response size, rejects incompatible content types and upstream
 - Finite numeric optional values when present.
 - MODIS numeric confidence versus normalized VIIRS confidence category.
 
-Malformed data rows are skipped and logged safely. A nonempty response where every row is unusable fails the segment; an empty valid dataset succeeds with no detections. Duplicate IDs inside a response are removed.
+Malformed data rows are skipped and logged safely. A nonempty response where every row is unusable fails the segment; an empty valid dataset succeeds with no anomalies. Duplicate anomaly IDs inside a response are removed.
 
 ## Snapshot publication and staleness
 
-A successful result replaces its segment detections, timestamps, error state, and ingestion mode. A failed result:
+A successful result replaces its segment anomalies, timestamps, error state, and ingestion mode. A failed result:
 
-- Retains the previous complete detections.
+- Retains the previous complete anomalies.
 - Retains the last successful ingestion mode.
 - Updates the attempt time, marks the segment stale, and records a safe error.
 

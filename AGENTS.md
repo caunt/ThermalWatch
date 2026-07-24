@@ -51,6 +51,7 @@ See [development guidance](docs/development.md) for prerequisites, safe local se
 - The repository-root `.editorconfig` is mandatory for every project.
 - Fix analyzer and style errors; do not suppress them.
 - Use named arguments for unclear string, numeric, Boolean, `null`, and `default` literal arguments.
+- Use `anomaly` for FIRMS model instances and collections, `segment` for country/source refresh status, `eligible` for a policy pass, and `delivered` only after successful transport. Reserve observation for domain explanation and detection count for cluster-member metrics.
 - Preserve existing code style, comments, project structure, and unrelated code.
 - Prefer the smallest coherent change.
 - Before finishing, run the complete repository verification sequence in [development guidance](docs/development.md#restore-build-test-and-format).
@@ -60,7 +61,7 @@ See [development guidance](docs/development.md) for prerequisites, safe local se
 - Application-specific configuration uses exact uppercase environment names; do not add `appsettings` or commit credentials.
 - When verification or tests need live-provider access, agents may source the ignored repository-root `.env`. The user supplies temporary testing credentials; never echo, log, commit, or reuse them outside the authorized task. Preserve an existing `.env` before, during, and after the task. The user rotates its values when testing ends.
 - State is intentionally in memory. A restart rebuilds the FIRMS snapshot and resets Telegram startup-incident suppression, delivery deduplication, and caches; unsent candidates are never retained.
-- `/api/anomalies` exposes all valid active FIRMS observations. Notification filters must never remove or annotate API items.
+- `/api/anomalies` exposes all valid active FIRMS observations. Notification filters must never remove or annotate API anomalies.
 - FIRMS segments are isolated by country and source. A failed refresh retains the previous complete segment and marks it stale.
 - Country ingestion is primary. Area fallback is enabled only for a verified country-feature outage and succeeds atomically across all required tiles.
 - Notification land-cover unavailability fails open; an unavailable exact preview requirement fails closed for the current snapshot and is reevaluated after later publications.

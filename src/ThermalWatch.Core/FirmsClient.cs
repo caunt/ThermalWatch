@@ -32,7 +32,7 @@ public sealed partial class FirmsClient(
         string source,
         CancellationToken cancellationToken)
     {
-        if (!options.Countries.Contains(countryCode, StringComparer.Ordinal)
+        if (!options.CountryCodes.Contains(countryCode, StringComparer.Ordinal)
             || !FirmsSources.All.Contains(source, StringComparer.Ordinal))
         {
             throw new FirmsRequestException(safeMessage: "FIRMS request parameters are invalid.");
@@ -63,12 +63,12 @@ public sealed partial class FirmsClient(
 
             try
             {
-                ImmutableArray<Anomaly> detections = await GetCountryDetectionsAsync(
+                ImmutableArray<Anomaly> anomalies = await GetCountryAnomaliesAsync(
                     countryCode,
                     source,
                     cancellationToken).ConfigureAwait(false);
                 MarkCountryAvailable(capability);
-                return new(detections, IngestionModes.Country);
+                return new(anomalies, IngestionModes.Country);
             }
             catch (CountryFeatureUnavailableException)
             {
@@ -96,8 +96,8 @@ public sealed partial class FirmsClient(
     {
         try
         {
-            ImmutableArray<Anomaly> detections = await GetCountryDetectionsAsync(countryCode, source, cancellationToken).ConfigureAwait(false);
-            return new(detections, IngestionModes.Country);
+            ImmutableArray<Anomaly> anomalies = await GetCountryAnomaliesAsync(countryCode, source, cancellationToken).ConfigureAwait(false);
+            return new(anomalies, IngestionModes.Country);
         }
         catch (CountryFeatureUnavailableException)
         {
@@ -123,23 +123,23 @@ public sealed partial class FirmsClient(
             bounds.North);
 
         long startedTimestamp = timeProvider.GetTimestamp();
-        ImmutableArray<Anomaly> areaDetections = await GetAreaEnvelopeDetectionsAsync(
+        ImmutableArray<Anomaly> areaAnomalies = await GetAreaEnvelopeAnomaliesAsync(
             countryCode,
             source,
             bounds,
             startedTimestamp,
             cancellationToken).ConfigureAwait(false);
 
-        var detections = areaDetections
-            .Where(detection => boundary.Prepared.Covers(
+        var anomalies = areaAnomalies
+            .Where(anomaly => boundary.Prepared.Covers(
                 boundary.Geometry.Factory.CreatePoint(
-                    new Coordinate(detection.Longitude, detection.Latitude))))
-            .DistinctBy(detection => detection.Id)
+                    new Coordinate(anomaly.Longitude, anomaly.Latitude))))
+            .DistinctBy(anomaly => anomaly.Id)
             .ToImmutableArray();
-        return new(detections, IngestionModes.AreaFallback);
+        return new(anomalies, IngestionModes.AreaFallback);
     }
 
-    private async Task<ImmutableArray<Anomaly>> GetAreaEnvelopeDetectionsAsync(
+    private async Task<ImmutableArray<Anomaly>> GetAreaEnvelopeAnomaliesAsync(
         string countryCode,
         string source,
         GeographicBounds bounds,
@@ -148,13 +148,13 @@ public sealed partial class FirmsClient(
     {
         try
         {
-            ImmutableArray<Anomaly> detections = await GetAreaDetectionsAsync(
+            ImmutableArray<Anomaly> anomalies = await GetAreaAnomaliesAsync(
                 countryCode,
                 source,
                 bounds,
                 cancellationToken).ConfigureAwait(false);
             LogAreaRequestSucceeded(countryCode, source, bounds, startedTimestamp);
-            return detections;
+            return anomalies;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -212,7 +212,7 @@ public sealed partial class FirmsClient(
         return new(safeMessage: $"FIRMS area fallback request failed: {safeError}");
     }
 
-    private async Task<ImmutableArray<Anomaly>> GetCountryDetectionsAsync(
+    private async Task<ImmutableArray<Anomaly>> GetCountryAnomaliesAsync(
         string countryCode,
         string source,
         CancellationToken cancellationToken) =>
@@ -234,7 +234,7 @@ public sealed partial class FirmsClient(
             },
             cancellationToken).ConfigureAwait(false);
 
-    private async Task<ImmutableArray<Anomaly>> GetAreaDetectionsAsync(
+    private async Task<ImmutableArray<Anomaly>> GetAreaAnomaliesAsync(
         string countryCode,
         string source,
         GeographicBounds bounds,
@@ -548,10 +548,10 @@ public sealed partial class FirmsClient(
     [LoggerMessage(
         EventId = 2,
         Level = LogLevel.Debug,
-        Message = "Refreshing FIRMS segment {Country} {Source} with area fallback bounds {West},{South},{East},{North}")]
+        Message = "Refreshing FIRMS segment {CountryCode} {Source} with area fallback bounds {West},{South},{East},{North}")]
     private static partial void LogAreaFallbackRefresh(
         ILogger logger,
-        string country,
+        string countryCode,
         string source,
         double west,
         double south,
@@ -579,30 +579,30 @@ public sealed partial class FirmsClient(
     [LoggerMessage(
         EventId = 6,
         Level = LogLevel.Warning,
-        Message = "Skipped malformed FIRMS row {RowNumber} for {Country} {Source}")]
+        Message = "Skipped malformed FIRMS row {RowNumber} for {CountryCode} {Source}")]
     private static partial void LogMalformedRowSkipped(
         ILogger logger,
         int rowNumber,
-        string country,
+        string countryCode,
         string source);
 
     [LoggerMessage(
         EventId = 7,
         Level = LogLevel.Warning,
-        Message = "Skipped {SkippedRowCount} malformed FIRMS rows for {Country} {Source}")]
+        Message = "Skipped {SkippedRowCount} malformed FIRMS rows for {CountryCode} {Source}")]
     private static partial void LogMalformedRowsSkipped(
         ILogger logger,
         int skippedRowCount,
-        string country,
+        string countryCode,
         string source);
 
     [LoggerMessage(
         EventId = 8,
         Level = LogLevel.Debug,
-        Message = "Refreshed FIRMS area fallback request for {Country} {Source} within {West},{South},{East},{North} in {Elapsed}")]
+        Message = "Refreshed FIRMS area fallback request for {CountryCode} {Source} within {West},{South},{East},{North} in {Elapsed}")]
     private static partial void LogAreaRequestRefreshed(
         ILogger logger,
-        string country,
+        string countryCode,
         string source,
         double west,
         double south,
@@ -613,10 +613,10 @@ public sealed partial class FirmsClient(
     [LoggerMessage(
         EventId = 9,
         Level = LogLevel.Warning,
-        Message = "FIRMS area fallback request failed for {Country} {Source} within {West},{South},{East},{North} after {Elapsed}: {SafeError}")]
+        Message = "FIRMS area fallback request failed for {CountryCode} {Source} within {West},{South},{East},{North} after {Elapsed}: {SafeError}")]
     private static partial void LogAreaRequestFailed(
         ILogger logger,
-        string country,
+        string countryCode,
         string source,
         double west,
         double south,
@@ -671,7 +671,7 @@ public sealed partial class FirmsClient(
 
     private ImmutableArray<Anomaly> ParseRows(CsvReader csv, string countryCode, string source)
     {
-        ImmutableArray<Anomaly>.Builder detections = ImmutableArray.CreateBuilder<Anomaly>();
+        ImmutableArray<Anomaly>.Builder anomalies = ImmutableArray.CreateBuilder<Anomaly>();
         int dataRowCount = 0;
         int skippedRowCount = 0;
 
@@ -680,7 +680,7 @@ public sealed partial class FirmsClient(
             dataRowCount++;
             try
             {
-                detections.Add(ParseRow(csv, countryCode, source));
+                anomalies.Add(ParseRow(csv, countryCode, source));
             }
             catch (Exception exception) when (exception is FormatException or CsvHelperException)
             {
@@ -689,13 +689,13 @@ public sealed partial class FirmsClient(
             }
         }
 
-        if (dataRowCount > 0 && detections.Count == 0)
+        if (dataRowCount > 0 && anomalies.Count == 0)
             throw new FirmsRequestException(safeMessage: "FIRMS returned no usable data rows.");
 
         if (skippedRowCount > 0)
             LogMalformedRowsSkipped(logger, skippedRowCount, countryCode, source);
 
-        return [.. detections.DistinctBy(detection => detection.Id)];
+        return [.. anomalies.DistinctBy(anomaly => anomaly.Id)];
     }
 
     private static Anomaly ParseRow(CsvReader csv, string countryCode, string source)
