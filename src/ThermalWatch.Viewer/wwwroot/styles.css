@@ -276,6 +276,7 @@ select:focus-visible,
 .secondary-button:focus-visible,
 .eligible-cluster-button:focus-visible,
 .field-list a:focus-visible,
+.nearby-feature-list a:focus-visible,
 .raw-record summary:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -976,6 +977,34 @@ select:disabled,
   border-radius: 0.5rem;
   background: rgb(255 255 255 / 1.8%);
   font-size: 0.7rem;
+}
+
+.nearby-feature-links {
+  display: flex;
+  gap: 0.5rem;
+  min-width: 0;
+  align-items: center;
+}
+
+.nearby-feature-osm-link {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 1.75rem;
+  align-items: center;
+  padding: 0.24rem 0.42rem;
+  border: 1px solid #527155;
+  border-radius: 0.38rem;
+  background: rgb(90 145 94 / 12%);
+  color: #a9d8ad;
+  font-size: 0.62rem;
+  font-weight: 780;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.nearby-feature-osm-link:hover {
+  border-color: #7ba67f;
+  background: rgb(90 145 94 / 22%);
 }
 
 .nearby-feature-link {

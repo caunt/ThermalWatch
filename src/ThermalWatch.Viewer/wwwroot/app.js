@@ -930,13 +930,21 @@
     list.className = "nearby-feature-list";
     nearbyFeatures.forEach(feature => {
       const item = document.createElement("li");
+      const links = document.createElement("span");
+      links.className = "nearby-feature-links";
+      const openStreetMapLink = externalMapLink(
+        feature.openStreetMapUrl,
+        `Open ${feature.name} in OpenStreetMap`);
+      openStreetMapLink.classList.add("nearby-feature-osm-link");
+      openStreetMapLink.textContent = "OSM ↗";
       const link = externalMapLink(
         mapSupport.googleMapsUrl(feature.latitude, feature.longitude),
-        feature.name);
+        `Open ${feature.name} in Google Maps`);
       link.className = "nearby-feature-link";
       link.textContent = feature.name;
+      links.append(openStreetMapLink, link);
       item.append(
-        link,
+        links,
         textElement(
           "span",
           mapSupport.formatNearbyDistance(feature.distanceKilometers),
