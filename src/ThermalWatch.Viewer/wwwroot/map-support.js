@@ -134,6 +134,41 @@
       "Coordinates were not recognized. Enter latitude then longitude, use compass labels, or paste a supported map link.");
   }
 
+  function coordinateSearchFromUrl(value) {
+    const url = parseViewerUrl(value);
+    const latitudes = url.searchParams.getAll("lat");
+    const longitudes = url.searchParams.getAll("lon");
+    if (latitudes.length === 0 && longitudes.length === 0)
+      return null;
+    if (latitudes.length !== 1 || longitudes.length !== 1)
+      throw new Error("The viewer URL must include one lat and one lon value.");
+
+    return createCoordinate(
+      parseDecimalNumber(latitudes[0]),
+      parseDecimalNumber(longitudes[0]));
+  }
+
+  function urlWithCoordinateSearch(value, coordinate) {
+    const url = parseViewerUrl(value);
+    const validatedCoordinate = createCoordinate(
+      coordinate?.latitude,
+      coordinate?.longitude);
+    url.searchParams.set("lat", validatedCoordinate.latitude.toFixed(6));
+    url.searchParams.set("lon", validatedCoordinate.longitude.toFixed(6));
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function parseViewerUrl(value) {
+    if (typeof value !== "string" || value.length === 0)
+      throw new Error("The viewer URL is not valid.");
+
+    try {
+      return new URL(value, "https://thermalwatch.invalid/");
+    } catch {
+      throw new Error("The viewer URL is not valid.");
+    }
+  }
+
   function parseGeoUri(value) {
     const match = /^geo:([^?;]+)(?:[?;].*)?$/i.exec(value);
     if (!match)
@@ -960,6 +995,8 @@
     yandexMapsUrl,
     validateNearbyFeatures,
     parseCoordinateInput,
+    coordinateSearchFromUrl,
+    urlWithCoordinateSearch,
     nearestCoordinatePoint,
     notificationMarkerStyle,
     coordinateSearchMarkerStyle,

@@ -11,6 +11,8 @@ const {
   yandexMapsUrl,
   validateNearbyFeatures,
   parseCoordinateInput,
+  coordinateSearchFromUrl,
+  urlWithCoordinateSearch,
   nearestCoordinatePoint,
   notificationMarkerStyle,
   coordinateSearchMarkerStyle,
@@ -429,6 +431,52 @@ test("coordinate search accepts decimal pairs and defaults ambiguous pairs to la
   assert.deepEqual(parseCoordinateInput("57,946080, 60,061420"), expected);
   assert.deepEqual(parseCoordinateInput("120 57"), { latitude: 57, longitude: 120 });
   assert.deepEqual(parseCoordinateInput("60 57"), { latitude: 60, longitude: 57 });
+});
+
+test("viewer URLs restore one validated latitude and longitude", () => {
+  assert.equal(coordinateSearchFromUrl("https://viewer.example/"), null);
+  assert.deepEqual(
+    coordinateSearchFromUrl("https://viewer.example/?lat=57.946080&lon=60.061420"),
+    { latitude: 57.94608, longitude: 60.06142 });
+  assert.deepEqual(
+    coordinateSearchFromUrl("/?lat=-0&lon=-0"),
+    { latitude: 0, longitude: 0 });
+
+  assert.throws(
+    () => coordinateSearchFromUrl("/?lat=57"),
+    /one lat and one lon/);
+  assert.throws(
+    () => coordinateSearchFromUrl("/?lat=57&lat=58&lon=60"),
+    /one lat and one lon/);
+  assert.throws(
+    () => coordinateSearchFromUrl("/?lat=north&lon=60"),
+    /not numeric/);
+  assert.throws(
+    () => coordinateSearchFromUrl("/?lat=91&lon=60"),
+    /Latitude must be between/);
+  assert.throws(
+    () => coordinateSearchFromUrl("/?lat=57&lon=181"),
+    /Longitude must be between/);
+});
+
+test("viewer URLs save canonical coordinates without discarding other URL state", () => {
+  assert.equal(
+    urlWithCoordinateSearch(
+      "https://viewer.example/viewer?mode=compact#details",
+      { latitude: 57.9460804, longitude: 60.0614206 }),
+    "/viewer?mode=compact&lat=57.946080&lon=60.061421#details");
+  assert.equal(
+    urlWithCoordinateSearch(
+      "/?lat=1&lon=2",
+      { latitude: -0, longitude: -0 }),
+    "/?lat=0.000000&lon=0.000000");
+
+  assert.throws(
+    () => urlWithCoordinateSearch("/", { latitude: Number.NaN, longitude: 60 }),
+    /Latitude must be between/);
+  assert.throws(
+    () => urlWithCoordinateSearch("/", { latitude: 57, longitude: -181 }),
+    /Longitude must be between/);
 });
 
 test("coordinate search accepts labels, cardinal directions, and common angle notations", () => {

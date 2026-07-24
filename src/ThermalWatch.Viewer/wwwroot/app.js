@@ -114,6 +114,7 @@
     () => state.provider?.resize(),
     { requestAnimationFrameFunction: callback => window.requestAnimationFrame(callback) }));
 
+  restoreCoordinateSearch();
   void loadViewer();
 
   async function loadViewer() {
@@ -240,9 +241,42 @@
     }
 
     state.searchCoordinate = coordinate;
+    saveCoordinateSearchToUrl(coordinate);
     selectNearestSearchResult();
     state.provider?.setSearchLocation(coordinate);
     state.provider?.focusCoordinate(coordinate);
+  }
+
+  function restoreCoordinateSearch() {
+    let coordinate;
+    try {
+      coordinate = mapSupport.coordinateSearchFromUrl(window.location.href);
+    } catch (error) {
+      setCoordinateSearchFeedback("error", `Search link ignored. ${errorMessage(error)}`);
+      return;
+    }
+
+    if (!coordinate)
+      return;
+
+    state.searchCoordinate = coordinate;
+    elements.coordinateSearchInput.value = formatSearchCoordinate(coordinate);
+    setCoordinateSearchFeedback(
+      "success",
+      `Restoring ${formatSearchCoordinate(coordinate)} from this link.`);
+  }
+
+  function saveCoordinateSearchToUrl(coordinate) {
+    try {
+      const url = mapSupport.urlWithCoordinateSearch(window.location.href, coordinate);
+      window.history.replaceState(window.history.state, "", url);
+      clearNotice("search-url");
+    } catch {
+      setNotice(
+        "search-url",
+        "warning",
+        "The searched location could not be saved in the browser URL.");
+    }
   }
 
   function selectNearestSearchResult() {
