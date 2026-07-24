@@ -10,7 +10,7 @@
 | Boundary | Responsibility | Depends on |
 | --- | --- | --- |
 | `ThermalWatch.Core` | FIRMS ingestion, GIBS and Overpass access, immutable models and snapshots, geography, country boundaries, anomaly identity, nearby mapped context, and the complete anomaly-to-notification-candidate policy and lifecycle. | External data libraries and abstractions only. |
-| `ThermalWatch.Telegram` | Telegram transport validation, message construction, and delivery of prepared Core candidates. | Core. |
+| `ThermalWatch.Telegram` | Telegram transport validation, automatic-forward correlation, message construction, and delivery of prepared Core candidates. | Core. |
 | `ThermalWatch.Viewer` | Viewer configuration and routes, eligible-cluster summaries, notification diagnostics, same-origin imagery delivery, root-mounted static assets, and provider-neutral browser presentation. | Core. |
 | `ThermalWatch.Api` | Sole executable, process startup, environment configuration, resilient HTTP clients, polling, public anomaly/Telegram routes, and static-file hosting. | Viewer, Core, and Telegram. |
 | Browser viewer | Reads same-origin configuration, anomaly, eligible-cluster, notification-diagnostic, and NASA imagery APIs; renders provider-neutral markers through Leaflet or optional Google Maps; offers representative search plus selected-coordinate navigation to Google and Yandex Maps. | ThermalWatch API plus the approved unpkg and Google browser services; external map sites only after user navigation. |
@@ -23,7 +23,7 @@ Preserve the dependency directions `Api -> Viewer -> Core`, `Api -> Telegram -> 
 ```text
 NASA FIRMS -> FirmsClient -> FirmsPollingService -> AnomalySnapshotStore
                                                    |             |
-                                                   |             +-> Core candidate engine -> Telegram formatter/sender -> Telegram API
+                                                   |             +-> Core candidate engine -> Telegram formatter/sender <-> Telegram API
                                                    |             +-> Core eligible/diagnostic evaluators ----------------> browser viewer
                                                    +-> anomaly API -----------------------------------------------> browser viewer
 NASA GIBS -> Core map-tile client -> viewer imagery API -----------------------> browser viewer
@@ -34,7 +34,7 @@ Google Maps ------------------------------------------------------------------> 
 1. Startup parses application-specific environment variables and loads embedded Natural Earth boundaries for every configured country. Invalid application configuration or unusable requested boundaries are fatal.
 2. The poller refreshes immediately, then waits a jittered configured interval after each completed non-overlapping cycle. Consecutive cycles with zero successful segments back off; each country/source combination remains an independent segment.
 3. Successful segments replace their prior data. Failed segments retain their last complete data and become stale.
-4. The store atomically publishes an immutable, active-window snapshot and offers a single-consumer update stream. The Telegram hosted service passes each update to the Core candidate engine and supplies only the message-delivery callback. Core clusters and evaluates all active observations from each consumed snapshot. When startup delivery is disabled, it records only first-snapshot incidents that already pass the complete content policy; initially ineligible incidents remain retryable. Later processing suppresses continuations of those startup incidents and successfully delivered episodes, and looks up nearby mapped context only after an automatic candidate is ready to deliver or a manual candidate has been ranked and selected.
+4. The store atomically publishes an immutable, active-window snapshot and offers a single-consumer update stream. The Telegram hosted service also owns the configured bot's message-update stream so it can correlate channel posts with their automatic forwards in the linked discussion. It passes each snapshot update to the Core candidate engine and supplies only the message-delivery callback. Core clusters and evaluates all active observations from each consumed snapshot. When startup delivery is disabled, it records only first-snapshot incidents that already pass the complete content policy; initially ineligible incidents remain retryable. Later processing suppresses continuations of those startup incidents and successfully delivered episodes, and looks up nearby mapped context only after an automatic candidate is ready to deliver or a manual candidate has been ranked and selected.
 5. Anomaly API requests read the current snapshot only and never trigger NASA requests. Viewer imagery API requests may retrieve and compose GIBS tiles in Core; complete results use the bounded in-memory cache.
 6. The framework-free viewer consumes same-origin configuration, anomaly, eligible-cluster, notification-diagnostic, and NASA imagery contracts. Its list query asks Core for notification-priority-ordered clusters passing all enabled content criteria; selecting a list row searches the representative coordinates. Selecting an anomaly asks Core to exhaustively explain the same policy rules and look up nearby mapped context around that observation. Both evaluations are read-only and do not inspect or mutate automatic startup-incident or delivered-episode state.
 
@@ -54,7 +54,7 @@ All API routes use camel-case JSON. The host currently permits cross-origin `GET
 
 ## State and invariants
 
-- Anomaly segments, current snapshot, GIBS preview/land-cover/viewer-tile cache entries, Overpass lookup cache entries, startup-incident history, and delivered-episode history exist only in process memory. Unsent notification candidates are not retained. Restart is the only persistence boundary.
+- Anomaly segments, current snapshot, GIBS preview/land-cover/viewer-tile cache entries, Overpass lookup cache entries, bounded Telegram automatic-forward correlations, startup-incident history, and delivered-episode history exist only in process memory. Unsent notification candidates are not retained. Restart is the only persistence boundary.
 - The anomaly API exposes every valid active FIRMS observation. Notification filters do not delete or annotate API anomalies.
 - MODIS and the three VIIRS feeds remain distinct observations because their sensors and acquisition characteristics differ.
 - Anomaly and cluster IDs are deterministic hashes of stable observation inputs; see [AnomalyId.cs](../src/ThermalWatch.Core/AnomalyId.cs).
@@ -66,7 +66,7 @@ All API routes use camel-case JSON. The host currently permits cross-origin `GET
 - NASA FIRMS supplies country/area CSV data and MAP_KEY status. Failures are isolated per segment; only a verified country-feature outage enables area fallback.
 - NASA GIBS supplies exact-date notification imagery, land-cover tiles, and backend-retrieved viewer map tiles. Missing required notification imagery rejects the cluster for the current snapshot and is reevaluated after later publications; GIBS failure leaves missing viewer pixels transparent and does not stop FIRMS ingestion or the anomaly API.
 - OpenStreetMap's public Overpass endpoint supplies named nodes, ways, and relations within 2 km on demand. Requests are serialized and cached; failure logs a Warning and produces no nearby results without affecting diagnostics, Telegram delivery, FIRMS polling, or the anomaly API.
-- Telegram is outbound only. Missing credentials, validation failure, or notifier disablement does not stop polling or HTTP service.
+- Telegram is outbound for notifications and inbound only through dedicated Bot API message polling used to identify automatic forwards in the linked discussion. An existing webhook, a competing update consumer, insufficient discussion visibility, missing credentials, validation failure, or notifier disablement does not stop FIRMS polling or the HTTP service.
 - Natural Earth boundary data is embedded in Core, so fallback does not depend on a runtime boundary service.
 - Browser-only external dependencies are pinned Leaflet assets from unpkg and optional Google Maps JavaScript. Selected-anomaly links can navigate to Google or Yandex Maps, and nearby-result links can navigate to Google Maps at the feature coordinates; none is a server-side data dependency. NASA/FIRMS/Overpass data is never requested directly by viewer code. Browser or viewer-tile failure affects the viewer, not FIRMS ingestion.
 - Serilog writes structured events to the console. The repository defines no database, durable queue, health endpoint, metrics, tracing, or production deployment target.

@@ -44,6 +44,26 @@ internal static partial class TelegramNotificationLog
         Message = "Telegram notifier disabled: bot cannot comment in the linked discussion")]
     internal static partial void CannotComment(ILogger logger);
 
+    [LoggerMessage(EventId = 11, Level = LogLevel.Error,
+        Message = "Telegram notifier disabled: the bot has a webhook configured")]
+    internal static partial void WebhookConfigured(ILogger logger);
+
+    [LoggerMessage(EventId = 12, Level = LogLevel.Error,
+        Message = "Telegram notifier disabled: another update consumer is using the bot")]
+    internal static partial void UpdateConsumerConflict(ILogger logger);
+
+    [LoggerMessage(EventId = 13, Level = LogLevel.Error,
+        Message = "Telegram notifier disabled: bot cannot read messages in the linked discussion")]
+    internal static partial void CannotReadDiscussion(ILogger logger);
+
+    [LoggerMessage(EventId = 14, Level = LogLevel.Warning,
+        Message = "Telegram update polling failed transiently; retrying")]
+    internal static partial void UpdatePollingFailed(ILogger logger);
+
+    [LoggerMessage(EventId = 15, Level = LogLevel.Error,
+        Message = "Telegram notifier disabled after a permanent update polling failure")]
+    internal static partial void PermanentUpdatePollingFailure(ILogger logger);
+
     [LoggerMessage(EventId = 18, Level = LogLevel.Information,
         Message = "Sent Telegram notification for cluster {ClusterId}, {Satellite} at {AcquiredAtUtc}")]
     internal static partial void NotificationSent(

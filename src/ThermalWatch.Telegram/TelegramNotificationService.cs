@@ -15,19 +15,28 @@ public sealed class TelegramNotificationService(
     IHttpClientFactory httpClientFactory,
     ILogger<TelegramNotificationService> logger) : BackgroundService
 {
+    private static readonly TimeSpan s_commentWaitTimeout = TimeSpan.FromSeconds(seconds: 15);
+    private static readonly TimeSpan s_updatePollingRetryDelay = TimeSpan.FromSeconds(seconds: 5);
     private readonly SemaphoreSlim _manualSendGate = new(initialCount: 1, maxCount: 1);
     private ValidatedTelegram? _validated;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        ValidatedTelegram? validation = await TryValidateAsync(stoppingToken).ConfigureAwait(false);
+        using var runtimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        ValidatedTelegram? validation = await TryValidateAsync(runtimeCancellation.Token).ConfigureAwait(false);
         if (validation is not { } validated)
             return;
 
         Volatile.Write(ref _validated, validated);
+        Task updateReceiver = MonitorDiscussionUpdatesAsync(
+            validated,
+            runtimeCancellation,
+            runtimeCancellation.Token);
         try
         {
-            await foreach (AnomalySnapshot? snapshot in snapshotStore.ReadUpdatesAsync(stoppingToken).ConfigureAwait(false))
+            await foreach (AnomalySnapshot? snapshot in snapshotStore
+                .ReadUpdatesAsync(runtimeCancellation.Token)
+                .ConfigureAwait(false))
             {
                 if (!ReferenceEquals(Volatile.Read(ref _validated), validated))
                     return;
@@ -38,14 +47,20 @@ public sealed class TelegramNotificationService(
                         validated,
                         candidate,
                         cancellationToken),
-                    stoppingToken).ConfigureAwait(false);
+                    runtimeCancellation.Token).ConfigureAwait(false);
                 LogProcessingSummary(result.Summary);
                 if (!result.ContinueProcessing)
                     return;
             }
         }
+        catch (OperationCanceledException) when (runtimeCancellation.IsCancellationRequested)
+        {
+            // Normal hosted-service shutdown or permanent update-receiver failure.
+        }
         finally
         {
+            await runtimeCancellation.CancelAsync().ConfigureAwait(false);
+            await updateReceiver.ConfigureAwait(false);
             Interlocked.CompareExchange(ref _validated, value: null, validated);
         }
     }
@@ -81,47 +96,17 @@ public sealed class TelegramNotificationService(
     {
         try
         {
-            var clientOptions = new TelegramBotClientOptions(options.BotToken!)
-            {
-                RetryCount = 2,
-                RetryThreshold = 30
-            };
-            var client = new TelegramBotClient(
-                clientOptions,
-                httpClientFactory.CreateClient(name: "Telegram"),
-                cancellationToken);
-            var channelId = new ChatId(options.ChannelId!);
-            User bot = await client.GetMe(cancellationToken).ConfigureAwait(false);
-            ChatFullInfo channel = await client.GetChat(channelId, cancellationToken).ConfigureAwait(false);
-
-            if (channel.Type != ChatType.Channel)
-            {
-                TelegramNotificationLog.InvalidChannel(logger);
-                return null;
-            }
-
-            ChatMember channelMember = await client.GetChatMember(channelId, bot.Id, cancellationToken).ConfigureAwait(false);
-            if (channelMember is not ChatMemberOwner
-                && channelMember is not ChatMemberAdministrator { CanPostMessages: true })
-            {
-                TelegramNotificationLog.CannotPost(logger);
-                return null;
-            }
-
-            ChatId? discussionId = await TryResolveDiscussionAsync(
-                client,
-                channel,
-                bot.Id,
-                cancellationToken).ConfigureAwait(false);
-            if (discussionId is null)
-                return null;
-
-            TelegramNotificationLog.Validated(logger);
-            return new(client, channelId, new(channel.Id), discussionId);
+            TelegramBotClient client = CreateTelegramClient(cancellationToken);
+            return await ValidateClientAsync(client, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (ApiRequestException exception) when (exception.ErrorCode == 409)
+        {
+            TelegramNotificationLog.UpdateConsumerConflict(logger);
+            return null;
         }
         catch (Exception)
         {
@@ -130,10 +115,69 @@ public sealed class TelegramNotificationService(
         }
     }
 
-    private async Task<ChatId?> TryResolveDiscussionAsync(
+    private TelegramBotClient CreateTelegramClient(CancellationToken cancellationToken)
+    {
+        var clientOptions = new TelegramBotClientOptions(options.BotToken!)
+        {
+            RetryCount = 2,
+            RetryThreshold = 30
+        };
+        return new TelegramBotClient(
+            clientOptions,
+            httpClientFactory.CreateClient(name: "Telegram"),
+            cancellationToken);
+    }
+
+    private async Task<ValidatedTelegram?> ValidateClientAsync(
+        ITelegramBotClient client,
+        CancellationToken cancellationToken)
+    {
+        WebhookInfo webhook = await client.GetWebhookInfo(cancellationToken).ConfigureAwait(false);
+        if (HasConfiguredWebhook(webhook))
+        {
+            TelegramNotificationLog.WebhookConfigured(logger);
+            return null;
+        }
+
+        var channelId = new ChatId(options.ChannelId!);
+        User bot = await client.GetMe(cancellationToken).ConfigureAwait(false);
+        ChatFullInfo channel = await client.GetChat(channelId, cancellationToken).ConfigureAwait(false);
+        if (channel.Type != ChatType.Channel)
+        {
+            TelegramNotificationLog.InvalidChannel(logger);
+            return null;
+        }
+
+        ChatMember channelMember = await client.GetChatMember(channelId, bot.Id, cancellationToken).ConfigureAwait(false);
+        if (channelMember is not ChatMemberOwner
+            && channelMember is not ChatMemberAdministrator { CanPostMessages: true })
+        {
+            TelegramNotificationLog.CannotPost(logger);
+            return null;
+        }
+
+        long? discussionChatId = await TryResolveDiscussionAsync(
+            client,
+            channel,
+            bot,
+            cancellationToken).ConfigureAwait(false);
+        if (discussionChatId is null)
+            return null;
+
+        int initialUpdateOffset = await GetInitialUpdateOffsetAsync(client, cancellationToken).ConfigureAwait(false);
+        TelegramNotificationLog.Validated(logger);
+        return new(
+            client,
+            channelId,
+            new ChatId(discussionChatId.Value),
+            new TelegramDiscussionMessageTracker(channel.Id, discussionChatId.Value),
+            initialUpdateOffset);
+    }
+
+    private async Task<long?> TryResolveDiscussionAsync(
         ITelegramBotClient client,
         ChatFullInfo channel,
-        long botId,
+        User bot,
         CancellationToken cancellationToken)
     {
         if (channel.LinkedChatId is not { } discussionChatId)
@@ -150,14 +194,103 @@ public sealed class TelegramNotificationService(
             return null;
         }
 
-        ChatMember member = await client.GetChatMember(discussionId, botId, cancellationToken).ConfigureAwait(false);
+        ChatMember member = await client.GetChatMember(discussionId, bot.Id, cancellationToken).ConfigureAwait(false);
         if (!CanSendToDiscussion(member))
         {
             TelegramNotificationLog.CannotComment(logger);
             return null;
         }
 
-        return discussionId;
+        if (!CanReadDiscussion(bot, member))
+        {
+            TelegramNotificationLog.CannotReadDiscussion(logger);
+            return null;
+        }
+
+        return discussionChatId;
+    }
+
+    internal static async Task<int> GetInitialUpdateOffsetAsync(
+        ITelegramBotClient client,
+        CancellationToken cancellationToken)
+    {
+        Update[] updates = await client.GetUpdates(
+            offset: -1,
+            limit: 1,
+            timeout: 0,
+            allowedUpdates: [UpdateType.Message],
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        return updates.Length == 0 ? 0 : updates[^1].Id + 1;
+    }
+
+    internal static async Task<TelegramUpdateReceiverStopReason> ReceiveDiscussionUpdatesAsync(
+        ITelegramBotClient client,
+        int initialUpdateOffset,
+        TelegramDiscussionMessageTracker discussionMessages,
+        TimeSpan retryDelay,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        int updateOffset = initialUpdateOffset;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                Update[] updates = await client.GetUpdates(
+                    offset: updateOffset,
+                    limit: 100,
+                    timeout: 5,
+                    allowedUpdates: [UpdateType.Message],
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                foreach (Update update in updates)
+                {
+                    updateOffset = update.Id + 1;
+                    discussionMessages.Observe(update);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return TelegramUpdateReceiverStopReason.Canceled;
+            }
+            catch (ApiRequestException exception) when (exception.ErrorCode is 400 or 401 or 403 or 409)
+            {
+                return TelegramUpdateReceiverStopReason.PermanentFailure;
+            }
+            catch (Exception)
+            {
+                TelegramNotificationLog.UpdatePollingFailed(logger);
+                try
+                {
+                    await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return TelegramUpdateReceiverStopReason.Canceled;
+                }
+            }
+        }
+
+        return TelegramUpdateReceiverStopReason.Canceled;
+    }
+
+    private async Task MonitorDiscussionUpdatesAsync(
+        ValidatedTelegram validated,
+        CancellationTokenSource runtimeCancellation,
+        CancellationToken cancellationToken)
+    {
+        TelegramUpdateReceiverStopReason result = await ReceiveDiscussionUpdatesAsync(
+            validated.Client,
+            validated.InitialUpdateOffset,
+            validated.DiscussionMessages,
+            s_updatePollingRetryDelay,
+            logger,
+            cancellationToken).ConfigureAwait(false);
+        if (result == TelegramUpdateReceiverStopReason.PermanentFailure)
+        {
+            DisableValidatedTelegram(validated);
+            TelegramNotificationLog.PermanentUpdatePollingFailure(logger);
+            await runtimeCancellation.CancelAsync().ConfigureAwait(false);
+        }
     }
 
     private async Task<ManualTelegramSendResult> ExecuteManualSendAsync(
@@ -326,18 +459,20 @@ public sealed class TelegramNotificationService(
         SendNotificationAsync(
             validated.Client,
             validated.ChannelId,
-            validated.ChannelReplyId,
             validated.DiscussionId,
+            validated.DiscussionMessages,
             candidate,
+            s_commentWaitTimeout,
             logger,
             cancellationToken);
 
     internal static async Task SendNotificationAsync(
         ITelegramBotClient client,
         ChatId channelId,
-        ChatId channelReplyId,
         ChatId discussionId,
+        TelegramDiscussionMessageTracker discussionMessages,
         PreparedNotificationCandidate candidate,
+        TimeSpan commentWaitTimeout,
         ILogger logger,
         CancellationToken cancellationToken)
     {
@@ -349,37 +484,32 @@ public sealed class TelegramNotificationService(
             candidate.LandCoverSummary,
             candidate.NearbyFeatures);
 
-        Message channelPost;
-        if (candidate.Preview.PngBytes is { } pngBytes)
-        {
-            using var stream = new MemoryStream(pngBytes, writable: false);
-            channelPost = await client.SendPhoto(
-                channelId,
-                InputFile.FromStream(stream, fileName: "thermal-anomaly.png"),
-                caption: messages.MainMessage,
-                parseMode: ParseMode.Html,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            channelPost = await client.SendMessage(
-                channelId,
-                messages.MainMessage,
-                parseMode: ParseMode.Html,
-                linkPreviewOptions: new() { IsDisabled = true },
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-        }
+        Message channelPost = await SendChannelPostAsync(
+            client,
+            channelId,
+            candidate.Preview.PngBytes,
+            messages.MainMessage,
+            cancellationToken).ConfigureAwait(false);
 
         try
         {
+            int? discussionMessageId = await discussionMessages.WaitAsync(
+                channelPost.Id,
+                commentWaitTimeout,
+                cancellationToken).ConfigureAwait(false);
+            if (discussionMessageId is null)
+            {
+                TelegramNotificationLog.CommentFailed(logger, candidate.Cluster.Id);
+                return;
+            }
+
             await client.SendMessage(
                 discussionId,
                 messages.CommentMessage,
                 parseMode: ParseMode.Html,
                 replyParameters: new()
                 {
-                    MessageId = channelPost.Id,
-                    ChatId = channelReplyId
+                    MessageId = discussionMessageId.Value
                 },
                 linkPreviewOptions: new() { IsDisabled = true },
                 cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -393,6 +523,37 @@ public sealed class TelegramNotificationService(
             TelegramNotificationLog.CommentFailed(logger, candidate.Cluster.Id);
         }
     }
+
+    private static async Task<Message> SendChannelPostAsync(
+        ITelegramBotClient client,
+        ChatId channelId,
+        byte[]? pngBytes,
+        string mainMessage,
+        CancellationToken cancellationToken)
+    {
+        if (pngBytes is not null)
+        {
+            using var stream = new MemoryStream(pngBytes, writable: false);
+            return await client.SendPhoto(
+                channelId,
+                InputFile.FromStream(stream, fileName: "thermal-anomaly.png"),
+                caption: mainMessage,
+                parseMode: ParseMode.Html,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
+        return await client.SendMessage(
+            channelId,
+            mainMessage,
+            parseMode: ParseMode.Html,
+            linkPreviewOptions: new() { IsDisabled = true },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static bool CanReadDiscussion(User bot, ChatMember member) =>
+        bot.CanReadAllGroupMessages || member is ChatMemberOwner or ChatMemberAdministrator;
+
+    internal static bool HasConfiguredWebhook(WebhookInfo webhook) => !string.IsNullOrEmpty(webhook.Url);
 
     private static bool CanSendToDiscussion(ChatMember member) => member switch
     {
@@ -463,6 +624,7 @@ public sealed class TelegramNotificationService(
     private sealed record ValidatedTelegram(
         ITelegramBotClient Client,
         ChatId ChannelId,
-        ChatId ChannelReplyId,
-        ChatId DiscussionId);
+        ChatId DiscussionId,
+        TelegramDiscussionMessageTracker DiscussionMessages,
+        int InitialUpdateOffset);
 }

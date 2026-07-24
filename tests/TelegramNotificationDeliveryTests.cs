@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 using ThermalWatch.Core;
 using ThermalWatch.Telegram;
 
@@ -24,15 +25,24 @@ public sealed class TelegramNotificationDeliveryTests
         var client = new TelegramBotClient(
             new TelegramBotClientOptions(token: "123456:test-token") { RetryCount = 0 },
             httpClient);
+        var discussionMessages = new TelegramDiscussionMessageTracker(
+            channelId: -100100L,
+            discussionId: -100200L);
 
-        await TelegramNotificationService.SendNotificationAsync(
+        Task delivery = TelegramNotificationService.SendNotificationAsync(
             client,
             new ChatId(username: "@cso_ukr"),
-            new ChatId(identifier: -100100L),
             new ChatId(identifier: -100200L),
+            discussionMessages,
             CreateCandidate(hasPreview),
+            TimeSpan.FromSeconds(seconds: 5),
             NullLogger.Instance,
             TestContext.Current.CancellationToken);
+        await handler.FirstRequestReceived.Task.WaitAsync(TestContext.Current.CancellationToken);
+        discussionMessages.Observe(CreateAutomaticForward(
+            channelMessageId: 701,
+            discussionMessageId: 801));
+        await delivery;
 
         Assert.Collection(
             handler.Requests,
@@ -58,11 +68,9 @@ public sealed class TelegramNotificationDeliveryTests
                 Assert.False(root.TryGetProperty(propertyName: "reply_markup", out _));
                 JsonElement reply = root.GetProperty(propertyName: "reply_parameters");
                 Assert.Equal(
-                    expected: 701,
+                    expected: 801,
                     actual: reply.GetProperty(propertyName: "message_id").GetInt32());
-                Assert.Equal(
-                    expected: -100100L,
-                    actual: reply.GetProperty(propertyName: "chat_id").GetInt64());
+                Assert.False(reply.TryGetProperty(propertyName: "chat_id", out _));
                 Assert.True(root
                     .GetProperty(propertyName: "link_preview_options")
                     .GetProperty(propertyName: "is_disabled")
@@ -78,17 +86,48 @@ public sealed class TelegramNotificationDeliveryTests
         var client = new TelegramBotClient(
             new TelegramBotClientOptions(token: "123456:test-token") { RetryCount = 0 },
             httpClient);
+        var discussionMessages = new TelegramDiscussionMessageTracker(
+            channelId: -100100L,
+            discussionId: -100200L);
+
+        Task delivery = TelegramNotificationService.SendNotificationAsync(
+            client,
+            new ChatId(username: "@cso_ukr"),
+            new ChatId(identifier: -100200L),
+            discussionMessages,
+            CreateCandidate(hasPreview: false),
+            TimeSpan.FromSeconds(seconds: 5),
+            NullLogger.Instance,
+            TestContext.Current.CancellationToken);
+        await handler.FirstRequestReceived.Task.WaitAsync(TestContext.Current.CancellationToken);
+        discussionMessages.Observe(CreateAutomaticForward(
+            channelMessageId: 701,
+            discussionMessageId: 801));
+        await delivery;
+
+        Assert.Equal(expected: 2, actual: handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task SendNotificationTreatsMissingAutomaticForwardAsCompletedAsync()
+    {
+        var handler = new RecordingTelegramHandler(failedRequestNumber: null);
+        using var httpClient = new HttpClient(handler);
+        var client = new TelegramBotClient(
+            new TelegramBotClientOptions(token: "123456:test-token") { RetryCount = 0 },
+            httpClient);
 
         await TelegramNotificationService.SendNotificationAsync(
             client,
             new ChatId(username: "@cso_ukr"),
-            new ChatId(identifier: -100100L),
             new ChatId(identifier: -100200L),
+            new TelegramDiscussionMessageTracker(channelId: -100100L, discussionId: -100200L),
             CreateCandidate(hasPreview: false),
+            TimeSpan.FromMilliseconds(milliseconds: 10),
             NullLogger.Instance,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(expected: 2, actual: handler.Requests.Count);
+        Assert.Single(handler.Requests);
     }
 
     [Fact]
@@ -104,13 +143,33 @@ public sealed class TelegramNotificationDeliveryTests
             TelegramNotificationService.SendNotificationAsync(
                 client,
                 new ChatId(username: "@cso_ukr"),
-                new ChatId(identifier: -100100L),
                 new ChatId(identifier: -100200L),
+                new TelegramDiscussionMessageTracker(channelId: -100100L, discussionId: -100200L),
                 CreateCandidate(hasPreview: false),
+                TimeSpan.FromSeconds(seconds: 5),
                 NullLogger.Instance,
                 TestContext.Current.CancellationToken));
         Assert.Single(handler.Requests);
     }
+
+    private static Update CreateAutomaticForward(int channelMessageId, int discussionMessageId) =>
+        new()
+        {
+            Id = 900,
+            Message = new()
+            {
+                Id = discussionMessageId,
+                Date = new DateTime(year: 2026, month: 7, day: 24, hour: 12, minute: 0, second: 0, kind: DateTimeKind.Utc),
+                Chat = new() { Id = -100200L, Type = ChatType.Supergroup },
+                IsAutomaticForward = true,
+                ForwardOrigin = new MessageOriginChannel
+                {
+                    Date = new DateTime(year: 2026, month: 7, day: 24, hour: 12, minute: 0, second: 0, kind: DateTimeKind.Utc),
+                    Chat = new() { Id = -100100L, Type = ChatType.Channel },
+                    MessageId = channelMessageId
+                }
+            }
+        };
 
     private static PreparedNotificationCandidate CreateCandidate(bool hasPreview)
     {
@@ -160,6 +219,9 @@ public sealed class TelegramNotificationDeliveryTests
 
     private sealed class RecordingTelegramHandler(int? failedRequestNumber) : HttpMessageHandler
     {
+        public TaskCompletionSource FirstRequestReceived { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public List<RecordedRequest> Requests { get; } = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -169,6 +231,9 @@ public sealed class TelegramNotificationDeliveryTests
             string body = await request.Content!.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             string methodName = request.RequestUri!.Segments[^1];
             Requests.Add(new(methodName, body));
+            if (Requests.Count == 1)
+                FirstRequestReceived.TrySetResult();
+
             if (Requests.Count == failedRequestNumber)
             {
                 return JsonResponse(

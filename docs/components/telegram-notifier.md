@@ -11,9 +11,11 @@ Read the [notification policy](../domain/notification-policy.md) for clustering,
 
 `ThermalWatch.Telegram` contains no clustering, filter, candidate-state, preview-selection, or ranking policy. The API host always registers one singleton `TelegramNotificationService` so the manual endpoint can report availability. It starts that singleton as a hosted service only when both Telegram credentials are present.
 
-At startup the service creates an outbound-only bot client, calls `GetMe`, resolves the configured chat, requires channel type, and requires the bot to be owner or an administrator allowed to post. It derives the channel's linked discussion from Telegram metadata, requires a reciprocal supergroup link, and requires the bot to be a member allowed to send messages there. Failure logs a safe message and disables Telegram delivery for the process lifetime. Validation is not retried automatically, and polling, Viewer diagnostics, candidate policy, and HTTP APIs remain available.
+At startup the service creates a bot client, rejects an existing webhook, calls `GetMe`, resolves the configured chat, requires channel type, and requires the bot to be owner or an administrator allowed to post. It derives the channel's linked discussion from Telegram metadata, requires a reciprocal supergroup link, and requires the bot to be a member allowed to send messages there. The bot must also be a discussion administrator or have privacy mode disabled so Telegram delivers the automatic-forward messages used for comment correlation. ThermalWatch requires exclusive `getUpdates` ownership; the bot cannot be shared with another update consumer.
 
-The validated bot client, configured channel ID, resolved numeric channel ID, and linked discussion ID form the adapter's availability state. Bot tokens and channel identifiers remain the only options owned by the Telegram project; no separate discussion setting is required. The API host parses notification-policy options into neutral Core types.
+After validation, the service discards pending updates and starts bounded long polling for new message updates. Failure logs a safe message and disables Telegram delivery for the process lifetime. Validation is not retried automatically, and FIRMS polling, Viewer diagnostics, candidate policy, and HTTP APIs remain available.
+
+The validated bot client, configured channel ID, linked discussion ID, update offset, and bounded in-memory automatic-forward correlations form the adapter's availability state. Bot tokens and channel identifiers remain the only options owned by the Telegram project; no separate discussion or polling setting is required. The API host parses notification-policy options into neutral Core types.
 
 ## Automatic delivery
 
@@ -23,10 +25,11 @@ For each prepared candidate passed to the callback, Telegram:
 
 1. Builds the shared HTML channel caption and the appropriate single- or multi-satellite detail comment.
 2. Sends the main channel post as a photo when Core supplied preview bytes, otherwise as text with link previews disabled.
-3. Sends one text comment to the linked discussion with cross-chat reply parameters that identify the exact channel post.
-4. Returns `Delivered`, `RetryLater`, or `Stop` to Core according to the main-post result.
+3. Waits up to 15 seconds for Telegram to automatically forward that exact post into the linked discussion, correlating the channel and discussion message IDs from the forward origin.
+4. Sends one text comment as a same-discussion reply to the automatic-forward message so Telegram associates it with the channel post's comment thread.
+5. Returns `Delivered`, `RetryLater`, or `Stop` to Core according to the main-post result.
 
-Core records delivered-episode history only after `Delivered`. A transient main-post failure returns `RetryLater`; Core retains no candidate, and the next snapshot reevaluates the active cluster. A main-post Telegram `400`, `401`, or `403` returns `Stop`, clears the validated client, and ends automatic processing until restart. Once the main post succeeds, a comment failure is logged but the candidate remains delivered so a later snapshot cannot duplicate the channel post. Cancellation stops the hosted service normally.
+Core records delivered-episode history only after `Delivered`. A transient main-post failure returns `RetryLater`; Core retains no candidate, and the next snapshot reevaluates the active cluster. A main-post Telegram `400`, `401`, or `403` returns `Stop`, clears the validated client, and ends automatic processing until restart. Transient update-polling failures retry after a bounded delay; `400`, `401`, `403`, or competing-consumer `409` responses disable the notifier and cancel automatic processing. Once the main post succeeds, a missing automatic forward or comment failure is logged but the candidate remains delivered so a later snapshot cannot duplicate the channel post. Cancellation stops both loops normally.
 
 ## Message construction
 
@@ -46,6 +49,6 @@ The endpoint status mapping and input validation remain in [Program.cs](../../sr
 
 ## Tests and diagnostics
 
-Core tests cover clustering, policy, candidate lifecycle, land cover, preview handling, nearby-feature enrichment, manual ranking, and read-only Viewer diagnostics. Telegram tests cover options, exact channel/comment formatting and bounds, nearby-context wording, in-text map links, linked-discussion request sequencing, partial failures, and adapter-visible response contracts. Tests use fake HTTP handlers and never call Telegram, NASA, or Overpass live.
+Core tests cover clustering, policy, candidate lifecycle, land cover, preview handling, nearby-feature enrichment, manual ranking, and read-only Viewer diagnostics. Telegram tests cover options, exact channel/comment formatting and bounds, nearby-context wording, in-text map links, automatic-forward correlation, update polling, linked-discussion request sequencing, partial failures, and adapter-visible response contracts. Tests use fake HTTP handlers and never call Telegram, NASA, or Overpass live.
 
-Operational signals are console logs and manual endpoint results. There is no Telegram health endpoint, webhook, inbound update loop, durable outbox, persisted state, or independent retry timer.
+Operational signals are console logs and manual endpoint results. The receiver consumes only Bot API message updates needed to find automatic forwards; it does not process commands or user content. There is no Telegram health endpoint, webhook listener, durable outbox, persisted state, or independent delivery retry timer.
