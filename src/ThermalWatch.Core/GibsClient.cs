@@ -158,6 +158,10 @@ public sealed partial class GibsClient(
             return GibsPreview.Unavailable;
         }
 
+        bytes = GibsPreviewRuler.Render(bytes, dimensions);
+        if (bytes is null)
+            return GibsPreview.Unavailable;
+
         var preview = new GibsPreview(bytes, selected.BaseSource);
         cache.Set(
             previewCacheKey,

@@ -39,6 +39,13 @@ public sealed class GibsClientPreviewTests
         Assert.Equal(new GibsPreviewSource(FirmsSource: "VIIRS_NOAA20_NRT", Satellite: "NOAA-20", Instrument: "VIIRS"), first.BaseSource);
         Assert.Equal([Noaa20Base], handler.ProbedBaseLayers);
         Assert.Equal($"{Noaa20Base},{Noaa20Overlay}", Assert.Single(handler.CompositeLayers));
+        Assert.NotNull(first.PngBytes);
+        var image = StbImageSharp.ImageResult.FromMemory(
+            first.PngBytes,
+            StbImageSharp.ColorComponents.RedGreenBlueAlpha);
+        Assert.Contains(
+            image.Data.Chunk(size: 4),
+            pixel => pixel.SequenceEqual([byte.MaxValue, byte.MaxValue, byte.MaxValue, byte.MaxValue]));
         Assert.Same(first, second);
         Assert.Equal(requestCount, handler.RequestCount);
     }

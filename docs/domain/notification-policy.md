@@ -2,7 +2,7 @@
 
 > **Purpose:** Define the non-obvious domain rules that distinguish raw thermal observations from Telegram notification candidates.
 > **Scope:** Anomaly meaning and identity, clustering, automatic selection, visibility and land-cover filters, diagnostics, imagery, and manual sends.
-> **Sources of truth:** [Anomaly model](../../src/ThermalWatch.Core/Anomaly.cs), [notification cluster](../../src/ThermalWatch.Core/NotificationCluster.cs), [clustering](../../src/ThermalWatch.Core/NotificationClustering.cs), [candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs), [metadata policy](../../src/ThermalWatch.Core/NotificationPolicy.cs), [land-cover policy](../../src/ThermalWatch.Core/NotificationLandCoverPolicy.cs), and [nearby-feature client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs).
+> **Sources of truth:** [Anomaly model](../../src/ThermalWatch.Core/Anomaly.cs), [notification cluster](../../src/ThermalWatch.Core/NotificationCluster.cs), [clustering](../../src/ThermalWatch.Core/NotificationClustering.cs), [candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs), [metadata policy](../../src/ThermalWatch.Core/NotificationPolicy.cs), [GIBS client](../../src/ThermalWatch.Core/GibsClient.cs), [land-cover policy](../../src/ThermalWatch.Core/NotificationLandCoverPolicy.cs), and [nearby-feature client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs).
 > **Update when:** Observation identity, clustering, representative choice, eligibility, diagnostic explanation, filtering order, imagery or nearby-context policy, or manual-send semantics change.
 
 ## Observation meaning and API boundary
@@ -96,6 +96,8 @@ This is a fresh, read-only evaluation. It neither reads nor changes startup inci
 The overlay and selected base must advertise the exact acquisition date. The client probes the requested crop rather than treating global date availability as proof that spatial pixels are ready. It prefers the representative satellite's base, then tries other supported satellites in the same sensor family, followed by the other family. A fallback changes only the contextual base: the representative thermal overlay remains authoritative, and the Telegram caption names both sources. It never chooses the nearest date or a different pass. Imagery represents a date, not the exact acquisition minute.
 
 Black, transparent, malformed, or mostly no-data base crops are unavailable and are not cached, so a later snapshot can retry transient GIBS ingestion gaps. Each automatic evaluation attempts the preview once. With the visibility filter and preview requirement enabled, an unavailable preview rejects the cluster for the current snapshot; otherwise it sends as text immediately. Crop selection uses the large dimensions when detection count, representative FRP, or cluster diameter meets its configured large-cluster threshold.
+
+Every successfully composed notification preview is losslessly re-encoded as a PNG with a kilometre ruler before Core caches it for automatic or manual delivery. The ruler uses the configured physical coverage to place one-kilometre ticks along the bottom and left edges, labels ten-kilometre intervals and exact endpoints, shows the origin once, and identifies both axes in kilometres. Its outlined text and geometry scale with the shorter pixel dimension. When an unusually dense scale cannot fit every intermediate label, it retains the ticks, origin, units, and exact endpoints and omits only colliding intermediate labels.
 
 ## Manual send differences
 
