@@ -44,8 +44,8 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `TELEGRAM_PREVIEW_HEIGHT_KM` | `40` | Positive finite number. |
 | `TELEGRAM_LARGE_PREVIEW_WIDTH_KM` | `90` | Positive finite number. |
 | `TELEGRAM_LARGE_PREVIEW_HEIGHT_KM` | `60` | Positive finite number. |
-| `TELEGRAM_PREVIEW_PIXEL_WIDTH` | `900` | Integer greater than or equal to 1. |
-| `TELEGRAM_PREVIEW_PIXEL_HEIGHT` | `600` | Integer greater than or equal to 1. |
+| `TELEGRAM_PREVIEW_PIXEL_WIDTH` | `3840` | Integer greater than or equal to 1. |
+| `TELEGRAM_PREVIEW_PIXEL_HEIGHT` | `2560` | Integer greater than or equal to 1. |
 | `TELEGRAM_LARGE_CLUSTER_MIN_DETECTIONS` | `8` | Integer greater than or equal to 1. |
 | `TELEGRAM_LARGE_CLUSTER_MIN_FRP_MW` | `500` | Non-negative finite number. |
 | `TELEGRAM_LARGE_CLUSTER_MIN_DIAMETER_KM` | `8` | Non-negative finite number. |
