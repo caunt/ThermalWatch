@@ -6,6 +6,19 @@ namespace ThermalWatch.Tests;
 public sealed class NotificationOptionsTests
 {
     [Fact]
+    public void FromEnvironmentUsesExpandedPreviewCoverageDefaults()
+    {
+        NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(_ => null);
+
+        Assert.Equal(
+            new NotificationPreviewSize(WidthKilometers: 60, HeightKilometers: 40),
+            options.Preview.PreviewSize);
+        Assert.Equal(
+            new NotificationPreviewSize(WidthKilometers: 90, HeightKilometers: 60),
+            options.Preview.LargePreviewSize);
+    }
+
+    [Fact]
     public void FromEnvironmentUsesStrictVegetationDefaults()
     {
         NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(_ => null);

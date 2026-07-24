@@ -66,11 +66,11 @@ public sealed record ApplicationConfiguration(
             ParseTimeSpan(get, name: "TELEGRAM_SEEN_RETENTION", defaultEpisodeRetention, TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 30)),
             new(
                 new(
-                    ParsePositiveDouble(get, name: "TELEGRAM_PREVIEW_WIDTH_KM", defaultValue: 30),
-                    ParsePositiveDouble(get, name: "TELEGRAM_PREVIEW_HEIGHT_KM", defaultValue: 20)),
+                    ParsePositiveDouble(get, name: "TELEGRAM_PREVIEW_WIDTH_KM", defaultValue: 60),
+                    ParsePositiveDouble(get, name: "TELEGRAM_PREVIEW_HEIGHT_KM", defaultValue: 40)),
                 new(
-                    ParsePositiveDouble(get, name: "TELEGRAM_LARGE_PREVIEW_WIDTH_KM", defaultValue: 45),
-                    ParsePositiveDouble(get, name: "TELEGRAM_LARGE_PREVIEW_HEIGHT_KM", defaultValue: 30)),
+                    ParsePositiveDouble(get, name: "TELEGRAM_LARGE_PREVIEW_WIDTH_KM", defaultValue: 90),
+                    ParsePositiveDouble(get, name: "TELEGRAM_LARGE_PREVIEW_HEIGHT_KM", defaultValue: 60)),
                 ParsePositiveInt(get, name: "TELEGRAM_PREVIEW_PIXEL_WIDTH", defaultValue: 900),
                 ParsePositiveInt(get, name: "TELEGRAM_PREVIEW_PIXEL_HEIGHT", defaultValue: 600),
                 ParsePositiveInt(get, name: "TELEGRAM_LARGE_CLUSTER_MIN_DETECTIONS", defaultValue: 8),

@@ -40,10 +40,10 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `TELEGRAM_CLUSTER_RADIUS_KM` | `5` | Finite number from `0.01` through `100`. |
 | `TELEGRAM_CLUSTER_TIME_WINDOW` | `01:30:00` | Duration from 1 minute through 1 day. |
 | `TELEGRAM_SEEN_RETENTION` | `48:00:00`, or `FIRMS_ACTIVE_WINDOW` when longer | Legacy-named startup-incident and delivered-episode retention from 1 minute through 30 days and at least `FIRMS_ACTIVE_WINDOW`. |
-| `TELEGRAM_PREVIEW_WIDTH_KM` | `30` | Positive finite number. |
-| `TELEGRAM_PREVIEW_HEIGHT_KM` | `20` | Positive finite number. |
-| `TELEGRAM_LARGE_PREVIEW_WIDTH_KM` | `45` | Positive finite number. |
-| `TELEGRAM_LARGE_PREVIEW_HEIGHT_KM` | `30` | Positive finite number. |
+| `TELEGRAM_PREVIEW_WIDTH_KM` | `60` | Positive finite number. |
+| `TELEGRAM_PREVIEW_HEIGHT_KM` | `40` | Positive finite number. |
+| `TELEGRAM_LARGE_PREVIEW_WIDTH_KM` | `90` | Positive finite number. |
+| `TELEGRAM_LARGE_PREVIEW_HEIGHT_KM` | `60` | Positive finite number. |
 | `TELEGRAM_PREVIEW_PIXEL_WIDTH` | `900` | Integer greater than or equal to 1. |
 | `TELEGRAM_PREVIEW_PIXEL_HEIGHT` | `600` | Integer greater than or equal to 1. |
 | `TELEGRAM_LARGE_CLUSTER_MIN_DETECTIONS` | `8` | Integer greater than or equal to 1. |
