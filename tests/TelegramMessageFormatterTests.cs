@@ -142,7 +142,8 @@ public sealed class TelegramMessageFormatterTests
 
         Assert.Contains("<b>Possible nearby sources:</b>", caption, StringComparison.Ordinal);
         Assert.Contains("<code>0.12 km • Factory &amp; Sons</code>", caption, StringComparison.Ordinal);
-        Assert.Contains("<code>1.9 km • Power station</code>", caption, StringComparison.Ordinal);
+        Assert.Contains("<code>0.40 km • Fuel depot</code>", caption, StringComparison.Ordinal);
+        Assert.Contains("<code>1.90 km • Power station</code>", caption, StringComparison.Ordinal);
         Assert.DoesNotContain("OpenStreetMap contributors", caption, StringComparison.Ordinal);
         Assert.DoesNotContain("Mapped proximity does not establish cause.", caption, StringComparison.Ordinal);
         Assert.True(

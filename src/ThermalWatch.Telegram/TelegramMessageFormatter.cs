@@ -246,7 +246,7 @@ public static class TelegramMessageFormatter
     }
 
     private static string FormatNearbyDistance(double value) =>
-        value.ToString(format: "0.##", CultureInfo.InvariantCulture);
+        value.ToString(format: "0.00", CultureInfo.InvariantCulture);
 
     private static string FormatLocation(TemplateData data)
     {

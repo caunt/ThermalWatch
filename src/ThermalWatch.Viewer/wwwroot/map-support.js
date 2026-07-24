@@ -57,6 +57,12 @@
     return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
   }
 
+  function formatNearbyDistance(distanceKilometers) {
+    return typeof distanceKilometers === "number" && Number.isFinite(distanceKilometers)
+      ? `${distanceKilometers.toFixed(2)} km`
+      : "Unknown";
+  }
+
   function validateNearbyFeatures(features) {
     if (!Array.isArray(features))
       throw new Error("Nearby features must be an array.");
@@ -1000,6 +1006,7 @@
     gibsTileApiUrl,
     googleMapsUrl,
     yandexMapsUrl,
+    formatNearbyDistance,
     validateNearbyFeatures,
     parseCoordinateInput,
     coordinateSearchFromUrl,

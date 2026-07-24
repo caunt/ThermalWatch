@@ -937,7 +937,10 @@
       link.textContent = feature.name;
       item.append(
         link,
-        textElement("span", formatDistance(feature.distanceKilometers), "nearby-feature-distance"));
+        textElement(
+          "span",
+          mapSupport.formatNearbyDistance(feature.distanceKilometers),
+          "nearby-feature-distance"));
       list.append(item);
     });
     nearbySection.append(list);

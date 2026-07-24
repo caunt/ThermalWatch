@@ -9,6 +9,7 @@ const {
   gibsTileApiUrl,
   googleMapsUrl,
   yandexMapsUrl,
+  formatNearbyDistance,
   validateNearbyFeatures,
   parseCoordinateInput,
   coordinateSearchFromUrl,
@@ -389,6 +390,13 @@ test("Google Maps URLs reject malformed and out-of-range coordinates", () => {
   assert.throws(() => googleMapsUrl(Number.NaN, 30), /Valid map coordinates/);
   assert.throws(() => googleMapsUrl(91, 30), /Valid map coordinates/);
   assert.throws(() => googleMapsUrl(50, -181), /Valid map coordinates/);
+});
+
+test("nearby source distances use fixed two-decimal kilometres", () => {
+  assert.equal(formatNearbyDistance(0), "0.00 km");
+  assert.equal(formatNearbyDistance(0.4), "0.40 km");
+  assert.equal(formatNearbyDistance(1.256), "1.26 km");
+  assert.equal(formatNearbyDistance(Number.NaN), "Unknown");
 });
 
 test("nearby feature diagnostics accept only bounded canonical OpenStreetMap results", () => {
