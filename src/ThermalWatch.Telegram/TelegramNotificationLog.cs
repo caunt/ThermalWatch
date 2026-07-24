@@ -32,10 +32,6 @@ internal static partial class TelegramNotificationLog
         Message = "Manual Telegram introductory message failed")]
     internal static partial void ManualStatusFailed(ILogger logger);
 
-    [LoggerMessage(EventId = 9, Level = LogLevel.Information,
-        Message = "Suppressed {DetectionCount} detections from the first ready snapshot")]
-    internal static partial void StartupBaselineCaptured(ILogger logger, int detectionCount);
-
     [LoggerMessage(EventId = 18, Level = LogLevel.Information,
         Message = "Sent Telegram notification {NotificationId} for {Satellite} at {AcquiredAtUtc}")]
     internal static partial void NotificationSent(
@@ -53,14 +49,14 @@ internal static partial class TelegramNotificationLog
     internal static partial void TransientSendFailure(ILogger logger, string notificationId);
 
     [LoggerMessage(EventId = 22, Level = LogLevel.Information,
-        Message = "Notification policy processed {ActiveClusterCount} active clusters; evaluated {EvaluatedClusterCount}; delivered {AcceptedClusterCount}; rejected {RejectedClusterCount}; startup suppressed {StartupSuppressedClusterCount}; duplicate episodes {DuplicateEpisodeCount}; send failures {SendFailureCount}. Rejections: nighttime {NighttimeCount}; insufficient detections {InsufficientDetectionsCount}; low confidence {LowConfidenceCount}; low FRP {LowFrpCount}; low thermal contrast {LowThermalContrastCount}; missing required value {MissingRequiredValueCount}; preview unavailable {PreviewUnavailableCount}")]
+        Message = "Notification policy processed {ActiveClusterCount} active clusters; evaluated {EvaluatedClusterCount}; delivered {AcceptedClusterCount}; rejected {RejectedClusterCount}; startup incidents suppressed {StartupSuppressedIncidentCount}; duplicate delivered episodes {DuplicateEpisodeCount}; send failures {SendFailureCount}. Rejections: nighttime {NighttimeCount}; insufficient detections {InsufficientDetectionsCount}; low confidence {LowConfidenceCount}; low FRP {LowFrpCount}; low thermal contrast {LowThermalContrastCount}; missing required value {MissingRequiredValueCount}; preview unavailable {PreviewUnavailableCount}")]
     internal static partial void VisibilitySummary(
         ILogger logger,
         int activeClusterCount,
         int evaluatedClusterCount,
         int acceptedClusterCount,
         int rejectedClusterCount,
-        int startupSuppressedClusterCount,
+        int startupSuppressedIncidentCount,
         int duplicateEpisodeCount,
         int sendFailureCount,
         int nighttimeCount,

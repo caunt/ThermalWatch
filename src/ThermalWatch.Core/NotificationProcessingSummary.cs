@@ -3,12 +3,11 @@ using System.Collections.Immutable;
 namespace ThermalWatch.Core;
 
 public sealed record NotificationProcessingSummary(
-    int StartupBaselineDetectionCount,
     int ActiveClusterCount,
     int EvaluatedClusterCount,
     int AcceptedClusterCount,
     int RejectedClusterCount,
-    int StartupSuppressedClusterCount,
+    int StartupSuppressedIncidentCount,
     int DuplicateEpisodeCount,
     int SendFailureCount,
     int LandCoverCandidateCount,

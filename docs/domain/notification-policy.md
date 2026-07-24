@@ -35,15 +35,15 @@ After an automatic message sends successfully, its members establish a delivered
 
 On each ready snapshot:
 
-1. Expire delivered-episode history. On the first ready snapshot, capture its detection IDs as the startup baseline and send nothing unless `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` is enabled.
-2. Build connected clusters from every observation in the current active snapshot.
-3. Suppress clusters made entirely from the startup baseline. A baseline cluster becomes eligible when any later detection joins it.
+1. Expire startup-incident and delivered-episode histories, then build connected clusters from every observation in the current active snapshot.
+2. On the first ready snapshot with `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` disabled, apply the complete metadata, land-cover, and required-preview policy to every cluster. Record each eligible cluster as a startup incident without sending it. Leave every ineligible cluster unrecorded so later snapshots can reevaluate it.
+3. On later snapshots, suppress and extend clusters continuing a recorded startup incident without rerunning filters or imagery work.
 4. If a cluster continues an already delivered episode, suppress it and extend that episode without rerunning filters or imagery work.
-5. Apply representative metadata visibility rules, then evaluate NASA land cover for every cluster member when enabled.
+5. For every remaining cluster, apply representative metadata visibility rules, then evaluate NASA land cover for every cluster member when enabled.
 6. Attempt the current exact-date preview once. A missing required preview rejects the cluster for this snapshot; when previews are optional, continue with a text candidate immediately.
 7. Look up nearby mapped context around the representative and send. Only successful automatic delivery establishes a delivered episode; rejection, nearby-context failure, and send failure do not.
 
-Every later snapshot repeats this evaluation from its complete current data, so a cluster rejected because imagery is unavailable or a send failed transiently can qualify on the next publication without retaining an unsent candidate. Only startup-baseline IDs and delivered-episode detections are automatic process memory. Delivered history uses the legacy-named configured seen retention and is capped at 100,000 entries.
+Every later snapshot repeats eligibility evaluation from its complete current data for incidents that have not been startup-suppressed or delivered. A cluster rejected at startup or later because imagery is unavailable can therefore qualify after a later publication without retaining an unsent candidate. A transient send failure likewise records no delivered episode and remains retryable. Startup incidents and delivered episodes use the same configured radius, time window, legacy-named seen retention, transitive extension, and 100,000-detection per-history cap.
 
 ## Visibility policy
 
@@ -81,13 +81,13 @@ Retrieval is on demand, serialized, bounded, and cached. Provider, transport, ti
 
 The Viewer eligible-cluster query evaluates every connected component in one captured active snapshot. It applies the same metadata and land-cover rules as candidate preparation and, when configured, requires the same exact-date preview. Unavailable land cover fails open and an unavailable required preview fails closed. It returns only passing clusters, ordered by the manual-send priority, and performs no nearby-feature lookup.
 
-This list is criteria-only, not a promise that automatic delivery will send a cluster. It neither applies nor mutates startup-baseline or delivered-episode suppression. Repeated Viewer evaluation can therefore continue to list an already delivered episode, and it cannot consume or extend automatic lifecycle state.
+This list is criteria-only, not a promise that automatic delivery will send a cluster. It neither applies nor mutates startup-incident or delivered-episode suppression. Repeated Viewer evaluation can therefore continue to list a startup-suppressed or already delivered episode, and it cannot consume or extend automatic lifecycle state.
 
 Selecting an anomaly in the viewer asks the Core candidate engine to cluster every observation in the current active snapshot and find the connected component containing that anomaly. The diagnostic uses the same radius, time window, representative selection, metadata rules, land-cover policy, preview sizing, and exact-date preview client as automatic and manual candidate preparation. It also attaches nearby mapped context for the selected observation; that context remains outside eligibility criteria.
 
 The diagnostic is deliberately exhaustive: it reports daytime, detection-count, source-specific confidence, FRP, thermal-contrast, land-cover, and exact-preview outcomes even when an earlier criterion already blocks the candidate. Disabled criteria are identified explicitly. Unavailable land cover remains non-blocking because the policy fails open; an unavailable required preview blocks the current result and explains that later snapshots reevaluate the active cluster.
 
-This is a fresh, read-only evaluation. It neither applies the startup baseline nor reads or changes delivered episodes. Refreshing diagnostics can therefore observe newly available GIBS data without changing later automatic or manual behavior.
+This is a fresh, read-only evaluation. It neither reads nor changes startup incidents or delivered episodes. Refreshing diagnostics can therefore observe newly available GIBS data without changing later automatic or manual behavior.
 
 ## Preview policy
 
@@ -102,7 +102,7 @@ Black, transparent, malformed, or mostly no-data base crops are unavailable and 
 `GET /api/telegram/send-top` is an operator action, not a replay of automatic snapshot processing:
 
 - It evaluates the entire current snapshot and does not refresh FIRMS.
-- It bypasses startup-baseline and delivered-episode checks without modifying automatic state or future deduplication.
+- It bypasses startup-incident and delivered-episode checks without modifying automatic state or future deduplication.
 - It obtains each preview once; a required missing preview skips the candidate.
 - It ranks eligible clusters by available/highest representative FRP, member count, diameter, acquisition time, and ID, then selects the requested count.
 - It looks up nearby mapped context only for those selected representatives, after ranking, so unselected eligible clusters create no Overpass traffic.

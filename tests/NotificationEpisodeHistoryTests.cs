@@ -2,7 +2,7 @@ using ThermalWatch.Core;
 
 namespace ThermalWatch.Tests;
 
-public sealed class NotificationDeliveryHistoryTests
+public sealed class NotificationEpisodeHistoryTests
 {
     private const double RadiusKilometers = 5;
     private static readonly DateTimeOffset s_observedAt = new(
@@ -17,9 +17,9 @@ public sealed class NotificationDeliveryHistoryTests
     private static readonly TimeSpan s_retention = TimeSpan.FromHours(hours: 48);
 
     [Fact]
-    public void SuppressesDifferentSatelliteInDeliveredEpisode()
+    public void SuppressesDifferentSatelliteInTrackedEpisode()
     {
-        NotificationDeliveryHistory history = CreateHistory();
+        NotificationEpisodeHistory history = CreateHistory();
         NotificationCluster delivered = Cluster(Detection(
             id: "noaa20",
             s_observedAt,
@@ -34,7 +34,7 @@ public sealed class NotificationDeliveryHistoryTests
             longitude: 60.062,
             source: "VIIRS_SNPP_NRT",
             satellite: "N"));
-        history.RecordDelivered(delivered, s_observedAt.AddHours(hours: 1));
+        history.RecordIncident(delivered, s_observedAt.AddHours(hours: 1));
 
         bool suppressed = history.TrySuppressAndExtend(
             laterSatellite,
@@ -44,9 +44,9 @@ public sealed class NotificationDeliveryHistoryTests
     }
 
     [Fact]
-    public void ExtendsDeliveredEpisodeTransitively()
+    public void ExtendsTrackedEpisodeTransitively()
     {
-        NotificationDeliveryHistory history = CreateHistory();
+        NotificationEpisodeHistory history = CreateHistory();
         NotificationCluster first = Cluster(Detection(
             id: "first",
             s_observedAt,
@@ -62,7 +62,7 @@ public sealed class NotificationDeliveryHistoryTests
             s_observedAt.AddMinutes(minutes: 120),
             latitude: 0,
             longitude: 0.08));
-        history.RecordDelivered(first, s_observedAt);
+        history.RecordIncident(first, s_observedAt);
 
         bool bridgeSuppressed = history.TrySuppressAndExtend(
             bridge,
@@ -83,7 +83,7 @@ public sealed class NotificationDeliveryHistoryTests
     [Fact]
     public void AllowsNewEpisodeOutsideTimeWindow()
     {
-        NotificationDeliveryHistory history = CreateHistory();
+        NotificationEpisodeHistory history = CreateHistory();
         NotificationCluster delivered = Cluster(Detection(
             id: "delivered",
             s_observedAt,
@@ -94,7 +94,7 @@ public sealed class NotificationDeliveryHistoryTests
             s_observedAt.AddMinutes(minutes: 91),
             latitude: 50,
             longitude: 30));
-        history.RecordDelivered(delivered, s_observedAt);
+        history.RecordIncident(delivered, s_observedAt);
 
         bool suppressed = history.TrySuppressAndExtend(
             later,
@@ -106,7 +106,7 @@ public sealed class NotificationDeliveryHistoryTests
     [Fact]
     public void AllowsNewEpisodeOutsideRadius()
     {
-        NotificationDeliveryHistory history = CreateHistory();
+        NotificationEpisodeHistory history = CreateHistory();
         NotificationCluster delivered = Cluster(Detection(
             id: "delivered",
             s_observedAt,
@@ -117,7 +117,7 @@ public sealed class NotificationDeliveryHistoryTests
             s_observedAt.AddMinutes(minutes: 5),
             latitude: 0,
             longitude: 0.05));
-        history.RecordDelivered(delivered, s_observedAt);
+        history.RecordIncident(delivered, s_observedAt);
 
         bool suppressed = history.TrySuppressAndExtend(
             distant,
@@ -129,7 +129,7 @@ public sealed class NotificationDeliveryHistoryTests
     [Fact]
     public void AllowsRelatedDetectionAfterHistoryExpires()
     {
-        NotificationDeliveryHistory history = CreateHistory();
+        NotificationEpisodeHistory history = CreateHistory();
         NotificationCluster delivered = Cluster(Detection(
             id: "delivered",
             s_observedAt,
@@ -140,7 +140,7 @@ public sealed class NotificationDeliveryHistoryTests
             s_observedAt.AddMinutes(minutes: 5),
             latitude: 50,
             longitude: 30));
-        history.RecordDelivered(delivered, s_observedAt);
+        history.RecordIncident(delivered, s_observedAt);
 
         bool suppressed = history.TrySuppressAndExtend(
             related,
@@ -152,7 +152,7 @@ public sealed class NotificationDeliveryHistoryTests
     [Fact]
     public void DoesNotSuppressUndeliveredCluster()
     {
-        NotificationDeliveryHistory history = CreateHistory();
+        NotificationEpisodeHistory history = CreateHistory();
         NotificationCluster cluster = Cluster(Detection(
             id: "undelivered",
             s_observedAt,
@@ -166,7 +166,7 @@ public sealed class NotificationDeliveryHistoryTests
         Assert.False(suppressed);
     }
 
-    private static NotificationDeliveryHistory CreateHistory() =>
+    private static NotificationEpisodeHistory CreateHistory() =>
         new(RadiusKilometers, s_timeWindow, s_retention);
 
     private static NotificationCluster Cluster(params Anomaly[] detections) =>

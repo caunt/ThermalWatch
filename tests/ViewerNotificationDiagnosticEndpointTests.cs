@@ -175,7 +175,7 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
             NotifyExistingOnStartup: false,
             ClusterRadiusKilometers: 5,
             ClusterTimeWindow: TimeSpan.FromMinutes(minutes: 90),
-            DeliveredRetention: TimeSpan.FromHours(hours: 48),
+            EpisodeRetention: TimeSpan.FromHours(hours: 48),
             new(
                 new(WidthKilometers: 30, HeightKilometers: 20),
                 new(WidthKilometers: 45, HeightKilometers: 30),

@@ -2,14 +2,14 @@
 
 > **Purpose:** Define ThermalWatch runtime configuration, deployment, security, observability, failure, and recovery behavior.
 > **Scope:** Process startup, environment variables, external services, SDK publishing, CI artifacts, containers, and operational limitations.
-> **Sources of truth:** [Application configuration](../src/ThermalWatch.Api/ApplicationConfiguration.cs), [notification options](../src/ThermalWatch.Core/NotificationOptions.cs), [Telegram options](../src/ThermalWatch.Telegram/TelegramOptions.cs), [delivery history](../src/ThermalWatch.Core/NotificationDeliveryHistory.cs), [composition root](../src/ThermalWatch.Api/Program.cs), and [publish workflows](../.github/workflows/).
+> **Sources of truth:** [Application configuration](../src/ThermalWatch.Api/ApplicationConfiguration.cs), [notification options](../src/ThermalWatch.Core/NotificationOptions.cs), [Telegram options](../src/ThermalWatch.Telegram/TelegramOptions.cs), [episode history](../src/ThermalWatch.Core/NotificationEpisodeHistory.cs), [composition root](../src/ThermalWatch.Api/Program.cs), and [publish workflows](../.github/workflows/).
 > **Update when:** A variable, startup rule, external dependency, security boundary, log, deployment workflow, failure mode, or recovery procedure changes.
 
 ## Runtime model
 
 The process binds plain HTTP to `0.0.0.0:8080`, starts one immediate FIRMS refresh, then runs non-overlapping polling cycles. Each completed cycle is followed by at least the configured interval plus positive jitter. Consecutive cycles where no segment succeeds use capped exponential backoff; any segment success resets it. Application options are parsed once at startup and are not reloaded.
 
-All application state is in memory: source segments, the published snapshot, GIBS preview/land-cover/viewer-tile cache entries, Overpass nearby-feature cache entries, the notification startup baseline, and delivered-episode history. The service has no database, durable queue, retained unsent candidates, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
+All application state is in memory: source segments, the published snapshot, GIBS preview/land-cover/viewer-tile cache entries, Overpass nearby-feature cache entries, startup-incident history, and delivered-episode history. The service has no database, durable queue, retained unsent candidates, migration, or required persistent volume. Restart clears this state and starts a fresh FIRMS poll.
 
 The application-specific options below use exact uppercase environment names. Framework hosting still uses ASP.NET Core's normal host configuration, but .NET-style nested names such as `Firms__MapKey` do not configure ThermalWatch options.
 
@@ -36,10 +36,10 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | unset | Telegram bot credential. Notifications require this and `TELEGRAM_CHANNEL_ID`. |
 | `TELEGRAM_CHANNEL_ID` | unset | Numeric channel ID or a value beginning with `@`; notifications require this and the bot token. |
-| `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` | `false` | Boolean controlling whether the first ready snapshot is eligible for automatic notification. |
+| `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` | `false` | When false, evaluate the first ready snapshot but suppress only incidents that already pass every enabled content criterion; initially ineligible incidents remain retryable. When true, eligible first-snapshot incidents can be delivered. |
 | `TELEGRAM_CLUSTER_RADIUS_KM` | `5` | Finite number from `0.01` through `100`. |
 | `TELEGRAM_CLUSTER_TIME_WINDOW` | `01:30:00` | Duration from 1 minute through 1 day. |
-| `TELEGRAM_SEEN_RETENTION` | `48:00:00`, or `FIRMS_ACTIVE_WINDOW` when longer | Legacy-named delivered-episode retention from 1 minute through 30 days and at least `FIRMS_ACTIVE_WINDOW`. |
+| `TELEGRAM_SEEN_RETENTION` | `48:00:00`, or `FIRMS_ACTIVE_WINDOW` when longer | Legacy-named startup-incident and delivered-episode retention from 1 minute through 30 days and at least `FIRMS_ACTIVE_WINDOW`. |
 | `TELEGRAM_PREVIEW_WIDTH_KM` | `30` | Positive finite number. |
 | `TELEGRAM_PREVIEW_HEIGHT_KM` | `20` | Positive finite number. |
 | `TELEGRAM_LARGE_PREVIEW_WIDTH_KM` | `45` | Positive finite number. |
@@ -153,6 +153,6 @@ The repository contains no production deployment manifests, immutable release ta
 | Telegram startup validation failure | Disable notifier for the process lifetime. | Correct credentials/channel permissions and restart. |
 | Telegram automatic send returns `400`, `401`, or `403` | Disable automatic notifier processing for the process lifetime. | Correct the permanent condition and restart. |
 | Telegram transient send failure | Leave the episode undelivered and return to the snapshot loop. | The next published snapshot reevaluates the active cluster and retries it. |
-| Process restart | Lose snapshots, startup baseline, delivery deduplication, and caches; run an immediate poll. | Expected stateless recovery; monitor startup and first ready snapshot. |
+| Process restart | Lose snapshots, startup-incident suppression, delivery deduplication, and caches; run an immediate poll. | Expected stateless recovery; monitor startup and first ready snapshot. |
 | Viewer GIBS tile is partial or unavailable | Return a partial or transparent PNG without caching the degraded result and show one coverage warning. | Later tile requests retry GIBS; FIRMS polling and anomaly responses remain available. |
 | Browser map dependency failure | Show provider/UI error; server polling and APIs remain available. | Restore unpkg/Google browser access or backend GIBS access as applicable, then refresh. |

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded
 
 ## Context
 
@@ -44,14 +44,14 @@ When `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` is false, Core retains the first read
 ## Validation or evidence
 
 - [Candidate-engine tests](../../tests/NotificationCandidateEngineTests.cs) cover preview recovery, immediate optional text delivery, transient-send reevaluation, startup-baseline behavior, and diagnostic wording.
-- [Delivery-history tests](../../tests/NotificationDeliveryHistoryTests.cs) cover once-per-episode suppression, transitive continuation, boundaries, and expiry.
+- [Episode-history tests](../../tests/NotificationEpisodeHistoryTests.cs) cover once-per-episode suppression, transitive continuation, boundaries, and expiry.
 - [Clustering tests](../../tests/NotificationClusteringTests.cs) cover complete active-snapshot connected components and representative selection.
 - [Configuration tests](../../tests/ApplicationConfigurationTests.cs) cover delivered retention and ignored retired preview configuration.
 
 ## Related source files and documents
 
 - [Core candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs)
-- [Delivery history](../../src/ThermalWatch.Core/NotificationDeliveryHistory.cs)
+- [Episode history](../../src/ThermalWatch.Core/NotificationEpisodeHistory.cs)
 - [Notification policy](../domain/notification-policy.md)
 - [Telegram notifier](../components/telegram-notifier.md)
 - [Operations](../operations.md)
@@ -59,4 +59,4 @@ When `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` is false, Core retains the first read
 ## Supersedes / Superseded by
 
 - Supersedes: [0002](0002-core-owned-notification-candidates.md).
-- Superseded by: None.
+- Superseded by: [0005](0005-eligibility-based-startup-incident-suppression.md).

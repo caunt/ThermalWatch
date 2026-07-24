@@ -15,7 +15,7 @@ ThermalWatch is a small .NET 10 service that polls NASA FIRMS near-real-time the
 - Adds up to five distance-ordered named OpenStreetMap features within 2 km to selected-anomaly diagnostics and prepared Telegram notifications when any are available.
 - Optionally clusters and filters observations for outbound Telegram notifications with sensor-matched NASA GIBS imagery and nearby mapped context.
 
-All runtime state is in memory. Restarting clears the current snapshot, imagery caches, notification startup baseline, and delivery-deduplication state, then starts a fresh FIRMS poll. Unsent notification candidates are not retained.
+All runtime state is in memory. Restarting clears the current snapshot, imagery caches, startup-incident suppression, and delivery-deduplication state, then starts a fresh FIRMS poll. Unsent notification candidates are not retained.
 
 ## Quickstart
 
@@ -31,7 +31,7 @@ ThermalWatch settings use exact uppercase environment-variable names; there is n
 
 ## Viewer
 
-Open [http://localhost:8080/](http://localhost:8080/) to inspect the current snapshot, source freshness, and every mappable anomaly. The right rail lists clusters that currently pass every enabled notification content criterion; choosing one searches its representative coordinates and opens the normal map/inspection flow. This list does not apply startup or already-delivered episode suppression. Selecting a marker highlights its complete notification cluster, evaluates the same Core criteria used to prepare outbound notifications, and conditionally lists nearby named OpenStreetMap features as possible sources to investigate. Proximity does not establish cause. NASA GIBS is the default imagery provider and needs no extra key. Core retrieves and composes its tiles, so the browser receives NASA imagery only from ThermalWatch. Setting `GOOGLE_MAPS_API_KEY` enables Google Satellite; that browser key is returned by `/api/viewer/config` and must be restricted to the Maps JavaScript API and the deployment's HTTP referrers.
+Open [http://localhost:8080/](http://localhost:8080/) to inspect the current snapshot, source freshness, and every mappable anomaly. The right rail lists clusters that currently pass every enabled notification content criterion; choosing one searches its representative coordinates and opens the normal map/inspection flow. This list does not apply startup-incident or already-delivered episode suppression. Selecting a marker highlights its complete notification cluster, evaluates the same Core criteria used to prepare outbound notifications, and conditionally lists nearby named OpenStreetMap features as possible sources to investigate. Proximity does not establish cause. NASA GIBS is the default imagery provider and needs no extra key. Core retrieves and composes its tiles, so the browser receives NASA imagery only from ThermalWatch. Setting `GOOGLE_MAPS_API_KEY` enables Google Satellite; that browser key is returned by `/api/viewer/config` and must be restricted to the Maps JavaScript API and the deployment's HTTP referrers.
 
 The coordinate search accepts common decimal, labeled, degrees/minutes, and degrees/minutes/seconds forms, plus coordinate-bearing Google Maps and other major map links. A successful search marks and centers the exact location, selects the nearest current anomaly for inspection, and saves canonical `lat` and `lon` values in the viewer URL so the location survives reloads and can be shared.
 

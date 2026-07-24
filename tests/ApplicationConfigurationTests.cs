@@ -9,7 +9,7 @@ public sealed class ApplicationConfigurationTests
     [Theory]
     [InlineData("3.00:00:00")]
     [InlineData("72:00:00")]
-    public void FromEnvironmentAllowsSeventyTwoHourActiveWindowAndRaisesDefaultDeliveredRetention(
+    public void FromEnvironmentAllowsSeventyTwoHourActiveWindowAndRaisesDefaultEpisodeRetention(
         string activeWindow)
     {
         var configuration = ApplicationConfiguration.FromEnvironment(name => name switch
@@ -21,7 +21,7 @@ public sealed class ApplicationConfigurationTests
         });
 
         Assert.Equal(TimeSpan.FromHours(hours: 72), configuration.Firms.ActiveWindow);
-        Assert.Equal(configuration.Firms.ActiveWindow, configuration.Notifications.DeliveredRetention);
+        Assert.Equal(configuration.Firms.ActiveWindow, configuration.Notifications.EpisodeRetention);
     }
 
     [Fact]
@@ -70,6 +70,6 @@ public sealed class ApplicationConfigurationTests
             _ => null
         });
 
-        Assert.Equal(TimeSpan.FromHours(hours: 48), configuration.Notifications.DeliveredRetention);
+        Assert.Equal(TimeSpan.FromHours(hours: 48), configuration.Notifications.EpisodeRetention);
     }
 }

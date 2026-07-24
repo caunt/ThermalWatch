@@ -344,9 +344,6 @@ public sealed class TelegramNotificationService(
 
     private void LogProcessingSummary(NotificationProcessingSummary summary)
     {
-        if (summary.StartupBaselineDetectionCount > 0)
-            TelegramNotificationLog.StartupBaselineCaptured(logger, summary.StartupBaselineDetectionCount);
-
         if (logger.IsEnabled(LogLevel.Information)
             && (summary.ActiveClusterCount > 0
             || summary.AcceptedClusterCount > 0
@@ -367,7 +364,7 @@ public sealed class TelegramNotificationService(
                 summary.EvaluatedClusterCount,
                 summary.AcceptedClusterCount,
                 summary.RejectedClusterCount,
-                summary.StartupSuppressedClusterCount,
+                summary.StartupSuppressedIncidentCount,
                 summary.DuplicateEpisodeCount,
                 summary.SendFailureCount,
                 nighttimeCount,

@@ -17,7 +17,7 @@ The validated bot client and channel ID form the adapter's availability state. B
 
 ## Automatic delivery
 
-The service is the single reader of the snapshot store's bounded update channel. For each update it calls the Core candidate engine and supplies a delivery callback. Core owns ready-snapshot handling, complete active-snapshot clustering, startup-baseline suppression, metadata and land-cover policy, preview evaluation, nearby-feature enrichment, delivered-episode history, and delivery acknowledgement.
+The service is the single reader of the snapshot store's bounded update channel. For each update it calls the Core candidate engine and supplies a delivery callback. Core owns ready-snapshot handling, complete active-snapshot clustering, eligibility-based startup-incident suppression, metadata and land-cover policy, preview evaluation, nearby-feature enrichment, delivered-episode history, and delivery acknowledgement.
 
 For each prepared candidate passed to the callback, Telegram:
 
@@ -39,7 +39,7 @@ When Core supplies one or more nearby features, “Possible nearby sources” ap
 
 `SendTopAsync` requires a validated client and uses a nonblocking semaphore so only one manual operation runs at a time. It asks Core to prepare and rank the requested candidates from `snapshotStore.Current`; it does not wait for or request a FIRMS refresh. Core enriches only the selected representatives after ranking.
 
-Telegram sends an introductory status message and then sends the selected prepared candidates individually. A status-message failure ends the operation with a distinct result. Individual candidate failures are collected by cluster ID without stopping later sends. Core's manual preparation does not inspect or mutate the automatic startup baseline or delivered episodes.
+Telegram sends an introductory status message and then sends the selected prepared candidates individually. A status-message failure ends the operation with a distinct result. Individual candidate failures are collected by cluster ID without stopping later sends. Core's manual preparation does not inspect or mutate automatic startup incidents or delivered episodes.
 
 The endpoint status mapping and input validation remain in [Program.cs](../../src/ThermalWatch.Api/Program.cs). `/api/telegram/send-top` is unauthenticated and side-effecting, so it must be protected by the deployment network boundary.
 

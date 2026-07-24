@@ -59,7 +59,7 @@ See [development guidance](docs/development.md) for prerequisites, safe local se
 
 - Application-specific configuration uses exact uppercase environment names; do not add `appsettings` or commit credentials.
 - When verification or tests need live-provider access, agents may source the ignored repository-root `.env`. The user supplies temporary testing credentials; never echo, log, commit, or reuse them outside the authorized task. Preserve an existing `.env` before, during, and after the task. The user rotates its values when testing ends.
-- State is intentionally in memory. A restart rebuilds the FIRMS snapshot and resets the Telegram startup baseline, delivery deduplication, and caches; unsent candidates are never retained.
+- State is intentionally in memory. A restart rebuilds the FIRMS snapshot and resets Telegram startup-incident suppression, delivery deduplication, and caches; unsent candidates are never retained.
 - `/api/anomalies` exposes all valid active FIRMS observations. Notification filters must never remove or annotate API items.
 - FIRMS segments are isolated by country and source. A failed refresh retains the previous complete segment and marks it stale.
 - Country ingestion is primary. Area fallback is enabled only for a verified country-feature outage and succeeds atomically across all required tiles.

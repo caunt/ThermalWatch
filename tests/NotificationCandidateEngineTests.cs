@@ -191,7 +191,10 @@ public sealed class NotificationCandidateEngineTests
             },
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(snapshot.Items.Length, processing.Summary.StartupBaselineDetectionCount);
+        Assert.Equal(4, processing.Summary.EvaluatedClusterCount);
+        Assert.Equal(3, processing.Summary.StartupSuppressedIncidentCount);
+        Assert.Equal(1, processing.Summary.RejectedClusterCount);
+        Assert.Equal(0, gibsHandler.RequestCount);
         Assert.Equal(0, deliveryCount);
     }
 
@@ -292,6 +295,55 @@ public sealed class NotificationCandidateEngineTests
     }
 
     [Fact]
+    public async Task AutomaticReevaluatesPreviewBlockedStartupIncidentUntilItIsEligible()
+    {
+        var handler = new RecoveringPreviewHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationOptions options = DefaultOptions() with
+        {
+            NotifyExistingOnStartup = false,
+            Visibility = DefaultOptions().Visibility with { RequirePreview = true }
+        };
+        NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
+        AnomalySnapshot snapshot = Snapshot(
+            Detection(id: "first", longitude: 30, frpMegawatts: 100),
+            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+        int deliveryCount = 0;
+
+        NotificationAutomaticProcessingResult unavailable = await engine.ProcessAutomaticAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+        handler.IsPreviewAvailable = true;
+        NotificationAutomaticProcessingResult available = await engine.ProcessAutomaticAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+        NotificationAutomaticProcessingResult delivered = await engine.ProcessAutomaticAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, unavailable.Summary.StartupSuppressedIncidentCount);
+        Assert.Equal(1, unavailable.Summary.RejectionCount(NotificationRejectionReason.PreviewUnavailable));
+        Assert.Equal(1, available.Summary.AcceptedClusterCount);
+        Assert.Equal(1, delivered.Summary.DuplicateEpisodeCount);
+        Assert.Equal(1, deliveryCount);
+    }
+
+    [Fact]
     public async Task AutomaticSendsTextImmediatelyWhenPreviewIsOptional()
     {
         var handler = new NotFoundHandler();
@@ -360,19 +412,24 @@ public sealed class NotificationCandidateEngineTests
     }
 
     [Fact]
-    public async Task AutomaticPreservesStartupBaselineUntilClusterGainsDetection()
+    public async Task AutomaticSuppressesEligibleStartupIncidentAndRelatedExtensions()
     {
         var handler = new NotFoundHandler();
+        var nearbyHandler = new NearbyHandler();
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         NotificationOptions options = DefaultOptions() with { NotifyExistingOnStartup = false };
-        NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
+        NotificationCandidateEngine engine = CreateEngine(
+            handler,
+            cache,
+            nearbyHandler,
+            options);
         Anomaly first = Detection(id: "first", longitude: 30, frpMegawatts: 100);
         Anomaly second = Detection(id: "second", longitude: 30.02, frpMegawatts: 200);
-        AnomalySnapshot baseline = Snapshot(first, second);
+        AnomalySnapshot startupSnapshot = Snapshot(first, second);
         int deliveryCount = 0;
 
-        NotificationAutomaticProcessingResult primed = await engine.ProcessAutomaticAsync(
-            baseline,
+        NotificationAutomaticProcessingResult startup = await engine.ProcessAutomaticAsync(
+            startupSnapshot,
             (_, _) =>
             {
                 deliveryCount++;
@@ -380,7 +437,7 @@ public sealed class NotificationCandidateEngineTests
             },
             TestContext.Current.CancellationToken);
         NotificationAutomaticProcessingResult unchanged = await engine.ProcessAutomaticAsync(
-            baseline,
+            startupSnapshot,
             (_, _) =>
             {
                 deliveryCount++;
@@ -399,10 +456,14 @@ public sealed class NotificationCandidateEngineTests
             },
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, primed.Summary.StartupBaselineDetectionCount);
-        Assert.Equal(1, unchanged.Summary.StartupSuppressedClusterCount);
-        Assert.Equal(1, extended.Summary.AcceptedClusterCount);
-        Assert.Equal(1, deliveryCount);
+        Assert.Equal(1, startup.Summary.EvaluatedClusterCount);
+        Assert.Equal(1, startup.Summary.StartupSuppressedIncidentCount);
+        Assert.Equal(1, unchanged.Summary.StartupSuppressedIncidentCount);
+        Assert.Equal(1, extended.Summary.StartupSuppressedIncidentCount);
+        Assert.Equal(0, extended.Summary.AcceptedClusterCount);
+        Assert.Equal(0, deliveryCount);
+        Assert.Equal(0, handler.RequestCount);
+        Assert.Empty(nearbyHandler.Queries);
     }
 
     [Fact]
@@ -465,7 +526,7 @@ public sealed class NotificationCandidateEngineTests
             NotifyExistingOnStartup: true,
             ClusterRadiusKilometers: 5,
             ClusterTimeWindow: TimeSpan.FromMinutes(minutes: 90),
-            DeliveredRetention: TimeSpan.FromHours(hours: 48),
+            EpisodeRetention: TimeSpan.FromHours(hours: 48),
             new(
                 new(WidthKilometers: 30, HeightKilometers: 20),
                 new(WidthKilometers: 45, HeightKilometers: 30),

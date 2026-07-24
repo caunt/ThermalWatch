@@ -9,11 +9,14 @@ public sealed class NotificationCandidateEngine(
     NearbyFeatureClient nearbyFeatureClient,
     TimeProvider timeProvider)
 {
-    private readonly NotificationDeliveryHistory _deliveryHistory = new(
+    private readonly NotificationEpisodeHistory _startupIncidentHistory = new(
         options.ClusterRadiusKilometers,
         options.ClusterTimeWindow,
-        options.DeliveredRetention);
-    private HashSet<string>? _startupBaselineIds;
+        options.EpisodeRetention);
+    private readonly NotificationEpisodeHistory _deliveryHistory = new(
+        options.ClusterRadiusKilometers,
+        options.ClusterTimeWindow,
+        options.EpisodeRetention);
     private bool _firstReadySnapshot = true;
 
     public async Task<NotificationAutomaticProcessingResult> ProcessAutomaticAsync(
@@ -26,22 +29,47 @@ public sealed class NotificationCandidateEngine(
             return new(ContinueProcessing: true, summary.Build());
 
         DateTimeOffset now = timeProvider.GetUtcNow();
+        _startupIncidentHistory.Expire(now);
         _deliveryHistory.Expire(now);
-
-        if (TryCaptureStartupBaseline(snapshot, summary))
-            return new(ContinueProcessing: true, summary.Build());
 
         ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
             snapshot.Items,
             options.ClusterRadiusKilometers,
             options.ClusterTimeWindow);
         summary.ActiveClusterCount = clusters.Length;
+
+        bool isFirstReadySnapshot = _firstReadySnapshot;
+        _firstReadySnapshot = false;
+        if (isFirstReadySnapshot && !options.NotifyExistingOnStartup)
+        {
+            await PrimeStartupIncidentsAsync(
+                clusters,
+                summary,
+                now,
+                cancellationToken).ConfigureAwait(false);
+            return new(ContinueProcessing: true, summary.Build());
+        }
+
+        return await ProcessClustersAsync(
+            clusters,
+            summary,
+            now,
+            deliverAsync,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<NotificationAutomaticProcessingResult> ProcessClustersAsync(
+        ImmutableArray<NotificationCluster> clusters,
+        ProcessingSummaryBuilder summary,
+        DateTimeOffset now,
+        Func<PreparedNotificationCandidate, CancellationToken, Task<NotificationDeliveryOutcome>> deliverAsync,
+        CancellationToken cancellationToken)
+    {
         foreach (NotificationCluster cluster in clusters)
         {
-            if (_startupBaselineIds is { } startupBaselineIds
-                && cluster.Members.All(member => startupBaselineIds.Contains(member.Id)))
+            if (_startupIncidentHistory.TrySuppressAndExtend(cluster, now))
             {
-                summary.StartupSuppressedClusterCount++;
+                summary.StartupSuppressedIncidentCount++;
                 continue;
             }
 
@@ -63,7 +91,7 @@ public sealed class NotificationCandidateEngine(
                 cancellationToken).ConfigureAwait(false);
             if (outcome == NotificationDeliveryOutcome.Delivered)
             {
-                _deliveryHistory.RecordDelivered(cluster, timeProvider.GetUtcNow());
+                _deliveryHistory.RecordIncident(cluster, timeProvider.GetUtcNow());
                 summary.AcceptedClusterCount++;
                 continue;
             }
@@ -75,27 +103,57 @@ public sealed class NotificationCandidateEngine(
         return new(ContinueProcessing: true, summary.Build());
     }
 
-    private bool TryCaptureStartupBaseline(
-        AnomalySnapshot snapshot,
-        ProcessingSummaryBuilder summary)
+    private async Task PrimeStartupIncidentsAsync(
+        ImmutableArray<NotificationCluster> clusters,
+        ProcessingSummaryBuilder summary,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
-        if (!_firstReadySnapshot)
-            return false;
+        foreach (NotificationCluster cluster in clusters)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (await EvaluateCandidateReadinessAsync(
+                cluster,
+                summary,
+                includeOptionalPreview: false,
+                cancellationToken).ConfigureAwait(false) is null)
+            {
+                continue;
+            }
 
-        _firstReadySnapshot = false;
-        if (options.NotifyExistingOnStartup)
-            return false;
-
-        _startupBaselineIds = snapshot.Items
-            .Select(detection => detection.Id)
-            .ToHashSet(StringComparer.Ordinal);
-        summary.StartupBaselineDetectionCount = _startupBaselineIds.Count;
-        return true;
+            _startupIncidentHistory.RecordIncident(cluster, now);
+            summary.StartupSuppressedIncidentCount++;
+        }
     }
 
     private async Task<PreparedNotificationCandidate?> PrepareAutomaticCandidateAsync(
         NotificationCluster cluster,
         ProcessingSummaryBuilder summary,
+        CancellationToken cancellationToken)
+    {
+        NotificationCandidateReadiness? readiness = await EvaluateCandidateReadinessAsync(
+            cluster,
+            summary,
+            includeOptionalPreview: true,
+            cancellationToken).ConfigureAwait(false);
+        if (readiness is null)
+            return null;
+
+        ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
+            cluster.Representative,
+            cancellationToken).ConfigureAwait(false);
+        return new(
+            cluster,
+            readiness.Preview,
+            readiness.PreviewSelection,
+            readiness.LandCoverSummary,
+            nearbyFeatures);
+    }
+
+    private async Task<NotificationCandidateReadiness?> EvaluateCandidateReadinessAsync(
+        NotificationCluster cluster,
+        ProcessingSummaryBuilder summary,
+        bool includeOptionalPreview,
         CancellationToken cancellationToken)
     {
         summary.EvaluatedClusterCount++;
@@ -113,25 +171,22 @@ public sealed class NotificationCandidateEngine(
         }
 
         NotificationPreviewSelection previewSelection = SelectPreview(cluster);
-        GibsPreview preview = await gibsClient.GetPreviewAsync(
-            cluster.Representative,
-            previewSelection.Dimensions,
-            cancellationToken).ConfigureAwait(false);
+        GibsPreview preview = IsPreviewRequired || includeOptionalPreview
+            ? await gibsClient.GetPreviewAsync(
+                cluster.Representative,
+                previewSelection.Dimensions,
+                cancellationToken).ConfigureAwait(false)
+            : GibsPreview.Unavailable;
         if (!preview.IsAvailable && IsPreviewRequired)
         {
             summary.Reject(NotificationRejectionReason.PreviewUnavailable);
             return null;
         }
 
-        ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
-            cluster.Representative,
-            cancellationToken).ConfigureAwait(false);
         return new(
-            cluster,
             preview,
             previewSelection,
-            evaluation.LandCoverResult?.FormattingSummary,
-            nearbyFeatures);
+            evaluation.LandCoverResult?.FormattingSummary);
     }
 
     public async Task<ManualNotificationCandidates> PrepareManualAsync(
@@ -477,11 +532,14 @@ public sealed class NotificationCandidateEngine(
             LandCoverResult: null);
     }
 
+    private sealed record NotificationCandidateReadiness(
+        GibsPreview Preview,
+        NotificationPreviewSelection PreviewSelection,
+        string? LandCoverSummary);
+
     private sealed class ProcessingSummaryBuilder
     {
         private readonly Dictionary<NotificationRejectionReason, int> _rejectionCounts = [];
-
-        public int StartupBaselineDetectionCount { get; set; }
 
         public int ActiveClusterCount { get; set; }
 
@@ -491,7 +549,7 @@ public sealed class NotificationCandidateEngine(
 
         public int RejectedClusterCount { get; set; }
 
-        public int StartupSuppressedClusterCount { get; set; }
+        public int StartupSuppressedIncidentCount { get; set; }
 
         public int DuplicateEpisodeCount { get; set; }
 
@@ -527,12 +585,11 @@ public sealed class NotificationCandidateEngine(
 
         public NotificationProcessingSummary Build() =>
             new(
-                StartupBaselineDetectionCount,
                 ActiveClusterCount,
                 EvaluatedClusterCount,
                 AcceptedClusterCount,
                 RejectedClusterCount,
-                StartupSuppressedClusterCount,
+                StartupSuppressedIncidentCount,
                 DuplicateEpisodeCount,
                 SendFailureCount,
                 LandCoverCandidateCount,

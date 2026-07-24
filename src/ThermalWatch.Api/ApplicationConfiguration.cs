@@ -14,7 +14,7 @@ public sealed record ApplicationConfiguration(
     ViewerOptions Viewer,
     LogEventLevel MinimumLogLevel)
 {
-    private static readonly TimeSpan s_defaultDeliveredRetention = TimeSpan.FromHours(hours: 48);
+    private static readonly TimeSpan s_defaultEpisodeRetention = TimeSpan.FromHours(hours: 48);
     private static readonly TimeSpan s_maximumActiveWindow = TimeSpan.FromHours(hours: 72);
 
     public static ApplicationConfiguration FromEnvironment() =>
@@ -37,14 +37,14 @@ public sealed record ApplicationConfiguration(
             ParseTimeSpan(get, name: "FIRMS_ACTIVE_WINDOW", TimeSpan.FromHours(hours: 24), TimeSpan.FromMinutes(minutes: 1), s_maximumActiveWindow),
             ParseTimeSpan(get, name: "FIRMS_REQUEST_TIMEOUT", TimeSpan.FromSeconds(seconds: 45), TimeSpan.FromSeconds(seconds: 5), TimeSpan.FromMinutes(minutes: 5)),
             ParseInt(get, name: "FIRMS_MAX_CONCURRENCY", defaultValue: 4, minimum: 1, maximum: 32));
-        TimeSpan defaultDeliveredRetention = firms.ActiveWindow > s_defaultDeliveredRetention
+        TimeSpan defaultEpisodeRetention = firms.ActiveWindow > s_defaultEpisodeRetention
             ? firms.ActiveWindow
-            : s_defaultDeliveredRetention;
-        NotificationOptions notifications = ParseNotificationOptions(get, defaultDeliveredRetention);
+            : s_defaultEpisodeRetention;
+        NotificationOptions notifications = ParseNotificationOptions(get, defaultEpisodeRetention);
         var telegram = TelegramOptions.FromEnvironment(get);
         var viewer = ViewerOptions.FromEnvironment(get);
 
-        if (notifications.DeliveredRetention < firms.ActiveWindow)
+        if (notifications.EpisodeRetention < firms.ActiveWindow)
         {
             throw new ApplicationConfigurationException(
                 safeMessage: "TELEGRAM_SEEN_RETENTION must be at least FIRMS_ACTIVE_WINDOW.");
@@ -54,16 +54,16 @@ public sealed record ApplicationConfiguration(
     }
 
     internal static NotificationOptions ParseNotificationOptions(Func<string, string?> get) =>
-        ParseNotificationOptions(get, s_defaultDeliveredRetention);
+        ParseNotificationOptions(get, s_defaultEpisodeRetention);
 
     private static NotificationOptions ParseNotificationOptions(
         Func<string, string?> get,
-        TimeSpan defaultDeliveredRetention) =>
+        TimeSpan defaultEpisodeRetention) =>
         new(
             ParseBool(get, name: "TELEGRAM_NOTIFY_EXISTING_ON_STARTUP", defaultValue: false),
             ParseDouble(get, name: "TELEGRAM_CLUSTER_RADIUS_KM", defaultValue: 5, minimum: 0.01, maximum: 100),
             ParseTimeSpan(get, name: "TELEGRAM_CLUSTER_TIME_WINDOW", TimeSpan.FromMinutes(minutes: 90), TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 1)),
-            ParseTimeSpan(get, name: "TELEGRAM_SEEN_RETENTION", defaultDeliveredRetention, TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 30)),
+            ParseTimeSpan(get, name: "TELEGRAM_SEEN_RETENTION", defaultEpisodeRetention, TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 30)),
             new(
                 new(
                     ParsePositiveDouble(get, name: "TELEGRAM_PREVIEW_WIDTH_KM", defaultValue: 30),

@@ -1,22 +1,22 @@
 namespace ThermalWatch.Core;
 
-internal sealed class NotificationDeliveryHistory(
+internal sealed class NotificationEpisodeHistory(
     double radiusKilometers,
     TimeSpan timeWindow,
     TimeSpan retention)
 {
-    private const int MaximumDeliveredDetections = 100_000;
-    private readonly Dictionary<string, DeliveredDetection> _delivered = new(StringComparer.Ordinal);
+    private const int MaximumTrackedDetections = 100_000;
+    private readonly Dictionary<string, TrackedDetection> _tracked = new(StringComparer.Ordinal);
 
     public void Expire(DateTimeOffset now)
     {
         DateTimeOffset cutoff = now - retention;
-        foreach (string id in _delivered
+        foreach (string id in _tracked
             .Where(pair => pair.Value.TrackedAtUtc < cutoff)
             .Select(pair => pair.Key)
             .ToArray())
         {
-            _delivered.Remove(id);
+            _tracked.Remove(id);
         }
     }
 
@@ -24,13 +24,13 @@ internal sealed class NotificationDeliveryHistory(
     {
         Expire(now);
         bool isContinuation = cluster.Members.Any(candidate =>
-            _delivered.Values.Any(delivered =>
-                (candidate.AcquiredAtUtc - delivered.AcquiredAtUtc).Duration() <= timeWindow
+            _tracked.Values.Any(tracked =>
+                (candidate.AcquiredAtUtc - tracked.AcquiredAtUtc).Duration() <= timeWindow
                 && Geography.HaversineKilometers(
                     candidate.Latitude,
                     candidate.Longitude,
-                    delivered.Latitude,
-                    delivered.Longitude) <= radiusKilometers));
+                    tracked.Latitude,
+                    tracked.Longitude) <= radiusKilometers));
         if (!isContinuation)
             return false;
 
@@ -38,7 +38,7 @@ internal sealed class NotificationDeliveryHistory(
         return true;
     }
 
-    public void RecordDelivered(NotificationCluster cluster, DateTimeOffset now)
+    public void RecordIncident(NotificationCluster cluster, DateTimeOffset now)
     {
         Expire(now);
         Track(cluster, now);
@@ -48,29 +48,29 @@ internal sealed class NotificationDeliveryHistory(
     {
         foreach (Anomaly detection in cluster.Members)
         {
-            _delivered[detection.Id] = new(
+            _tracked[detection.Id] = new(
                 detection.Latitude,
                 detection.Longitude,
                 detection.AcquiredAtUtc,
                 now);
         }
 
-        int excess = _delivered.Count - MaximumDeliveredDetections;
+        int excess = _tracked.Count - MaximumTrackedDetections;
         if (excess <= 0)
             return;
 
-        foreach (string id in _delivered
+        foreach (string id in _tracked
             .OrderBy(pair => pair.Value.TrackedAtUtc)
             .ThenBy(pair => pair.Key, StringComparer.Ordinal)
             .Take(excess)
             .Select(pair => pair.Key)
             .ToArray())
         {
-            _delivered.Remove(id);
+            _tracked.Remove(id);
         }
     }
 
-    private sealed record DeliveredDetection(
+    private sealed record TrackedDetection(
         double Latitude,
         double Longitude,
         DateTimeOffset AcquiredAtUtc,
