@@ -15,7 +15,7 @@ Add a persistent Viewer panel that evaluates the current in-memory snapshot and 
 - [x] Add and test the responsive right-rail panel and search activation. (2026-07-24T08:51:00Z)
 - [x] Synchronize durable documentation. (2026-07-24T08:51:00Z)
 - [x] Complete focused, full, publish, and live visual validation. (2026-07-24T08:51:00Z)
-- [ ] Commit the completed change and push `main` to `origin`.
+- [x] Commit the completed change and push `main` to `origin` as `e006726`. (2026-07-24T08:53:00Z)
 
 ## Surprises and discoveries
 
@@ -51,4 +51,4 @@ Core now exposes a criteria-only eligible-cluster query whose deterministic noti
 
 Validation completed with zero build warnings, 155 passing .NET tests, 35 passing Node tests, seven passing documentation checks, clean format/diff checks, and a successful Release publish/static-asset assertion. A Telegram-disabled live run used 13,496 current observations; the real endpoint returned zero eligible clusters from 943 evaluated clusters, while a route-controlled passing summary derived from a live representative verified click-through search and URL behavior. All 16 images under `/tmp/thermalwatch-eligible-panel-final-aZAAhw/` were opened and inspected across NASA and Google desktop/narrow layouts, a provider round trip, and populated, empty, error, and loading states. No horizontal overflow, clipped controls, unscrollable content, or provider regression was visible.
 
-Durable behavior is recorded in the root README plus the architecture, operations, notification-policy, and web-viewer documents. No ADR was warranted because the change extends the existing Core/Viewer boundary without introducing a new architectural dependency. Final Git commit and push remain before closure.
+Durable behavior is recorded in the root README plus the architecture, operations, notification-policy, and web-viewer documents. No ADR was warranted because the change extends the existing Core/Viewer boundary without introducing a new architectural dependency. Implementation commit `e006726` was pushed to `origin/main`; this plan closure is the only follow-up publication step.
