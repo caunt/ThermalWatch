@@ -1164,7 +1164,7 @@
   class GoogleMapProvider {
     constructor() {
       this.map = null;
-      this.markers = new Map();
+      this.anomalyLayer = null;
       this.onSelect = null;
       this.unsubscribeAuthFailure = null;
       this.authFailure = null;
@@ -1195,30 +1195,21 @@
         mapTypeId: window.google.maps.MapTypeId.SATELLITE,
         streetViewControl: false
       });
+
+      this.anomalyLayer = mapSupport.createGoogleAnomalyLayer(this.map, {
+        googleMaps: window.google.maps,
+        onSelect: this.onSelect,
+        labelForPoint: markerLabel,
+        iconForState: googleMarkerIcon
+      });
     }
 
     renderAnomalies(points) {
-      this.clearMarkers();
-      points.forEach(point => {
-        const marker = new window.google.maps.Marker({
-          map: this.map,
-          position: { lat: point.latitude, lng: point.longitude },
-          title: markerLabel(point),
-          icon: googleMarkerIcon(false),
-          optimized: true
-        });
-        marker.addListener("click", () => this.onSelect(point.key));
-        this.markers.set(point.key, marker);
-      });
+      this.anomalyLayer.render(points);
     }
 
     setSelection(selectedKey, clusterKeys) {
-      this.markers.forEach((marker, markerKey) => {
-        const selected = markerKey === selectedKey;
-        const clustered = clusterKeys.has(markerKey);
-        marker.setIcon(googleMarkerIcon(selected, clustered));
-        marker.setZIndex(selected ? 1000 : clustered ? 500 : undefined);
-      });
+      this.anomalyLayer.setSelection(selectedKey, clusterKeys);
     }
 
     setSearchLocation(coordinate) {
@@ -1285,22 +1276,15 @@
         this.map.setCenter(center);
     }
 
-    clearMarkers() {
-      this.markers.forEach(marker => {
-        window.google.maps.event.clearInstanceListeners(marker);
-        marker.setMap(null);
-      });
-      this.markers.clear();
-    }
-
     destroy() {
       if (window.google?.maps && this.searchMarker)
         window.google.maps.event.clearInstanceListeners(this.searchMarker);
       this.searchMarker?.setMap(null);
       this.searchMarker = null;
+      this.anomalyLayer?.destroy();
+      this.anomalyLayer = null;
       if (window.google?.maps && this.map)
         window.google.maps.event.clearInstanceListeners(this.map);
-      this.markers.clear();
       this.unsubscribeAuthFailure?.();
       this.unsubscribeAuthFailure = null;
       this.map = null;

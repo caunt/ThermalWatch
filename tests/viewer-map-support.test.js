@@ -15,6 +15,8 @@ const {
   notificationMarkerStyle,
   coordinateSearchMarkerStyle,
   clusterPointKeys,
+  changedNotificationMarkerKeys,
+  createGoogleAnomalyLayer,
   createMapResizeScheduler,
   loadGibsTile,
   createGibsWarningReporter,
@@ -54,6 +56,81 @@ class FakeAbortController {
 
   abort() {
     this.signal.aborted = true;
+  }
+}
+
+class FakeGooglePoint {
+  constructor(coordinate) {
+    this.coordinate = coordinate;
+  }
+}
+
+class FakeGoogleFeature {
+  constructor(options) {
+    this.options = options;
+  }
+
+  getId() {
+    return this.options.id;
+  }
+
+  getProperty(name) {
+    return this.options.properties[name];
+  }
+}
+
+class FakeGoogleDataLayer {
+  static Feature = FakeGoogleFeature;
+  static Point = FakeGooglePoint;
+  static instances = [];
+
+  constructor(options) {
+    this.map = options.map;
+    this.features = [];
+    this.overrides = [];
+    this.reverted = [];
+    this.listeners = new Map();
+    this.style = null;
+    FakeGoogleDataLayer.instances.push(this);
+  }
+
+  setStyle(style) {
+    this.style = style;
+  }
+
+  addListener(name, handler) {
+    this.listeners.set(name, handler);
+    return {
+      remove: () => this.listeners.delete(name)
+    };
+  }
+
+  add(feature) {
+    this.features.push(feature);
+  }
+
+  forEach(callback) {
+    this.features.forEach(callback);
+  }
+
+  remove(feature) {
+    this.features.splice(this.features.indexOf(feature), 1);
+  }
+
+  overrideStyle(feature, style) {
+    this.overrides.push({ feature, style });
+  }
+
+  revertStyle(feature) {
+    this.reverted.push(feature);
+  }
+
+  setMap(map) {
+    this.map = map;
+  }
+
+  click(feature) {
+    this.listeners.get("click")?.({ feature });
   }
 }
 
@@ -175,6 +252,88 @@ test("notification cluster member IDs map to provider-neutral point keys", () =>
 
   assert.deepEqual([...clusterPointKeys(points, ["a"])], ["first", "duplicate#2"]);
   assert.throws(() => clusterPointKeys(null, ["a"]), /must be arrays/);
+});
+
+test("notification marker changes include only keys whose visual role changed", () => {
+  assert.deepEqual(
+    [...changedNotificationMarkerKeys(
+      "selected",
+      new Set(["selected", "unchanged-cluster", "leaving-cluster"]),
+      "new-selected",
+      new Set(["new-selected", "unchanged-cluster", "joining-cluster"]))],
+    ["selected", "leaving-cluster", "new-selected", "joining-cluster"]);
+
+  assert.deepEqual(
+    [...changedNotificationMarkerKeys(null, new Set(), null, new Set())],
+    []);
+  assert.throws(
+    () => changedNotificationMarkerKeys(null, [], null, new Set()),
+    /must be sets/);
+});
+
+test("Google anomalies share one data layer and update only changed feature roles", () => {
+  FakeGoogleDataLayer.instances = [];
+  const selected = [];
+  const map = { name: "map" };
+  const anomalyLayer = createGoogleAnomalyLayer(map, {
+    googleMaps: { Data: FakeGoogleDataLayer },
+    onSelect: key => selected.push(key),
+    labelForPoint: point => point.label,
+    iconForState: (isSelected, isClustered) =>
+      isSelected ? "selected" : isClustered ? "clustered" : "default"
+  });
+  const points = Array.from({ length: 9000 }, (_, index) => ({
+    key: index === 8999 ? "point#2" : `point-${index}`,
+    label: `Point ${index}`,
+    latitude: 44 + index / 10000,
+    longitude: 22 + index / 10000
+  }));
+
+  anomalyLayer.render(points);
+
+  assert.equal(FakeGoogleDataLayer.instances.length, 1);
+  const dataLayer = FakeGoogleDataLayer.instances[0];
+  assert.equal(dataLayer.map, map);
+  assert.equal(dataLayer.features.length, 9000);
+  assert.equal(dataLayer.features[8999].getId(), "point#2");
+  assert.deepEqual(dataLayer.features[0].options.geometry.coordinate, { lat: 44, lng: 22 });
+  assert.deepEqual(dataLayer.style(dataLayer.features[0]), {
+    clickable: true,
+    cursor: "pointer",
+    icon: "default",
+    title: "Point 0"
+  });
+
+  dataLayer.click(dataLayer.features[8999]);
+  assert.deepEqual(selected, ["point#2"]);
+
+  anomalyLayer.setSelection(
+    "point-0",
+    new Set(["point-0", "point#2"]));
+  assert.deepEqual(
+    dataLayer.overrides.map(change => [change.feature.getId(), change.style]),
+    [
+      ["point-0", { icon: "selected", zIndex: 1000 }],
+      ["point#2", { icon: "clustered", zIndex: 500 }]
+    ]);
+
+  anomalyLayer.setSelection(
+    "point-1",
+    new Set(["point-1", "point#2"]));
+  assert.deepEqual(dataLayer.reverted.map(feature => feature.getId()), ["point-0"]);
+  assert.deepEqual(
+    dataLayer.overrides.slice(2).map(change => [change.feature.getId(), change.style]),
+    [["point-1", { icon: "selected", zIndex: 1000 }]]);
+
+  anomalyLayer.render([{ key: "replacement", label: "Replacement", latitude: 1, longitude: 2 }]);
+  assert.equal(FakeGoogleDataLayer.instances.length, 1);
+  assert.deepEqual(dataLayer.features.map(feature => feature.getId()), ["replacement"]);
+
+  anomalyLayer.destroy();
+  assert.equal(dataLayer.map, null);
+  assert.equal(dataLayer.features.length, 0);
+  assert.equal(dataLayer.listeners.size, 0);
+  assert.throws(() => anomalyLayer.render([]), /has been destroyed/);
 });
 
 test("map resize scheduling coalesces callbacks to one per animation frame", () => {

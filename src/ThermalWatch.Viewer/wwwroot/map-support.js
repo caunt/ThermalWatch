@@ -563,6 +563,138 @@
       .map(point => point.key));
   }
 
+  function changedNotificationMarkerKeys(
+    previousSelectedKey,
+    previousClusterKeys,
+    selectedKey,
+    clusterKeys
+  ) {
+    if (!(previousClusterKeys instanceof Set) || !(clusterKeys instanceof Set))
+      throw new Error("Previous and current notification cluster keys must be sets.");
+
+    const candidates = new Set([...previousClusterKeys, ...clusterKeys]);
+    if (typeof previousSelectedKey === "string")
+      candidates.add(previousSelectedKey);
+    if (typeof selectedKey === "string")
+      candidates.add(selectedKey);
+
+    return new Set([...candidates].filter(key =>
+      notificationMarkerState(key, previousSelectedKey, previousClusterKeys)
+        !== notificationMarkerState(key, selectedKey, clusterKeys)));
+  }
+
+  function notificationMarkerState(key, selectedKey, clusterKeys) {
+    if (key === selectedKey)
+      return "selected";
+    return clusterKeys.has(key) ? "clustered" : "default";
+  }
+
+  function createGoogleAnomalyLayer(map, options = {}) {
+    const googleMaps = options.googleMaps ?? globalThis.google?.maps;
+    const onSelect = options.onSelect;
+    const labelForPoint = options.labelForPoint;
+    const iconForState = options.iconForState;
+    if (!map || typeof googleMaps?.Data !== "function")
+      throw new Error("A Google map and Data API are required.");
+    if (typeof onSelect !== "function"
+        || typeof labelForPoint !== "function"
+        || typeof iconForState !== "function") {
+      throw new Error("Google anomaly callbacks are required.");
+    }
+
+    const dataLayer = new googleMaps.Data({ map });
+    const features = new Map();
+    let selectedKey = null;
+    let clusterKeys = new Set();
+    let destroyed = false;
+    const defaultIcon = iconForState(false, false);
+    dataLayer.setStyle(feature => ({
+      clickable: true,
+      cursor: "pointer",
+      icon: defaultIcon,
+      title: feature.getProperty("title")
+    }));
+    const clickListener = dataLayer.addListener("click", event => {
+      const key = event.feature.getId();
+      if (typeof key === "string")
+        onSelect(key);
+    });
+
+    function render(points) {
+      if (!Array.isArray(points))
+        throw new Error("Google anomaly points must be an array.");
+      if (destroyed)
+        throw new Error("The Google anomaly layer has been destroyed.");
+
+      clear();
+      points.forEach(point => {
+        const feature = new googleMaps.Data.Feature({
+          geometry: new googleMaps.Data.Point({
+            lat: point.latitude,
+            lng: point.longitude
+          }),
+          id: point.key,
+          properties: {
+            title: labelForPoint(point)
+          }
+        });
+        dataLayer.add(feature);
+        features.set(point.key, feature);
+      });
+    }
+
+    function setSelection(nextSelectedKey, nextClusterKeys) {
+      if (destroyed)
+        return;
+
+      const changedKeys = changedNotificationMarkerKeys(
+        selectedKey,
+        clusterKeys,
+        nextSelectedKey,
+        nextClusterKeys);
+      changedKeys.forEach(key => {
+        const feature = features.get(key);
+        if (!feature)
+          return;
+
+        const selected = key === nextSelectedKey;
+        const clustered = nextClusterKeys.has(key);
+        if (!selected && !clustered) {
+          dataLayer.revertStyle(feature);
+          return;
+        }
+
+        dataLayer.overrideStyle(feature, {
+          icon: iconForState(selected, clustered),
+          zIndex: selected ? 1000 : 500
+        });
+      });
+      selectedKey = nextSelectedKey;
+      clusterKeys = new Set(nextClusterKeys);
+    }
+
+    function clear() {
+      const existingFeatures = [];
+      dataLayer.forEach(feature => existingFeatures.push(feature));
+      existingFeatures.forEach(feature => dataLayer.remove(feature));
+      features.clear();
+      selectedKey = null;
+      clusterKeys.clear();
+    }
+
+    function destroy() {
+      if (destroyed)
+        return;
+
+      clickListener.remove();
+      clear();
+      dataLayer.setMap(null);
+      destroyed = true;
+    }
+
+    return Object.freeze({ render, setSelection, destroy });
+  }
+
   function createMapResizeScheduler(onResize, options = {}) {
     if (typeof onResize !== "function")
       throw new Error("A map resize callback is required.");
@@ -832,6 +964,8 @@
     notificationMarkerStyle,
     coordinateSearchMarkerStyle,
     clusterPointKeys,
+    changedNotificationMarkerKeys,
+    createGoogleAnomalyLayer,
     createMapResizeScheduler,
     loadGibsTile,
     createGibsWarningReporter,
