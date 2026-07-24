@@ -5,6 +5,7 @@
   if (!mapSupport)
     throw new Error("The ThermalWatch map support module could not be loaded.");
 
+  const coordinateSearchZoom = 7;
   const googleMapsLoader = mapSupport.createGoogleMapsLoader({
     windowObject: window,
     documentObject: document
@@ -1372,7 +1373,10 @@
 
     focusCoordinate(coordinate) {
       this.map?.stop();
-      this.map?.setView([coordinate.latitude, coordinate.longitude], 12, { animate: false });
+      this.map?.setView(
+        [coordinate.latitude, coordinate.longitude],
+        coordinateSearchZoom,
+        { animate: false });
     }
 
     fitToAnomalies(points) {
@@ -1486,7 +1490,7 @@
         return;
 
       this.map.setCenter({ lat: coordinate.latitude, lng: coordinate.longitude });
-      this.map.setZoom(12);
+      this.map.setZoom(coordinateSearchZoom);
     }
 
     fitToAnomalies(points) {
