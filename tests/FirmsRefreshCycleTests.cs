@@ -17,6 +17,71 @@ public sealed class FirmsRefreshCycleTests
         latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_ti5,frp,daynight
         49,30,330,1,1,2026-07-23,0731,N,VIIRS,n,2.0NRT,300,100,D
         """;
+    private const string RolloverModisCsv = """
+        latitude,longitude,brightness,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_t31,frp,daynight
+        49,30,330,1,1,2026-07-23,0000,T,MODIS,80,6.1NRT,300,100,D
+        49,30,330,1,1,2026-07-23,2359,T,MODIS,80,6.1NRT,300,100,D
+        """;
+    private const string RolloverViirsCsv = """
+        latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_ti5,frp,daynight
+        49,30,330,1,1,2026-07-23,0000,N,VIIRS,n,2.0NRT,300,100,D
+        49,30,330,1,1,2026-07-23,2359,N,VIIRS,n,2.0NRT,300,100,D
+        """;
+
+    [Fact]
+    public async Task RefreshAsyncRetainsPreviousUtcDayDetectionsWithinActiveWindowAfterMidnight()
+    {
+        var handler = new CoordinatedHandler((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            Assert.EndsWith(expectedEndString: "/2", path, StringComparison.Ordinal);
+            return Task.FromResult(RolloverCsvResponse(path));
+        });
+        FirmsOptions options = new(
+            MapKey: new string('A', count: 32),
+            Countries: ["UKR"],
+            PollInterval: TimeSpan.FromMinutes(minutes: 5),
+            ActiveWindow: TimeSpan.FromHours(hours: 24),
+            RequestTimeout: TimeSpan.FromSeconds(seconds: 45),
+            MaxConcurrency: 4);
+        var timeProvider = new FakeTimeProvider(
+            new(year: 2026, month: 7, day: 24, hour: 0, minute: 1, second: 0, TimeSpan.Zero));
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new(uriString: "https://firms.example.test/")
+        };
+        using var firmsClient = new FirmsClient(
+            httpClient,
+            options,
+            new CountryBoundaryCatalog(options),
+            timeProvider,
+            NullLogger<FirmsClient>.Instance);
+        var snapshotStore = new AnomalySnapshotStore(options, timeProvider);
+        var cycle = new FirmsRefreshCycle(
+            firmsClient,
+            options,
+            snapshotStore,
+            timeProvider,
+            NullLogger<FirmsRefreshCycle>.Instance);
+
+        FirmsRefreshCycleResult result = await cycle.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(4, result.SuccessfulSegmentCount);
+        Assert.Equal(0, result.FailedSegmentCount);
+        Assert.Equal(4, snapshotStore.Current.Count);
+        Assert.All(
+            snapshotStore.Current.Items,
+            detection => Assert.Equal(
+                new DateTimeOffset(
+                    year: 2026,
+                    month: 7,
+                    day: 23,
+                    hour: 23,
+                    minute: 59,
+                    second: 0,
+                    TimeSpan.Zero),
+                detection.AcquiredAtUtc));
+    }
 
     [Fact]
     public async Task RefreshAsyncLimitsConcurrentSegmentsToTwo()
@@ -84,6 +149,17 @@ public sealed class FirmsRefreshCycleTests
         {
             Content = new StringContent(
                 path.Contains(value: "MODIS_NRT", StringComparison.Ordinal) ? ModisCsv : ViirsCsv,
+                Encoding.UTF8,
+                mediaType: "text/csv")
+        };
+
+    private static HttpResponseMessage RolloverCsvResponse(string path) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                path.Contains(value: "MODIS_NRT", StringComparison.Ordinal)
+                    ? RolloverModisCsv
+                    : RolloverViirsCsv,
                 Encoding.UTF8,
                 mediaType: "text/csv")
         };

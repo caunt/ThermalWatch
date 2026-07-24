@@ -30,7 +30,14 @@ public sealed class FirmsClientTests
     [Fact]
     public async Task GetSegmentAsyncUsesOneCountryRequestWhenCountryApiIsAvailable()
     {
-        var handler = new RecordingHandler(static (_, _) => Task.FromResult(CsvResponse()));
+        var handler = new RecordingHandler(static (request, _) =>
+        {
+            Assert.EndsWith(
+                expectedEndString: "/2",
+                request.RequestUri!.AbsolutePath,
+                StringComparison.Ordinal);
+            return Task.FromResult(CsvResponse());
+        });
         using FirmsClient client = CreateClient(handler, countryCode: "UKR");
 
         FirmsSegmentResult result = await client.GetSegmentAsync(
@@ -56,6 +63,7 @@ public sealed class FirmsClientTests
                 return Task.FromResult(MapKeyStatusResponse());
 
             Assert.True(path.Contains(value: "/api/area/csv/", StringComparison.Ordinal));
+            Assert.EndsWith(expectedEndString: "/2", path, StringComparison.Ordinal);
             return Task.FromResult(CsvResponse(FallbackCsv));
         });
         using FirmsClient client = CreateClient(handler, countryCode: "UKR", maxConcurrency: 2);
