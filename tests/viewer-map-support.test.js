@@ -13,6 +13,7 @@ const {
   parseCoordinateInput,
   coordinateSearchFromUrl,
   urlWithCoordinateSearch,
+  eligibleNotificationClusterCoordinate,
   nearestCoordinatePoint,
   notificationMarkerStyle,
   coordinateSearchMarkerStyle,
@@ -477,6 +478,21 @@ test("viewer URLs save canonical coordinates without discarding other URL state"
   assert.throws(
     () => urlWithCoordinateSearch("/", { latitude: 57, longitude: -181 }),
     /Longitude must be between/);
+});
+
+test("eligible notification clusters provide validated representative search coordinates", () => {
+  assert.deepEqual(
+    eligibleNotificationClusterCoordinate({ latitude: 50.1234567, longitude: 30.7654321 }),
+    { latitude: 50.1234567, longitude: 30.7654321 });
+  assert.throws(
+    () => eligibleNotificationClusterCoordinate({ latitude: 91, longitude: 30 }),
+    /Latitude must be between/);
+  assert.throws(
+    () => eligibleNotificationClusterCoordinate({ latitude: 50, longitude: Number.NaN }),
+    /Longitude must be between/);
+  assert.throws(
+    () => eligibleNotificationClusterCoordinate(null),
+    /eligible notification cluster/);
 });
 
 test("coordinate search accepts labels, cardinal directions, and common angle notations", () => {

@@ -68,7 +68,51 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    private static async Task<WebApplication> CreateAppAsync()
+    [Fact]
+    public async Task EligibleClusterEndpointReturnsRepresentativeSummary()
+    {
+        await using WebApplication app = await CreateAppAsync();
+        using HttpClient client = app.GetTestClient();
+
+        using HttpResponseMessage response = await client.GetAsync(
+            requestUri: "/api/viewer/eligible-notification-clusters",
+            TestContext.Current.CancellationToken);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, body.RootElement.GetProperty(propertyName: "evaluatedClusterCount").GetInt32());
+        Assert.Equal(1, body.RootElement.GetProperty(propertyName: "eligibleClusterCount").GetInt32());
+        Assert.True(body.RootElement.TryGetProperty(propertyName: "snapshotGeneratedAtUtc", out _));
+        JsonElement cluster = Assert.Single(
+            body.RootElement.GetProperty(propertyName: "clusters").EnumerateArray());
+        Assert.Equal("second", cluster.GetProperty(propertyName: "representativeId").GetString());
+        Assert.Equal("RUS", cluster.GetProperty(propertyName: "countryCode").GetString());
+        Assert.Equal("VIIRS_SNPP_NRT", cluster.GetProperty(propertyName: "source").GetString());
+        Assert.Equal(50, cluster.GetProperty(propertyName: "latitude").GetDouble());
+        Assert.Equal(30.02, cluster.GetProperty(propertyName: "longitude").GetDouble());
+        Assert.Equal(2, cluster.GetProperty(propertyName: "detectionCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task EligibleClusterEndpointReturnsEmptyWarmingSnapshot()
+    {
+        await using WebApplication app = await CreateAppAsync(publishSnapshot: false);
+        using HttpClient client = app.GetTestClient();
+
+        using HttpResponseMessage response = await client.GetAsync(
+            requestUri: "/api/viewer/eligible-notification-clusters",
+            TestContext.Current.CancellationToken);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, body.RootElement.GetProperty(propertyName: "evaluatedClusterCount").GetInt32());
+        Assert.Equal(0, body.RootElement.GetProperty(propertyName: "eligibleClusterCount").GetInt32());
+        Assert.Empty(body.RootElement.GetProperty(propertyName: "clusters").EnumerateArray());
+    }
+
+    private static async Task<WebApplication> CreateAppAsync(bool publishSnapshot = true)
     {
         var noRequests = new NotFoundHandler();
         var nearbyRequests = new NearbyHandler();
@@ -106,18 +150,22 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
 
         WebApplication app = builder.Build();
         app.MapThermalWatchViewer();
-        AnomalySnapshotStore store = app.Services.GetRequiredService<AnomalySnapshotStore>();
-        store.Publish([
-            SegmentRefreshResult.Success(
-                new(CountryCode: "RUS", Source: "VIIRS_SNPP_NRT"),
-                attemptedAtUtc: s_now,
-                completedAtUtc: s_now,
-                [
-                    Detection(id: "first", longitude: 30, frpMegawatts: 100),
-                    Detection(id: "second", longitude: 30.02, frpMegawatts: 200)
-                ],
-                IngestionModes.Country)
-        ]);
+        if (publishSnapshot)
+        {
+            AnomalySnapshotStore store = app.Services.GetRequiredService<AnomalySnapshotStore>();
+            store.Publish([
+                SegmentRefreshResult.Success(
+                    new(CountryCode: "RUS", Source: "VIIRS_SNPP_NRT"),
+                    attemptedAtUtc: s_now,
+                    completedAtUtc: s_now,
+                    [
+                        Detection(id: "first", longitude: 30, frpMegawatts: 100),
+                        Detection(id: "second", longitude: 30.02, frpMegawatts: 200)
+                    ],
+                    IngestionModes.Country)
+            ]);
+        }
+
         await app.StartAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
         return app;
     }

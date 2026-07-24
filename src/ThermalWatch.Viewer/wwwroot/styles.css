@@ -274,6 +274,7 @@ select {
 select:focus-visible,
 .coordinate-search input:focus-visible,
 .secondary-button:focus-visible,
+.eligible-cluster-button:focus-visible,
 .field-list a:focus-visible,
 .raw-record summary:focus-visible {
   outline: 2px solid var(--focus);
@@ -397,6 +398,7 @@ select:disabled,
 }
 
 .map-panel,
+.eligible-clusters-panel,
 .details-panel {
   border: 1px solid var(--border-soft);
   border-radius: 0.78rem;
@@ -409,6 +411,189 @@ select:disabled,
   min-height: 20rem;
   overflow: hidden;
   background: #111d21;
+}
+
+.right-rail {
+  display: grid;
+  grid-template-rows: minmax(11rem, 31vh) minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  gap: 0.65rem;
+}
+
+.eligible-clusters-panel {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgb(21 39 44 / 97%), rgb(10 22 26 / 98%)),
+    var(--surface);
+}
+
+.eligible-clusters-heading {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 0.85rem 0.95rem 0.72rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.eligible-clusters-heading .eyebrow {
+  margin-bottom: 0.22rem;
+}
+
+.eligible-clusters-heading h2 {
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.25;
+}
+
+.eligible-clusters-count {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.46rem;
+  border: 1px solid rgb(111 212 170 / 34%);
+  border-radius: 999px;
+  background: rgb(111 212 170 / 8%);
+  color: var(--success);
+  font-size: 0.56rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.eligible-clusters-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 0.72rem;
+  scrollbar-color: #3c555c transparent;
+}
+
+.eligible-clusters-state {
+  display: flex;
+  min-height: 100%;
+  gap: 0.65rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 0.55rem;
+  background: rgb(255 255 255 / 2.2%);
+  color: var(--muted);
+  font-size: 0.71rem;
+  line-height: 1.45;
+}
+
+.eligible-clusters-state p {
+  margin: 0;
+}
+
+.eligible-clusters-state .spinner {
+  flex: 0 0 auto;
+}
+
+.eligible-clusters-state.error {
+  display: grid;
+  align-content: center;
+  justify-content: stretch;
+  border-color: #77383e;
+  background: #301d21;
+  color: #ffd7d7;
+}
+
+.eligible-clusters-ready {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.eligible-clusters-summary,
+.eligible-clusters-policy,
+.eligible-clusters-timestamp,
+.eligible-clusters-empty {
+  margin: 0;
+  font-size: 0.66rem;
+  line-height: 1.45;
+}
+
+.eligible-clusters-summary {
+  color: #dce7e7;
+}
+
+.eligible-clusters-policy,
+.eligible-clusters-timestamp {
+  color: var(--quiet);
+}
+
+.eligible-clusters-empty {
+  padding: 0.72rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.5rem;
+  color: var(--muted);
+}
+
+.eligible-clusters-list {
+  display: grid;
+  gap: 0.48rem;
+  margin: 0.1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.eligible-cluster-button {
+  display: grid;
+  width: 100%;
+  gap: 0.25rem;
+  padding: 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--success);
+  border-radius: 0.52rem;
+  background: rgb(255 255 255 / 2.2%);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.eligible-cluster-button:hover {
+  border-color: #4a756b;
+  border-left-color: var(--success);
+  background: rgb(111 212 170 / 7%);
+}
+
+.eligible-cluster-heading {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.eligible-cluster-heading strong {
+  font-size: 0.73rem;
+}
+
+.eligible-cluster-frp {
+  color: var(--accent-soft);
+  font-size: 0.58rem;
+  font-weight: 750;
+}
+
+.eligible-cluster-context,
+.eligible-cluster-stats,
+.eligible-cluster-coordinate {
+  overflow-wrap: anywhere;
+  font-size: 0.61rem;
+  line-height: 1.4;
+}
+
+.eligible-cluster-context,
+.eligible-cluster-stats {
+  color: var(--muted);
+}
+
+.eligible-cluster-coordinate {
+  color: var(--success);
+  font-weight: 720;
 }
 
 #map {
@@ -1013,9 +1198,18 @@ footer {
     border-radius: 0.68rem;
   }
 
+  .right-rail {
+    grid-template-rows: auto auto;
+    margin-top: 0.55rem;
+  }
+
+  .eligible-clusters-panel {
+    max-height: 24rem;
+    border-radius: 0.68rem;
+  }
+
   .details-panel {
     min-height: 24rem;
-    margin-top: 0.55rem;
     overflow: visible;
     border-radius: 0.68rem;
   }

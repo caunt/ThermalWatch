@@ -11,9 +11,9 @@
 | --- | --- | --- |
 | `ThermalWatch.Core` | FIRMS ingestion, GIBS and Overpass access, immutable models and snapshots, geography, country boundaries, anomaly identity, nearby mapped context, and the complete anomaly-to-notification-candidate policy and lifecycle. | External data libraries and abstractions only. |
 | `ThermalWatch.Telegram` | Telegram transport validation, message construction, and delivery of prepared Core candidates. | Core. |
-| `ThermalWatch.Viewer` | Viewer configuration and routes, notification diagnostics, same-origin imagery delivery, root-mounted static assets, and provider-neutral browser presentation. | Core. |
+| `ThermalWatch.Viewer` | Viewer configuration and routes, eligible-cluster summaries, notification diagnostics, same-origin imagery delivery, root-mounted static assets, and provider-neutral browser presentation. | Core. |
 | `ThermalWatch.Api` | Sole executable, process startup, environment configuration, resilient HTTP clients, polling, public anomaly/Telegram routes, and static-file hosting. | Viewer, Core, and Telegram. |
-| Browser viewer | Reads same-origin configuration, anomaly, notification-diagnostic, and NASA imagery APIs; renders provider-neutral markers through Leaflet or optional Google Maps; offers selected-coordinate navigation to Google and Yandex Maps. | ThermalWatch API plus the approved unpkg and Google browser services; external map sites only after user navigation. |
+| Browser viewer | Reads same-origin configuration, anomaly, eligible-cluster, notification-diagnostic, and NASA imagery APIs; renders provider-neutral markers through Leaflet or optional Google Maps; offers representative search plus selected-coordinate navigation to Google and Yandex Maps. | ThermalWatch API plus the approved unpkg and Google browser services; external map sites only after user navigation. |
 | `ThermalWatch.Tests` | .NET, JavaScript, and documentation validation. | API and its transitive project references. |
 
 Preserve the dependency directions `Api -> Viewer -> Core`, `Api -> Telegram -> Core`, and `Api -> Core`. `ThermalWatch.Api` remains the only executable and listener; Viewer is a library included in the same publish output and container. Core must not acquire host, browser, or Telegram concerns.
@@ -24,7 +24,7 @@ Preserve the dependency directions `Api -> Viewer -> Core`, `Api -> Telegram -> 
 NASA FIRMS -> FirmsClient -> FirmsPollingService -> AnomalySnapshotStore
                                                    |             |
                                                    |             +-> Core candidate engine -> Telegram formatter/sender -> Telegram API
-                                                   |             +-> Core diagnostic evaluator ---------------------------> browser viewer
+                                                   |             +-> Core eligible/diagnostic evaluators ----------------> browser viewer
                                                    +-> anomaly API -----------------------------------------------> browser viewer
 NASA GIBS -> Core map-tile client -> viewer imagery API -----------------------> browser viewer
 OpenStreetMap Overpass -> Core nearby-feature client -> candidate/diagnostic ----> Telegram or browser viewer
@@ -36,7 +36,7 @@ Google Maps ------------------------------------------------------------------> 
 3. Successful segments replace their prior data. Failed segments retain their last complete data and become stale.
 4. The store atomically publishes an immutable, active-window snapshot and offers a single-consumer update stream. The Telegram hosted service passes each update to the Core candidate engine and supplies only the message-delivery callback. Core clusters and evaluates all active observations from each consumed snapshot, suppresses startup-baseline and delivered episodes, and looks up nearby mapped context only after an automatic candidate is ready to deliver or a manual candidate has been ranked and selected.
 5. Anomaly API requests read the current snapshot only and never trigger NASA requests. Viewer imagery API requests may retrieve and compose GIBS tiles in Core; complete results use the bounded in-memory cache.
-6. The framework-free viewer consumes same-origin configuration, anomaly, notification-diagnostic, and NASA imagery contracts. Selecting an anomaly asks Core to cluster the current snapshot, exhaustively explain the same policy rules, and look up nearby mapped context around that selected observation; this read-only evaluation does not mutate automatic notification state.
+6. The framework-free viewer consumes same-origin configuration, anomaly, eligible-cluster, notification-diagnostic, and NASA imagery contracts. Its list query asks Core for notification-priority-ordered clusters passing all enabled content criteria; selecting a list row searches the representative coordinates. Selecting an anomaly asks Core to exhaustively explain the same policy rules and look up nearby mapped context around that observation. Both evaluations are read-only and do not inspect or mutate automatic startup or delivered-episode state.
 
 ## HTTP surface
 
@@ -45,6 +45,7 @@ The route definitions and status mappings in [Program.cs](../src/ThermalWatch.Ap
 - `GET /` serves the interactive viewer.
 - `GET /api/viewer/config` exposes optional browser map configuration, including the browser-visible Google key when configured.
 - `GET /api/viewer/imagery/gibs/{z}/{x}/{y}.png` validates Web Mercator coordinates and returns a composed PNG plus coverage and cache headers.
+- `GET /api/viewer/eligible-notification-clusters` captures the current snapshot and returns notification-priority-ordered representative summaries for clusters passing every enabled content criterion. Enabled land-cover and required exact-preview checks can cause bounded, cached GIBS requests; the query neither looks up nearby features nor applies delivery lifecycle suppression.
 - `GET /api/viewer/notification-diagnostics/{anomalyId}` returns the selected anomaly's active-snapshot cluster, current criterion outcomes, and up to five nearby named OSM features, or `404` when the anomaly is no longer present. Enabled land-cover and exact-preview criteria can cause bounded, cached GIBS requests; every valid selection can cause a bounded, cached Overpass request.
 - `GET /api/anomalies` returns the current snapshot with optional local filters. Partial upstream failures remain successful responses with source-level stale diagnostics.
 - `GET /api/telegram/send-top` is an unauthenticated, side-effecting manual Telegram operation. See [operations](operations.md) before exposing it beyond a trusted network boundary.

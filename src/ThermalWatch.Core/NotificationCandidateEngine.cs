@@ -170,13 +170,13 @@ public sealed class NotificationCandidateEngine(
 
         PreparedNotificationCandidate[] selectedWithoutNearby =
         [
-            .. eligible
-                .OrderByDescending(candidate => candidate.Cluster.Representative.FrpMegawatts.HasValue)
-                .ThenByDescending(candidate => candidate.Cluster.Representative.FrpMegawatts)
-                .ThenByDescending(candidate => candidate.Cluster.Members.Length)
-                .ThenByDescending(candidate => candidate.PreviewSelection.ClusterDiameterKilometers)
-                .ThenByDescending(candidate => candidate.Cluster.Representative.AcquiredAtUtc)
-                .ThenBy(candidate => candidate.Cluster.Id, StringComparer.Ordinal)
+            .. OrderByNotificationPriority(
+                    candidates: eligible,
+                    frpSelector: static candidate => candidate.Cluster.Representative.FrpMegawatts,
+                    detectionCountSelector: static candidate => candidate.Cluster.Members.Length,
+                    diameterSelector: static candidate => candidate.PreviewSelection.ClusterDiameterKilometers,
+                    acquisitionSelector: static candidate => candidate.Cluster.Representative.AcquiredAtUtc,
+                    clusterIdSelector: static candidate => candidate.Cluster.Id)
                 .Take(requestedCount)
         ];
         ImmutableArray<PreparedNotificationCandidate>.Builder selected =
@@ -191,6 +191,68 @@ public sealed class NotificationCandidateEngine(
         }
 
         return new(eligible.Count, selected.MoveToImmutable());
+    }
+
+    public async Task<EligibleNotificationClusters> GetEligibleClustersAsync(
+        AnomalySnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
+            snapshot.Items,
+            options.ClusterRadiusKilometers,
+            options.ClusterTimeWindow);
+        ImmutableArray<EligibleNotificationCluster>.Builder eligible =
+            ImmutableArray.CreateBuilder<EligibleNotificationCluster>();
+        foreach (NotificationCluster cluster in clusters)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            NotificationClusterEvaluation evaluation = await EvaluateClusterAsync(
+                cluster,
+                cancellationToken).ConfigureAwait(false);
+            if (!evaluation.IsAccepted)
+                continue;
+
+            NotificationPreviewSelection previewSelection = SelectPreview(cluster);
+            if (IsPreviewRequired)
+            {
+                GibsPreview preview = await gibsClient.GetPreviewAsync(
+                    cluster.Representative,
+                    previewSelection.Dimensions,
+                    cancellationToken).ConfigureAwait(false);
+                if (!preview.IsAvailable)
+                    continue;
+            }
+
+            Anomaly representative = cluster.Representative;
+            eligible.Add(new(
+                cluster.Id,
+                representative.Id,
+                representative.CountryCode,
+                representative.Source,
+                representative.Satellite,
+                representative.Latitude,
+                representative.Longitude,
+                representative.AcquiredAtUtc,
+                representative.FrpMegawatts,
+                cluster.Members.Length,
+                previewSelection.ClusterDiameterKilometers));
+        }
+
+        ImmutableArray<EligibleNotificationCluster> ordered =
+        [
+            .. OrderByNotificationPriority(
+                candidates: eligible,
+                frpSelector: static candidate => candidate.FrpMegawatts,
+                detectionCountSelector: static candidate => candidate.DetectionCount,
+                diameterSelector: static candidate => candidate.ClusterDiameterKilometers,
+                acquisitionSelector: static candidate => candidate.AcquiredAtUtc,
+                clusterIdSelector: static candidate => candidate.ClusterId)
+        ];
+        return new(
+            snapshot.GeneratedAtUtc,
+            clusters.Length,
+            ordered.Length,
+            ordered);
     }
 
     public async Task<NotificationDiagnostic?> DiagnoseAsync(
@@ -278,6 +340,21 @@ public sealed class NotificationCandidateEngine(
 
     private bool IsPreviewRequired =>
         options.Visibility.Enabled && options.Visibility.RequirePreview;
+
+    private static IOrderedEnumerable<candidateType> OrderByNotificationPriority<candidateType>(
+        IEnumerable<candidateType> candidates,
+        Func<candidateType, double?> frpSelector,
+        Func<candidateType, int> detectionCountSelector,
+        Func<candidateType, double> diameterSelector,
+        Func<candidateType, DateTimeOffset> acquisitionSelector,
+        Func<candidateType, string> clusterIdSelector) =>
+        candidates
+            .OrderByDescending(candidate => frpSelector(candidate).HasValue)
+            .ThenByDescending(frpSelector)
+            .ThenByDescending(detectionCountSelector)
+            .ThenByDescending(diameterSelector)
+            .ThenByDescending(acquisitionSelector)
+            .ThenBy(clusterIdSelector, StringComparer.Ordinal);
 
     private async Task<NotificationClusterEvaluation> EvaluateClusterAsync(
         NotificationCluster cluster,

@@ -158,6 +158,13 @@
     return `${url.pathname}${url.search}${url.hash}`;
   }
 
+  function eligibleNotificationClusterCoordinate(cluster) {
+    if (!cluster || typeof cluster !== "object")
+      throw new Error("An eligible notification cluster is required.");
+
+    return createCoordinate(cluster.latitude, cluster.longitude);
+  }
+
   function parseViewerUrl(value) {
     if (typeof value !== "string" || value.length === 0)
       throw new Error("The viewer URL is not valid.");
@@ -997,6 +1004,7 @@
     parseCoordinateInput,
     coordinateSearchFromUrl,
     urlWithCoordinateSearch,
+    eligibleNotificationClusterCoordinate,
     nearestCoordinatePoint,
     notificationMarkerStyle,
     coordinateSearchMarkerStyle,

@@ -77,7 +77,11 @@ Nearby features are presentation context, not a notification criterion or event 
 
 Retrieval is on demand, serialized, bounded, and cached. Provider, transport, timeout, oversized, or malformed-response failure returns no features and logs a Warning; it does not block the diagnostic or Telegram delivery. Surfaces omit the section when no features are returned and warn that mapped proximity does not establish cause. For ways and relations, distance is to the supplied center rather than the nearest geometry edge.
 
-## Viewer diagnostics
+## Viewer eligibility and diagnostics
+
+The Viewer eligible-cluster query evaluates every connected component in one captured active snapshot. It applies the same metadata and land-cover rules as candidate preparation and, when configured, requires the same exact-date preview. Unavailable land cover fails open and an unavailable required preview fails closed. It returns only passing clusters, ordered by the manual-send priority, and performs no nearby-feature lookup.
+
+This list is criteria-only, not a promise that automatic delivery will send a cluster. It neither applies nor mutates startup-baseline or delivered-episode suppression. Repeated Viewer evaluation can therefore continue to list an already delivered episode, and it cannot consume or extend automatic lifecycle state.
 
 Selecting an anomaly in the viewer asks the Core candidate engine to cluster every observation in the current active snapshot and find the connected component containing that anomaly. The diagnostic uses the same radius, time window, representative selection, metadata rules, land-cover policy, preview sizing, and exact-date preview client as automatic and manual candidate preparation. It also attaches nearby mapped context for the selected observation; that context remains outside eligibility criteria.
 

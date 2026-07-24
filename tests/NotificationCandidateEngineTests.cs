@@ -142,6 +142,108 @@ public sealed class NotificationCandidateEngineTests
     }
 
     [Fact]
+    public async Task EligibleClusterQueryFiltersOrdersAndDoesNotConsumeAutomaticLifecycle()
+    {
+        var gibsHandler = new NotFoundHandler();
+        var nearbyHandler = new NearbyHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationOptions options = DefaultOptions() with { NotifyExistingOnStartup = false };
+        NotificationCandidateEngine engine = CreateEngine(
+            gibsHandler,
+            cache,
+            nearbyHandler,
+            options);
+        AnomalySnapshot snapshot = Snapshot(
+            Detection(id: "low", longitude: 30, frpMegawatts: 100),
+            Detection(id: "low-context", longitude: 30.01, frpMegawatts: 90),
+            Detection(id: "highest", longitude: 31, frpMegawatts: 300),
+            Detection(id: "highest-context", longitude: 31.01, frpMegawatts: 290),
+            Detection(id: "middle", longitude: 32, frpMegawatts: 200),
+            Detection(id: "middle-context", longitude: 32.01, frpMegawatts: 190),
+            Detection(id: "filtered-singleton", longitude: 33, frpMegawatts: 500));
+
+        EligibleNotificationClusters result = await engine.GetEligibleClustersAsync(
+            snapshot,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(snapshot.GeneratedAtUtc, result.SnapshotGeneratedAtUtc);
+        Assert.Equal(4, result.EvaluatedClusterCount);
+        Assert.Equal(3, result.EligibleClusterCount);
+        Assert.Equal(["highest", "middle", "low"], result.Clusters.Select(cluster => cluster.RepresentativeId));
+        EligibleNotificationCluster first = result.Clusters[0];
+        Assert.Equal("RUS", first.CountryCode);
+        Assert.Equal("VIIRS_SNPP_NRT", first.Source);
+        Assert.Equal("N", first.Satellite);
+        Assert.Equal(50, first.Latitude);
+        Assert.Equal(31, first.Longitude);
+        Assert.Equal(2, first.DetectionCount);
+        Assert.True(first.ClusterDiameterKilometers > 0);
+        Assert.Equal(0, gibsHandler.RequestCount);
+        Assert.Empty(nearbyHandler.Queries);
+
+        int deliveryCount = 0;
+        NotificationAutomaticProcessingResult processing = await engine.ProcessAutomaticAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(snapshot.Items.Length, processing.Summary.StartupBaselineDetectionCount);
+        Assert.Equal(0, deliveryCount);
+    }
+
+    [Fact]
+    public async Task EligibleClusterQueryFailsClosedAndReevaluatesRequiredPreview()
+    {
+        var handler = new RecoveringPreviewHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationOptions options = DefaultOptions() with
+        {
+            Visibility = DefaultOptions().Visibility with { RequirePreview = true }
+        };
+        NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
+        AnomalySnapshot snapshot = Snapshot(
+            Detection(id: "first", longitude: 30, frpMegawatts: 100),
+            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+
+        EligibleNotificationClusters unavailable = await engine.GetEligibleClustersAsync(
+            snapshot,
+            TestContext.Current.CancellationToken);
+        handler.IsPreviewAvailable = true;
+        EligibleNotificationClusters available = await engine.GetEligibleClustersAsync(
+            snapshot,
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(unavailable.Clusters);
+        Assert.Single(available.Clusters);
+    }
+
+    [Fact]
+    public async Task EligibleClusterQueryFailsOpenWhenLandCoverIsUnavailable()
+    {
+        var handler = new NotFoundHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationOptions options = DefaultOptions() with
+        {
+            LandCover = DefaultOptions().LandCover with { Enabled = true }
+        };
+        NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
+        AnomalySnapshot snapshot = Snapshot(
+            Detection(id: "first", longitude: 30, frpMegawatts: 100),
+            Detection(id: "second", longitude: 30.02, frpMegawatts: 200));
+
+        EligibleNotificationClusters result = await engine.GetEligibleClustersAsync(
+            snapshot,
+            TestContext.Current.CancellationToken);
+
+        Assert.Single(result.Clusters);
+        Assert.True(handler.RequestCount > 0);
+    }
+
+    [Fact]
     public async Task AutomaticReevaluatesActiveClusterUntilRequiredPreviewIsAvailable()
     {
         var handler = new RecoveringPreviewHandler();

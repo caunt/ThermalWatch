@@ -99,14 +99,36 @@
         <div id="provider-caption" class="provider-caption"></div>
       </div>
 
-      <aside id="details-panel" class="details-panel" aria-label="Anomaly inspector" aria-live="polite" tabindex="-1">
-        <div class="details-empty">
-          <span class="empty-orbit" aria-hidden="true"><span></span></span>
-          <p class="eyebrow">Anomaly inspector</p>
-          <h2>Loading observations…</h2>
-          <p>Select a marker to inspect its complete FIRMS record and source diagnostics.</p>
-        </div>
-      </aside>
+      <div class="right-rail">
+        <section
+          id="eligible-clusters-panel"
+          class="eligible-clusters-panel"
+          aria-labelledby="eligible-clusters-heading"
+          aria-live="polite">
+          <header class="eligible-clusters-heading">
+            <div>
+              <p class="eyebrow">Notification candidates</p>
+              <h2 id="eligible-clusters-heading">Fully eligible clusters</h2>
+            </div>
+            <span id="eligible-clusters-count" class="eligible-clusters-count">Checking…</span>
+          </header>
+          <div id="eligible-clusters-content" class="eligible-clusters-content">
+            <div class="eligible-clusters-state">
+              <span class="spinner" aria-hidden="true"></span>
+              <p>Evaluating active clusters…</p>
+            </div>
+          </div>
+        </section>
+
+        <aside id="details-panel" class="details-panel" aria-label="Anomaly inspector" aria-live="polite" tabindex="-1">
+          <div class="details-empty">
+            <span class="empty-orbit" aria-hidden="true"><span></span></span>
+            <p class="eyebrow">Anomaly inspector</p>
+            <h2>Loading observations…</h2>
+            <p>Select a marker to inspect its complete FIRMS record and source diagnostics.</p>
+          </div>
+        </aside>
+      </div>
     </section>
 
     <footer>

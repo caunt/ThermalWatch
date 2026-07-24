@@ -27,6 +27,8 @@
     mapLoading: document.querySelector("#map-loading"),
     mapLoadingText: document.querySelector("#map-loading-text"),
     providerCaption: document.querySelector("#provider-caption"),
+    eligibleClustersCount: document.querySelector("#eligible-clusters-count"),
+    eligibleClustersContent: document.querySelector("#eligible-clusters-content"),
     detailsPanel: document.querySelector("#details-panel")
   };
 
@@ -42,6 +44,13 @@
     diagnosticVersion: 0,
     diagnosticAbortController: null,
     clusterKeys: new Set(),
+    eligibleClusters: [],
+    eligibleClustersStatus: "loading",
+    eligibleClustersError: null,
+    eligibleClustersSnapshotGeneratedAtUtc: null,
+    eligibleClustersEvaluatedCount: 0,
+    eligibleClustersVersion: 0,
+    eligibleClustersAbortController: null,
     searchCoordinate: null,
     providerName: "gibs",
     provider: null,
@@ -120,6 +129,7 @@
   async function loadViewer() {
     const version = ++state.loadVersion;
     const hadSnapshot = state.snapshot !== null;
+    void loadEligibleNotificationClusters();
     setBusy(true, hadSnapshot ? "Refreshing anomalies…" : "Loading anomalies…");
     setNotice("api", "info", hadSnapshot ? "Refreshing anomaly data…" : "Loading anomaly data…");
 
@@ -229,6 +239,203 @@
     }
 
     return body;
+  }
+
+  async function loadEligibleNotificationClusters() {
+    state.eligibleClustersAbortController?.abort();
+    const controller = new AbortController();
+    const version = ++state.eligibleClustersVersion;
+    state.eligibleClustersAbortController = controller;
+    state.eligibleClusters = [];
+    state.eligibleClustersStatus = "loading";
+    state.eligibleClustersError = null;
+    state.eligibleClustersSnapshotGeneratedAtUtc = null;
+    state.eligibleClustersEvaluatedCount = 0;
+    renderEligibleNotificationClusters();
+
+    try {
+      const result = await fetchJson(
+        "/api/viewer/eligible-notification-clusters",
+        controller.signal);
+      if (version !== state.eligibleClustersVersion)
+        return;
+
+      validateEligibleNotificationClusters(result);
+      state.eligibleClusters = result.clusters;
+      state.eligibleClustersStatus = "ready";
+      state.eligibleClustersError = null;
+      state.eligibleClustersSnapshotGeneratedAtUtc = result.snapshotGeneratedAtUtc;
+      state.eligibleClustersEvaluatedCount = result.evaluatedClusterCount;
+      renderEligibleNotificationClusters();
+    } catch (error) {
+      if (error?.name === "AbortError" || version !== state.eligibleClustersVersion)
+        return;
+
+      state.eligibleClusters = [];
+      state.eligibleClustersStatus = "error";
+      state.eligibleClustersError = errorMessage(error);
+      state.eligibleClustersSnapshotGeneratedAtUtc = null;
+      state.eligibleClustersEvaluatedCount = 0;
+      renderEligibleNotificationClusters();
+    } finally {
+      if (version === state.eligibleClustersVersion)
+        state.eligibleClustersAbortController = null;
+    }
+  }
+
+  function validateEligibleNotificationClusters(result) {
+    if (!result || typeof result !== "object"
+        || typeof result.snapshotGeneratedAtUtc !== "string"
+        || !Number.isFinite(new Date(result.snapshotGeneratedAtUtc).getTime())
+        || !Number.isSafeInteger(result.evaluatedClusterCount)
+        || result.evaluatedClusterCount < 0
+        || !Number.isSafeInteger(result.eligibleClusterCount)
+        || result.eligibleClusterCount < 0
+        || !Array.isArray(result.clusters)
+        || result.eligibleClusterCount !== result.clusters.length
+        || result.evaluatedClusterCount < result.eligibleClusterCount) {
+      throw new Error("The eligible notification cluster response is invalid.");
+    }
+
+    const clusterIds = new Set();
+    result.clusters.forEach(cluster => {
+      if (!cluster || typeof cluster !== "object"
+          || typeof cluster.clusterId !== "string"
+          || cluster.clusterId.trim().length === 0
+          || typeof cluster.representativeId !== "string"
+          || cluster.representativeId.trim().length === 0
+          || typeof cluster.countryCode !== "string"
+          || cluster.countryCode.trim().length === 0
+          || typeof cluster.source !== "string"
+          || cluster.source.trim().length === 0
+          || typeof cluster.satellite !== "string"
+          || cluster.satellite.trim().length === 0
+          || typeof cluster.acquiredAtUtc !== "string"
+          || !Number.isFinite(new Date(cluster.acquiredAtUtc).getTime())
+          || cluster.frpMegawatts !== null && !Number.isFinite(cluster.frpMegawatts)
+          || !Number.isSafeInteger(cluster.detectionCount)
+          || cluster.detectionCount <= 0
+          || !Number.isFinite(cluster.clusterDiameterKilometers)
+          || cluster.clusterDiameterKilometers < 0
+          || clusterIds.has(cluster.clusterId)) {
+        throw new Error("An eligible notification cluster is invalid.");
+      }
+
+      mapSupport.eligibleNotificationClusterCoordinate(cluster);
+      clusterIds.add(cluster.clusterId);
+    });
+  }
+
+  function renderEligibleNotificationClusters() {
+    if (state.eligibleClustersStatus === "loading") {
+      elements.eligibleClustersCount.textContent = "Checking…";
+      const loading = document.createElement("div");
+      loading.className = "eligible-clusters-state";
+      loading.append(
+        textElement("span", "", "spinner"),
+        textElement("p", "Evaluating every active cluster against the enabled criteria…"));
+      elements.eligibleClustersContent.replaceChildren(loading);
+      return;
+    }
+
+    if (state.eligibleClustersStatus === "error") {
+      elements.eligibleClustersCount.textContent = "Unavailable";
+      const error = document.createElement("div");
+      error.className = "eligible-clusters-state error";
+      error.append(
+        textElement("strong", "Eligible clusters unavailable"),
+        textElement(
+          "p",
+          `${state.eligibleClustersError || "The evaluation failed."} Use Refresh data to try again.`));
+      elements.eligibleClustersContent.replaceChildren(error);
+      return;
+    }
+
+    const count = state.eligibleClusters.length;
+    elements.eligibleClustersCount.textContent = `${count} eligible`;
+    const wrapper = document.createElement("div");
+    wrapper.className = "eligible-clusters-ready";
+    wrapper.append(
+      textElement(
+        "p",
+        `${count} of ${state.eligibleClustersEvaluatedCount} ${plural(state.eligibleClustersEvaluatedCount, "active cluster", "active clusters")} pass all enabled content criteria.`,
+        "eligible-clusters-summary"),
+      textElement(
+        "p",
+        "Startup and previously delivered episode suppression are not applied.",
+        "eligible-clusters-policy"));
+
+    if (count === 0) {
+      wrapper.append(textElement(
+        "p",
+        state.eligibleClustersEvaluatedCount === 0
+          ? "No active notification clusters are available in this snapshot."
+          : "No active cluster currently passes every enabled criterion.",
+        "eligible-clusters-empty"));
+      elements.eligibleClustersContent.replaceChildren(wrapper);
+      return;
+    }
+
+    const list = document.createElement("ol");
+    list.className = "eligible-clusters-list";
+    state.eligibleClusters.forEach(cluster => list.append(eligibleNotificationClusterItem(cluster)));
+    wrapper.append(list);
+    if (state.eligibleClustersSnapshotGeneratedAtUtc) {
+      wrapper.append(textElement(
+        "p",
+        `Evaluated snapshot ${formatDateTime(state.eligibleClustersSnapshotGeneratedAtUtc)}.`,
+        "eligible-clusters-timestamp"));
+    }
+    elements.eligibleClustersContent.replaceChildren(wrapper);
+  }
+
+  function eligibleNotificationClusterItem(cluster) {
+    const coordinate = mapSupport.eligibleNotificationClusterCoordinate(cluster);
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.className = "eligible-cluster-button";
+    button.type = "button";
+    button.setAttribute(
+      "aria-label",
+      `Search the representative coordinates for the ${cluster.countryCode} cluster at ${formatSearchCoordinate(coordinate)}`);
+    button.addEventListener("click", () => searchEligibleNotificationCluster(cluster));
+
+    const heading = document.createElement("span");
+    heading.className = "eligible-cluster-heading";
+    heading.append(
+      textElement("strong", cluster.countryCode),
+      textElement(
+        "span",
+        cluster.frpMegawatts === null
+          ? "FRP unavailable"
+          : `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(cluster.frpMegawatts)} MW FRP`,
+        "eligible-cluster-frp"));
+    button.append(
+      heading,
+      textElement(
+        "span",
+        `${cluster.source} · ${cluster.satellite} · ${formatDateTime(cluster.acquiredAtUtc)}`,
+        "eligible-cluster-context"),
+      textElement(
+        "span",
+        `${cluster.detectionCount} ${plural(cluster.detectionCount, "detection", "detections")} · ${formatDistance(cluster.clusterDiameterKilometers)} diameter`,
+        "eligible-cluster-stats"),
+      textElement(
+        "span",
+        `${formatSearchCoordinate(coordinate)} · Find representative →`,
+        "eligible-cluster-coordinate"));
+    item.append(button);
+    return item;
+  }
+
+  function searchEligibleNotificationCluster(cluster) {
+    try {
+      const coordinate = mapSupport.eligibleNotificationClusterCoordinate(cluster);
+      elements.coordinateSearchInput.value = formatSearchCoordinate(coordinate);
+      searchCoordinates();
+    } catch (error) {
+      setCoordinateSearchFeedback("error", errorMessage(error));
+    }
   }
 
   function searchCoordinates() {

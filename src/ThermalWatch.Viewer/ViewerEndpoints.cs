@@ -26,10 +26,35 @@ public static class ViewerEndpoints
             pattern: "/api/viewer/imagery/gibs/{z:int}/{x:int}/{y:int}.png",
             GetGibsMapTileAsync);
         endpoints.MapGet(
+            pattern: "/api/viewer/eligible-notification-clusters",
+            GetEligibleNotificationClustersAsync);
+        endpoints.MapGet(
             pattern: "/api/viewer/notification-diagnostics/{anomalyId}",
             GetNotificationDiagnosticAsync);
 
         return endpoints;
+    }
+
+    private static async Task<IResult> GetEligibleNotificationClustersAsync(
+        [FromServices] AnomalySnapshotStore snapshotStore,
+        [FromServices] NotificationCandidateEngine candidateEngine,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        AnomalySnapshot snapshot = snapshotStore.Current;
+        EligibleNotificationClusters eligibleClusters;
+        try
+        {
+            eligibleClusters = await candidateEngine.GetEligibleClustersAsync(
+                snapshot,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            return Results.Empty;
+        }
+
+        return Results.Ok(eligibleClusters);
     }
 
     private static async Task<IResult> GetNotificationDiagnosticAsync(
