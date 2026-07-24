@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CsvHelper" />
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
@@ -7,8 +10,11 @@
     <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
     <PackageReference Include="StbImageSharp" />
     <PackageReference Include="StbImageWriteSharp" />
+    <PackageReference Include="StbTrueTypeSharp" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Data/LiberationSans.LICENSE.txt" />
+    <EmbeddedResource Include="Data/LiberationSans-Regular.ttf" />
     <EmbeddedResource Include="Data/ne_50m_admin_0_countries.geojson.gz" />
   </ItemGroup>
   <ItemGroup>
