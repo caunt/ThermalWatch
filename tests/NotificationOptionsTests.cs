@@ -50,12 +50,12 @@ public sealed class NotificationOptionsTests
     }
 
     [Fact]
-    public void FromEnvironmentUsesFourKPreviewPixelDefaults()
+    public void FromEnvironmentUsesPortraitFourKPreviewPixelDefaults()
     {
         NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(_ => null);
 
-        Assert.Equal(3840, options.Preview.PixelWidth);
-        Assert.Equal(2560, options.Preview.PixelHeight);
+        Assert.Equal(3072, options.Preview.PixelWidth);
+        Assert.Equal(3840, options.Preview.PixelHeight);
     }
 
     [Fact]

@@ -44,8 +44,8 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `NOTIFICATION_PREVIEW_HEIGHT_KM` | `40` | Positive finite number. |
 | `NOTIFICATION_LARGE_PREVIEW_WIDTH_KM` | `90` | Positive finite number. |
 | `NOTIFICATION_LARGE_PREVIEW_HEIGHT_KM` | `60` | Positive finite number. |
-| `NOTIFICATION_PREVIEW_PIXEL_WIDTH` | `3840` | Integer greater than or equal to 1. |
-| `NOTIFICATION_PREVIEW_PIXEL_HEIGHT` | `2560` | Integer greater than or equal to 1. |
+| `NOTIFICATION_PREVIEW_PIXEL_WIDTH` | `3072` | Integer greater than or equal to 1. |
+| `NOTIFICATION_PREVIEW_PIXEL_HEIGHT` | `3840` | Integer greater than or equal to 1. |
 | `NOTIFICATION_LARGE_CLUSTER_MIN_DETECTIONS` | `8` | Integer greater than or equal to 1. |
 | `NOTIFICATION_LARGE_CLUSTER_MIN_FRP_MW` | `500` | Non-negative finite number. |
 | `NOTIFICATION_LARGE_CLUSTER_MIN_DIAMETER_KM` | `8` | Non-negative finite number. |

@@ -71,8 +71,8 @@ public sealed record ApplicationConfiguration(
                 new(
                     ParsePositiveDouble(get, name: "NOTIFICATION_LARGE_PREVIEW_WIDTH_KM", defaultValue: 90),
                     ParsePositiveDouble(get, name: "NOTIFICATION_LARGE_PREVIEW_HEIGHT_KM", defaultValue: 60)),
-                ParsePositiveInt(get, name: "NOTIFICATION_PREVIEW_PIXEL_WIDTH", defaultValue: 3840),
-                ParsePositiveInt(get, name: "NOTIFICATION_PREVIEW_PIXEL_HEIGHT", defaultValue: 2560),
+                ParsePositiveInt(get, name: "NOTIFICATION_PREVIEW_PIXEL_WIDTH", defaultValue: 3072),
+                ParsePositiveInt(get, name: "NOTIFICATION_PREVIEW_PIXEL_HEIGHT", defaultValue: 3840),
                 ParsePositiveInt(get, name: "NOTIFICATION_LARGE_CLUSTER_MIN_DETECTIONS", defaultValue: 8),
                 ParseNonNegativeDouble(get, name: "NOTIFICATION_LARGE_CLUSTER_MIN_FRP_MW", defaultValue: 500),
                 ParseNonNegativeDouble(get, name: "NOTIFICATION_LARGE_CLUSTER_MIN_DIAMETER_KM", defaultValue: 8)),
