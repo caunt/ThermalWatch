@@ -17,10 +17,10 @@ public sealed partial class FirmsClient(
     TimeProvider timeProvider,
     ILogger<FirmsClient> logger) : IDisposable
 {
-    private const int RequestDayRange = 2;
     private const int MaximumResponseCharacters = 50_000_000;
     private const int MaximumErrorBodyCharacters = 4096;
     private static readonly TimeSpan s_countryProbeInterval = TimeSpan.FromHours(hours: 1);
+    private readonly int _requestDayRange = checked((int)Math.Ceiling(options.ActiveWindow.TotalDays) + 1);
     private readonly SemaphoreSlim _capabilityGate = new(initialCount: 1, maxCount: 1);
     private readonly SemaphoreSlim _requestGate = new(options.MaxConcurrency, options.MaxConcurrency);
     private readonly Lock _capabilitySync = new();
@@ -221,7 +221,7 @@ public sealed partial class FirmsClient(
             {
                 using var request = new HttpRequestMessage(
                     HttpMethod.Get,
-                    requestUri: $"api/country/csv/{Uri.EscapeDataString(options.MapKey)}/{source}/{countryCode}/{RequestDayRange}");
+                    requestUri: $"api/country/csv/{Uri.EscapeDataString(options.MapKey)}/{source}/{countryCode}/{_requestDayRange}");
                 using HttpResponseMessage response = await SendAsync(request, requestToken).ConfigureAwait(false);
 
                 if (!response.IsSuccessStatusCode
@@ -244,7 +244,7 @@ public sealed partial class FirmsClient(
             {
                 using var request = new HttpRequestMessage(
                     HttpMethod.Get,
-                    requestUri: $"api/area/csv/{Uri.EscapeDataString(options.MapKey)}/{source}/{bounds.ToInvariantString()}/{RequestDayRange}");
+                    requestUri: $"api/area/csv/{Uri.EscapeDataString(options.MapKey)}/{source}/{bounds.ToInvariantString()}/{_requestDayRange}");
                 using HttpResponseMessage response = await SendAsync(request, requestToken).ConfigureAwait(false);
                 return await ReadCsvResponseAsync(response, countryCode, source, requestToken).ConfigureAwait(false);
             },

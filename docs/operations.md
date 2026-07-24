@@ -24,7 +24,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `FIRMS_MAP_KEY` | required | Exactly 32 ASCII alphanumeric characters. |
 | `FIRMS_COUNTRIES` | required | Nonempty comma-separated ISO alpha-3 codes; trimmed, uppercased, deduplicated, and required to have usable embedded boundary geometry. |
 | `FIRMS_POLL_INTERVAL` | `00:05:00` | Base post-cycle delay from 10 seconds through 1 day, before positive jitter or total-failure backoff. |
-| `FIRMS_ACTIVE_WINDOW` | `24:00:00` | Duration from 1 minute through 24 hours. |
+| `FIRMS_ACTIVE_WINDOW` | `24:00:00` | Duration from 1 minute through 72 hours. The FIRMS calendar-day request range expands automatically to cover the rolling window. |
 | `FIRMS_REQUEST_TIMEOUT` | `00:00:45` | Duration from 5 seconds through 5 minutes, applied after request admission through bounded response-body consumption. |
 | `FIRMS_MAX_CONCURRENCY` | `4` | Integer from 1 through 32 bounding admitted FIRMS HTTP operations; segment concurrency is internally capped at two. |
 | `GOOGLE_MAPS_API_KEY` | unset | Optional trimmed browser key. When present, it is returned by `/api/viewer/config`; protect it with Google API and HTTP-referrer restrictions. |
@@ -39,7 +39,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` | `false` | Boolean controlling whether the first ready snapshot is eligible for automatic notification. |
 | `TELEGRAM_CLUSTER_RADIUS_KM` | `5` | Finite number from `0.01` through `100`. |
 | `TELEGRAM_CLUSTER_TIME_WINDOW` | `01:30:00` | Duration from 1 minute through 1 day. |
-| `TELEGRAM_SEEN_RETENTION` | `48:00:00` | Duration from 1 minute through 30 days and at least `FIRMS_ACTIVE_WINDOW`. |
+| `TELEGRAM_SEEN_RETENTION` | `48:00:00`, or `FIRMS_ACTIVE_WINDOW` when longer | Duration from 1 minute through 30 days and at least `FIRMS_ACTIVE_WINDOW`. |
 | `TELEGRAM_PREVIEW_RETRY_WINDOW` | `01:00:00` | Duration from zero through 1 day. |
 | `TELEGRAM_PREVIEW_WIDTH_KM` | `30` | Positive finite number. |
 | `TELEGRAM_PREVIEW_HEIGHT_KM` | `20` | Positive finite number. |

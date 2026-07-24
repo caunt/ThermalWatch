@@ -51,6 +51,38 @@ public sealed class FirmsClientTests
         Assert.Equal(0, handler.AreaRequestCount);
     }
 
+    [Theory]
+    [InlineData(1, 2)]
+    [InlineData(24, 2)]
+    [InlineData(25, 3)]
+    [InlineData(48, 3)]
+    [InlineData(72, 4)]
+    public async Task GetSegmentAsyncDerivesCountryRequestDayRangeFromActiveWindow(
+        int activeWindowHours,
+        int expectedDayRange)
+    {
+        var handler = new RecordingHandler((request, _) =>
+        {
+            Assert.EndsWith(
+                expectedEndString: $"/{expectedDayRange}",
+                request.RequestUri!.AbsolutePath,
+                StringComparison.Ordinal);
+            return Task.FromResult(CsvResponse());
+        });
+        using FirmsClient client = CreateClient(
+            handler,
+            countryCode: "UKR",
+            activeWindow: TimeSpan.FromHours(activeWindowHours));
+
+        FirmsSegmentResult result = await client.GetSegmentAsync(
+            countryCode: "UKR",
+            source: "MODIS_NRT",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IngestionModes.Country, result.IngestionMode);
+        Assert.Single(result.Detections);
+    }
+
     [Fact]
     public async Task GetSegmentAsyncUsesOneFallbackEnvelopeAndPublishesOnlyClippedDistinctData()
     {
@@ -63,10 +95,14 @@ public sealed class FirmsClientTests
                 return Task.FromResult(MapKeyStatusResponse());
 
             Assert.True(path.Contains(value: "/api/area/csv/", StringComparison.Ordinal));
-            Assert.EndsWith(expectedEndString: "/2", path, StringComparison.Ordinal);
+            Assert.EndsWith(expectedEndString: "/4", path, StringComparison.Ordinal);
             return Task.FromResult(CsvResponse(FallbackCsv));
         });
-        using FirmsClient client = CreateClient(handler, countryCode: "UKR", maxConcurrency: 2);
+        using FirmsClient client = CreateClient(
+            handler,
+            countryCode: "UKR",
+            activeWindow: TimeSpan.FromHours(hours: 72),
+            maxConcurrency: 2);
 
         FirmsSegmentResult result = await client.GetSegmentAsync(
             countryCode: "UKR",
@@ -240,6 +276,7 @@ public sealed class FirmsClientTests
     private static FirmsClient CreateClient(
         HttpMessageHandler handler,
         string countryCode,
+        TimeSpan? activeWindow = null,
         TimeSpan? requestTimeout = null,
         int maxConcurrency = 4)
     {
@@ -247,7 +284,7 @@ public sealed class FirmsClientTests
             MapKey: new string('A', count: 32),
             Countries: [countryCode],
             PollInterval: TimeSpan.FromMinutes(minutes: 5),
-            ActiveWindow: TimeSpan.FromHours(hours: 24),
+            ActiveWindow: activeWindow ?? TimeSpan.FromHours(hours: 24),
             RequestTimeout: requestTimeout ?? TimeSpan.FromSeconds(seconds: 45),
             maxConcurrency);
         var httpClient = new HttpClient(handler)

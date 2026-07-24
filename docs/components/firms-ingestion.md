@@ -17,7 +17,7 @@ Every result is a complete segment success or failure. The store atomically publ
 
 ## Country-first acquisition
 
-The preferred request is FIRMS country CSV for the configured country and source. Both country and area requests fetch two UTC calendar days because FIRMS day ranges are calendar-based; this keeps the previous day's observations available across midnight. Snapshot construction still applies the configured rolling active window, which cannot exceed 24 hours.
+The preferred request is FIRMS country CSV for the configured country and source. FIRMS day ranges are UTC-calendar-based, so country and area requests derive their range as the configured active window rounded up to whole days, plus the current calendar day. The default 24-hour window therefore fetches two calendar days, while a 72-hour window fetches four. Snapshot construction still applies the exact configured rolling window locally.
 
 Country-API capability is process-wide:
 

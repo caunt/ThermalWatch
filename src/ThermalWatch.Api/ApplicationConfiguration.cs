@@ -14,9 +14,14 @@ public sealed record ApplicationConfiguration(
     ViewerOptions Viewer,
     LogEventLevel MinimumLogLevel)
 {
-    public static ApplicationConfiguration FromEnvironment()
+    private static readonly TimeSpan s_defaultSeenRetention = TimeSpan.FromHours(hours: 48);
+    private static readonly TimeSpan s_maximumActiveWindow = TimeSpan.FromHours(hours: 72);
+
+    public static ApplicationConfiguration FromEnvironment() =>
+        FromEnvironment(Environment.GetEnvironmentVariable);
+
+    internal static ApplicationConfiguration FromEnvironment(Func<string, string?> get)
     {
-        Func<string, string?> get = Environment.GetEnvironmentVariable;
         string mapKey = Required(get, name: "FIRMS_MAP_KEY");
         if (mapKey.Length != 32 || mapKey.Any(character => !char.IsAsciiLetterOrDigit(character)))
         {
@@ -29,10 +34,13 @@ public sealed record ApplicationConfiguration(
             mapKey,
             countries,
             ParseTimeSpan(get, name: "FIRMS_POLL_INTERVAL", TimeSpan.FromMinutes(minutes: 5), TimeSpan.FromSeconds(seconds: 10), TimeSpan.FromDays(days: 1)),
-            ParseTimeSpan(get, name: "FIRMS_ACTIVE_WINDOW", TimeSpan.FromHours(hours: 24), TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromHours(hours: 24)),
+            ParseTimeSpan(get, name: "FIRMS_ACTIVE_WINDOW", TimeSpan.FromHours(hours: 24), TimeSpan.FromMinutes(minutes: 1), s_maximumActiveWindow),
             ParseTimeSpan(get, name: "FIRMS_REQUEST_TIMEOUT", TimeSpan.FromSeconds(seconds: 45), TimeSpan.FromSeconds(seconds: 5), TimeSpan.FromMinutes(minutes: 5)),
             ParseInt(get, name: "FIRMS_MAX_CONCURRENCY", defaultValue: 4, minimum: 1, maximum: 32));
-        NotificationOptions notifications = ParseNotificationOptions(get);
+        TimeSpan defaultSeenRetention = firms.ActiveWindow > s_defaultSeenRetention
+            ? firms.ActiveWindow
+            : s_defaultSeenRetention;
+        NotificationOptions notifications = ParseNotificationOptions(get, defaultSeenRetention);
         var telegram = TelegramOptions.FromEnvironment(get);
         var viewer = ViewerOptions.FromEnvironment(get);
 
@@ -46,11 +54,16 @@ public sealed record ApplicationConfiguration(
     }
 
     internal static NotificationOptions ParseNotificationOptions(Func<string, string?> get) =>
+        ParseNotificationOptions(get, s_defaultSeenRetention);
+
+    private static NotificationOptions ParseNotificationOptions(
+        Func<string, string?> get,
+        TimeSpan defaultSeenRetention) =>
         new(
             ParseBool(get, name: "TELEGRAM_NOTIFY_EXISTING_ON_STARTUP", defaultValue: false),
             ParseDouble(get, name: "TELEGRAM_CLUSTER_RADIUS_KM", defaultValue: 5, minimum: 0.01, maximum: 100),
             ParseTimeSpan(get, name: "TELEGRAM_CLUSTER_TIME_WINDOW", TimeSpan.FromMinutes(minutes: 90), TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 1)),
-            ParseTimeSpan(get, name: "TELEGRAM_SEEN_RETENTION", TimeSpan.FromHours(hours: 48), TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 30)),
+            ParseTimeSpan(get, name: "TELEGRAM_SEEN_RETENTION", defaultSeenRetention, TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 30)),
             ParseTimeSpan(get, name: "TELEGRAM_PREVIEW_RETRY_WINDOW", TimeSpan.FromHours(hours: 1), TimeSpan.Zero, TimeSpan.FromDays(days: 1)),
             new(
                 new(
@@ -236,12 +249,39 @@ public sealed record ApplicationConfiguration(
         if (value is null)
             return defaultValue;
 
-        return TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out TimeSpan parsed)
+        return TryParseTimeSpan(value, out TimeSpan parsed)
             && parsed >= minimum
             && parsed <= maximum
                 ? parsed
                 : throw new ApplicationConfigurationException(
                     safeMessage: $"{name} must be a duration between {minimum} and {maximum}.");
+    }
+
+    private static bool TryParseTimeSpan(string value, out TimeSpan parsed)
+    {
+        int firstSeparator = value.IndexOf(':');
+        int secondSeparator = value.IndexOf(':', firstSeparator + 1);
+        if (firstSeparator > 0
+            && secondSeparator > firstSeparator + 1
+            && long.TryParse(
+                value.AsSpan(start: 0, firstSeparator),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out long totalHours)
+            && totalHours >= 24
+            && TimeSpan.TryParse(
+                $"00:{value[(firstSeparator + 1)..]}",
+                CultureInfo.InvariantCulture,
+                out TimeSpan remainder)
+            && remainder >= TimeSpan.Zero
+            && remainder < TimeSpan.FromHours(hours: 1)
+            && totalHours <= (TimeSpan.MaxValue.Ticks - remainder.Ticks) / TimeSpan.TicksPerHour)
+        {
+            parsed = TimeSpan.FromTicks((totalHours * TimeSpan.TicksPerHour) + remainder.Ticks);
+            return true;
+        }
+
+        return TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out parsed);
     }
 
     private static LogEventLevel ParseLogLevel(Func<string, string?> get)

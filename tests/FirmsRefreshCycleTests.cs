@@ -19,29 +19,29 @@ public sealed class FirmsRefreshCycleTests
         """;
     private const string RolloverModisCsv = """
         latitude,longitude,brightness,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_t31,frp,daynight
-        49,30,330,1,1,2026-07-23,0000,T,MODIS,80,6.1NRT,300,100,D
-        49,30,330,1,1,2026-07-23,2359,T,MODIS,80,6.1NRT,300,100,D
+        49,30,330,1,1,2026-07-21,0000,T,MODIS,80,6.1NRT,300,100,D
+        49,30,330,1,1,2026-07-21,0002,T,MODIS,80,6.1NRT,300,100,D
         """;
     private const string RolloverViirsCsv = """
         latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_ti5,frp,daynight
-        49,30,330,1,1,2026-07-23,0000,N,VIIRS,n,2.0NRT,300,100,D
-        49,30,330,1,1,2026-07-23,2359,N,VIIRS,n,2.0NRT,300,100,D
+        49,30,330,1,1,2026-07-21,0000,N,VIIRS,n,2.0NRT,300,100,D
+        49,30,330,1,1,2026-07-21,0002,N,VIIRS,n,2.0NRT,300,100,D
         """;
 
     [Fact]
-    public async Task RefreshAsyncRetainsPreviousUtcDayDetectionsWithinActiveWindowAfterMidnight()
+    public async Task RefreshAsyncAppliesSeventyTwoHourWindowAcrossUtcCalendarDays()
     {
         var handler = new CoordinatedHandler((request, _) =>
         {
             string path = request.RequestUri!.AbsolutePath;
-            Assert.EndsWith(expectedEndString: "/2", path, StringComparison.Ordinal);
+            Assert.EndsWith(expectedEndString: "/4", path, StringComparison.Ordinal);
             return Task.FromResult(RolloverCsvResponse(path));
         });
         FirmsOptions options = new(
             MapKey: new string('A', count: 32),
             Countries: ["UKR"],
             PollInterval: TimeSpan.FromMinutes(minutes: 5),
-            ActiveWindow: TimeSpan.FromHours(hours: 24),
+            ActiveWindow: TimeSpan.FromHours(hours: 72),
             RequestTimeout: TimeSpan.FromSeconds(seconds: 45),
             MaxConcurrency: 4);
         var timeProvider = new FakeTimeProvider(
@@ -75,9 +75,9 @@ public sealed class FirmsRefreshCycleTests
                 new DateTimeOffset(
                     year: 2026,
                     month: 7,
-                    day: 23,
-                    hour: 23,
-                    minute: 59,
+                    day: 21,
+                    hour: 0,
+                    minute: 2,
                     second: 0,
                     TimeSpan.Zero),
                 detection.AcquiredAtUtc));
