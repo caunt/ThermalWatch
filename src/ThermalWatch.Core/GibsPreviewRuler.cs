@@ -8,8 +8,12 @@ namespace ThermalWatch.Core;
 
 internal static class GibsPreviewRuler
 {
+    private const int FontScaleDenominator = 4;
+    private const int FontScaleNumerator = 3;
     private const int MaximumDirectTicks = 100_000;
     private const int MaximumIntervalLabels = 10_000;
+    private const int MinimumFontPixelHeight = 12;
+    private const int MinimumReferenceFontPixelHeight = 16;
     private static readonly PixelColor s_black = new(Red: 0, Green: 0, Blue: 0, Alpha: byte.MaxValue);
     private static readonly PixelColor s_textOutline = new(Red: 0, Green: 0, Blue: 0, Alpha: 220);
     private static readonly PixelColor s_white = new(Red: byte.MaxValue, Green: byte.MaxValue, Blue: byte.MaxValue, Alpha: byte.MaxValue);
@@ -17,33 +21,50 @@ internal static class GibsPreviewRuler
     public static GibsPreviewRulerLayout CreateLayout(GibsPreviewDimensions dimensions)
     {
         ValidateDimensions(dimensions);
-        int fontPixelHeight = CreateFontPixelHeight(dimensions);
+        int referenceFontPixelHeight = CreateReferenceFontPixelHeight(dimensions);
+        int fontPixelHeight = CreateFontPixelHeight(referenceFontPixelHeight);
         using var font = new TrueTypeFont();
         var text = new RulerText(font, fontPixelHeight);
-        return CreateLayout(dimensions, fontPixelHeight, text);
+        return CreateLayout(dimensions, referenceFontPixelHeight, fontPixelHeight, text);
     }
 
     private static GibsPreviewRulerLayout CreateLayout(
         GibsPreviewDimensions dimensions,
+        int referenceFontPixelHeight,
         int fontPixelHeight,
         RulerText text)
     {
-        RulerMetrics metrics = CreateMetrics(dimensions, fontPixelHeight);
+        RulerMetrics metrics = CreateMetrics(dimensions, referenceFontPixelHeight, fontPixelHeight);
+        double horizontalCoverageKilometers = CreateAxisCoverage(
+            dimensions.WidthKilometers,
+            dimensions.PixelWidth,
+            metrics.AxisX,
+            metrics.AxisRight);
+        double verticalCoverageKilometers = CreateAxisCoverage(
+            dimensions.HeightKilometers,
+            dimensions.PixelHeight,
+            metrics.AxisY,
+            metrics.AxisTop);
         ImmutableArray<GibsPreviewRulerTick> horizontalTicks = CreateTicks(
             GibsPreviewRulerAxis.Horizontal,
-            dimensions.WidthKilometers,
+            horizontalCoverageKilometers,
             metrics.AxisX,
             metrics.AxisRight,
             metrics.MinorTickLength,
             metrics.MajorTickLength);
         ImmutableArray<GibsPreviewRulerTick> verticalTicks = CreateTicks(
             GibsPreviewRulerAxis.Vertical,
-            dimensions.HeightKilometers,
+            verticalCoverageKilometers,
             metrics.AxisY,
             metrics.AxisTop,
             metrics.MinorTickLength,
             metrics.MajorTickLength);
-        ImmutableArray<GibsPreviewRulerLabel> labels = CreateLabels(dimensions, metrics, text);
+        ImmutableArray<GibsPreviewRulerLabel> labels = CreateLabels(
+            dimensions,
+            horizontalCoverageKilometers,
+            verticalCoverageKilometers,
+            metrics,
+            text);
 
         return new(
             dimensions.PixelWidth,
@@ -62,10 +83,23 @@ internal static class GibsPreviewRuler
             labels);
     }
 
-    private static int CreateFontPixelHeight(GibsPreviewDimensions dimensions) =>
-        Scale(Math.Min(dimensions.PixelWidth, dimensions.PixelHeight), divisor: 16, minimum: 16);
+    private static int CreateReferenceFontPixelHeight(GibsPreviewDimensions dimensions) =>
+        Scale(
+            Math.Min(dimensions.PixelWidth, dimensions.PixelHeight),
+            divisor: 16,
+            minimum: MinimumReferenceFontPixelHeight);
 
-    private static RulerMetrics CreateMetrics(GibsPreviewDimensions dimensions, int fontPixelHeight)
+    private static int CreateFontPixelHeight(int referenceFontPixelHeight) =>
+        Math.Max(
+            MinimumFontPixelHeight,
+            (int)Math.Round(
+                referenceFontPixelHeight * FontScaleNumerator / (double)FontScaleDenominator,
+                MidpointRounding.AwayFromZero));
+
+    private static RulerMetrics CreateMetrics(
+        GibsPreviewDimensions dimensions,
+        int referenceFontPixelHeight,
+        int fontPixelHeight)
     {
         int shorterSide = Math.Min(dimensions.PixelWidth, dimensions.PixelHeight);
         int lineWidth = Scale(shorterSide, divisor: 1_000, minimum: 1);
@@ -76,12 +110,12 @@ internal static class GibsPreviewRuler
         int majorTickLength = Scale(shorterSide, divisor: 65, minimum: 2);
         int axisX = Math.Min(
             dimensions.PixelWidth - 1,
-            margin + fontPixelHeight + labelGap + outlineWidth);
+            margin + referenceFontPixelHeight + labelGap + outlineWidth);
         int axisRight = Math.Max(axisX, dimensions.PixelWidth - 1 - margin);
         int axisY = Math.Max(
             val1: 0,
-            dimensions.PixelHeight - 1 - margin - fontPixelHeight - labelGap - outlineWidth);
-        int axisTop = Math.Min(axisY, margin + fontPixelHeight / 2 + outlineWidth);
+            dimensions.PixelHeight - 1 - margin - referenceFontPixelHeight - labelGap - outlineWidth);
+        int axisTop = Math.Min(axisY, margin + referenceFontPixelHeight / 2 + outlineWidth);
         return new(
             fontPixelHeight,
             lineWidth,
@@ -98,6 +132,8 @@ internal static class GibsPreviewRuler
 
     private static ImmutableArray<GibsPreviewRulerLabel> CreateLabels(
         GibsPreviewDimensions dimensions,
+        double horizontalCoverageKilometers,
+        double verticalCoverageKilometers,
         RulerMetrics metrics,
         RulerText text)
     {
@@ -105,12 +141,14 @@ internal static class GibsPreviewRuler
         AddRequiredLabels(
             labels,
             dimensions,
+            horizontalCoverageKilometers,
+            verticalCoverageKilometers,
             metrics,
             text);
         AddIntervalLabels(
             labels,
             GibsPreviewRulerAxis.Horizontal,
-            dimensions.WidthKilometers,
+            horizontalCoverageKilometers,
             text,
             metrics.FontPixelHeight,
             metrics.OutlineWidth,
@@ -125,7 +163,7 @@ internal static class GibsPreviewRuler
         AddIntervalLabels(
             labels,
             GibsPreviewRulerAxis.Vertical,
-            dimensions.HeightKilometers,
+            verticalCoverageKilometers,
             text,
             metrics.FontPixelHeight,
             metrics.OutlineWidth,
@@ -154,10 +192,15 @@ internal static class GibsPreviewRuler
                 return null;
             }
 
-            int fontPixelHeight = CreateFontPixelHeight(dimensions);
+            int referenceFontPixelHeight = CreateReferenceFontPixelHeight(dimensions);
+            int fontPixelHeight = CreateFontPixelHeight(referenceFontPixelHeight);
             using var font = new TrueTypeFont();
             var text = new RulerText(font, fontPixelHeight);
-            GibsPreviewRulerLayout layout = CreateLayout(dimensions, fontPixelHeight, text);
+            GibsPreviewRulerLayout layout = CreateLayout(
+                dimensions,
+                referenceFontPixelHeight,
+                fontPixelHeight,
+                text);
             DrawLines(image.Data, layout, s_black, layout.OutlineWidth);
             DrawLines(image.Data, layout, s_white, padding: 0);
             foreach (GibsPreviewRulerLabel label in layout.Labels)
@@ -195,6 +238,19 @@ internal static class GibsPreviewRuler
         Math.Max(
             minimum,
             (int)Math.Round(shorterSide / (double)divisor, MidpointRounding.AwayFromZero));
+
+    private static double CreateAxisCoverage(
+        double imageCoverageKilometers,
+        int imagePixelLength,
+        int start,
+        int end)
+    {
+        int imagePixelSpan = imagePixelLength - 1;
+        int axisPixelSpan = Math.Abs(end - start);
+        return imagePixelSpan == 0 || axisPixelSpan == 0
+            ? imageCoverageKilometers
+            : imageCoverageKilometers * axisPixelSpan / imagePixelSpan;
+    }
 
     private static ImmutableArray<GibsPreviewRulerTick> CreateTicks(
         GibsPreviewRulerAxis axis,
@@ -295,21 +351,31 @@ internal static class GibsPreviewRuler
     private static void AddRequiredLabels(
         ImmutableArray<GibsPreviewRulerLabel>.Builder labels,
         GibsPreviewDimensions dimensions,
+        double horizontalCoverageKilometers,
+        double verticalCoverageKilometers,
         RulerMetrics metrics,
         RulerText text)
     {
-        AddEndpointLabels(labels, dimensions, metrics, text);
+        AddEndpointLabels(
+            labels,
+            dimensions,
+            horizontalCoverageKilometers,
+            verticalCoverageKilometers,
+            metrics,
+            text);
         AddOriginAndUnitLabels(labels, dimensions, metrics, text);
     }
 
     private static void AddEndpointLabels(
         ImmutableArray<GibsPreviewRulerLabel>.Builder labels,
         GibsPreviewDimensions dimensions,
+        double horizontalCoverageKilometers,
+        double verticalCoverageKilometers,
         RulerMetrics metrics,
         RulerText text)
     {
-        string widthText = FormatCoverage(dimensions.WidthKilometers);
-        string heightText = FormatCoverage(dimensions.HeightKilometers);
+        string widthText = FormatCoverage(horizontalCoverageKilometers);
+        string heightText = FormatCoverage(verticalCoverageKilometers);
         TrueTypeTextMask widthMask = text.GetMask(widthText);
         TrueTypeTextMask heightMask = text.GetMask(heightText);
         int widthEndpointX = ClampLabelStart(
@@ -324,7 +390,7 @@ internal static class GibsPreviewRuler
             widthText,
             GibsPreviewRulerAxis.Horizontal,
             GibsPreviewRulerLabelKind.Endpoint,
-            dimensions.WidthKilometers,
+            horizontalCoverageKilometers,
             widthEndpointX,
             bottomLabelY,
             text,
@@ -339,7 +405,7 @@ internal static class GibsPreviewRuler
             heightText,
             GibsPreviewRulerAxis.Vertical,
             GibsPreviewRulerLabelKind.Endpoint,
-            dimensions.HeightKilometers,
+            verticalCoverageKilometers,
             Math.Min(
                 dimensions.PixelWidth - heightMask.Width,
                 metrics.AxisX + metrics.MajorTickLength + metrics.LabelGap),

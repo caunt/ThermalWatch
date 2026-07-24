@@ -16,22 +16,22 @@ public sealed class GibsPreviewRulerTests
             PixelHeight: 3840));
 
         Assert.Equal(
-            ["0", "10", "20", "30", "40", "48"],
+            ["0", "10", "20", "30", "43.48"],
             AxisLabels(layout, GibsPreviewRulerAxis.Horizontal));
         Assert.Equal(
-            ["10", "20", "30", "40", "50", "60"],
+            ["10", "20", "30", "40", "50", "53.94"],
             AxisLabels(layout, GibsPreviewRulerAxis.Vertical));
         Assert.Equal(
-            Enumerable.Range(start: 1, count: 48).Select(value => (double)value),
-            layout.HorizontalTicks.Select(tick => tick.Kilometer));
+            Enumerable.Range(start: 1, count: 43).Select(value => (double)value),
+            layout.HorizontalTicks[..^1].Select(tick => tick.Kilometer));
         Assert.Equal(
-            Enumerable.Range(start: 1, count: 60).Select(value => (double)value),
-            layout.VerticalTicks.Select(tick => tick.Kilometer));
+            Enumerable.Range(start: 1, count: 53).Select(value => (double)value),
+            layout.VerticalTicks[..^1].Select(tick => tick.Kilometer));
         Assert.All(
-            layout.HorizontalTicks.Where(tick => tick.Kilometer % 10 == 0 || tick.Kilometer == 48),
+            layout.HorizontalTicks.Where(tick => tick.Kilometer % 10 == 0 || tick == layout.HorizontalTicks[^1]),
             tick => Assert.True(tick.IsMajor));
         Assert.All(
-            layout.VerticalTicks.Where(tick => tick.Kilometer % 10 == 0),
+            layout.VerticalTicks.Where(tick => tick.Kilometer % 10 == 0 || tick == layout.VerticalTicks[^1]),
             tick => Assert.True(tick.IsMajor));
         GibsPreviewRulerLabel origin = Assert.Single(
             layout.Labels,
@@ -69,7 +69,7 @@ public sealed class GibsPreviewRulerTests
             pixelWidth,
             pixelHeight));
 
-        AssertMandatoryLabels(layout, widthKilometers, heightKilometers);
+        AssertMandatoryLabels(layout, widthKilometers, heightKilometers, pixelWidth, pixelHeight);
         Assert.All(layout.Labels, label => AssertBoundsInsideImage(label.Bounds, pixelWidth, pixelHeight));
         AssertLabelBoundsDoNotCollide(layout);
     }
@@ -79,7 +79,7 @@ public sealed class GibsPreviewRulerTests
     [InlineData(60, 40, 960, 540)]
     [InlineData(50, 50, 720, 720)]
     [InlineData(48.5, 60.25, 1200, 1500)]
-    public void CreateLayoutMapsCompleteCoverageAcrossInsetAxes(
+    public void CreateLayoutMapsImageScaleAcrossInsetAxes(
         double widthKilometers,
         double heightKilometers,
         int pixelWidth,
@@ -95,33 +95,79 @@ public sealed class GibsPreviewRulerTests
         Assert.True(layout.AxisRight < pixelWidth - 1);
         Assert.True(layout.AxisTop > 0);
         Assert.True(layout.AxisY < pixelHeight - 1);
+        double horizontalCoverageKilometers = ExpectedAxisCoverage(
+            widthKilometers,
+            pixelWidth,
+            layout.AxisX,
+            layout.AxisRight);
+        double verticalCoverageKilometers = ExpectedAxisCoverage(
+            heightKilometers,
+            pixelHeight,
+            layout.AxisY,
+            layout.AxisTop);
+        Assert.True(horizontalCoverageKilometers < widthKilometers);
+        Assert.True(verticalCoverageKilometers < heightKilometers);
         Assert.Equal(
             layout.AxisX,
-            ExpectedCoordinate(kilometer: 0, widthKilometers, layout.AxisX, layout.AxisRight));
+            ExpectedCoordinate(kilometer: 0, horizontalCoverageKilometers, layout.AxisX, layout.AxisRight));
         Assert.Equal(
             layout.AxisY,
-            ExpectedCoordinate(kilometer: 0, heightKilometers, layout.AxisY, layout.AxisTop));
-        AssertAxisCoordinates(layout.HorizontalTicks, widthKilometers, layout.AxisX, layout.AxisRight);
-        AssertAxisCoordinates(layout.VerticalTicks, heightKilometers, layout.AxisY, layout.AxisTop);
+            ExpectedCoordinate(kilometer: 0, verticalCoverageKilometers, layout.AxisY, layout.AxisTop));
+        AssertAxisCoordinates(
+            layout.HorizontalTicks,
+            widthKilometers,
+            pixelWidth,
+            layout.AxisX,
+            direction: 1);
+        AssertAxisCoordinates(
+            layout.VerticalTicks,
+            heightKilometers,
+            pixelHeight,
+            layout.AxisY,
+            direction: -1);
+        AssertApproximatelyEqual(horizontalCoverageKilometers, layout.HorizontalTicks[^1].Kilometer);
+        AssertApproximatelyEqual(verticalCoverageKilometers, layout.VerticalTicks[^1].Kilometer);
         Assert.Equal(
             layout.AxisRight,
-            Assert.Single(layout.HorizontalTicks, tick => tick.Kilometer == widthKilometers).Coordinate);
+            layout.HorizontalTicks[^1].Coordinate);
         Assert.Equal(
             layout.AxisTop,
-            Assert.Single(layout.VerticalTicks, tick => tick.Kilometer == heightKilometers).Coordinate);
+            layout.VerticalTicks[^1].Coordinate);
     }
 
     [Fact]
-    public void CreateLayoutLabelsFractionalEndpointsWithoutDuplicatingIntervals()
+    public void CreateLayoutLabelsExactInsetEndpointsWithoutDuplicatingIntervals()
     {
+        const double widthKilometers = 48.5;
+        const double heightKilometers = 60;
+        const int pixelWidth = 1200;
+        const int pixelHeight = 1500;
         GibsPreviewRulerLayout layout = CreateLayout(new(
-            WidthKilometers: 48.5,
-            HeightKilometers: 60,
-            PixelWidth: 1200,
-            PixelHeight: 1500));
+            widthKilometers,
+            heightKilometers,
+            pixelWidth,
+            pixelHeight));
+        double horizontalCoverageKilometers = ExpectedAxisCoverage(
+            widthKilometers,
+            pixelWidth,
+            layout.AxisX,
+            layout.AxisRight);
+        double verticalCoverageKilometers = ExpectedAxisCoverage(
+            heightKilometers,
+            pixelHeight,
+            layout.AxisY,
+            layout.AxisTop);
 
-        Assert.Equal(1, layout.Labels.Count(label => label.Text.Equals(value: "48.5", StringComparison.Ordinal)));
-        Assert.Equal(1, layout.Labels.Count(label => label.Text.Equals(value: "60", StringComparison.Ordinal) && label.Axis == GibsPreviewRulerAxis.Vertical));
+        Assert.Single(
+            layout.Labels,
+            label => label.Kind == GibsPreviewRulerLabelKind.Endpoint
+                && label.Axis == GibsPreviewRulerAxis.Horizontal
+                && label.Text.Equals(FormatCoverage(horizontalCoverageKilometers), StringComparison.Ordinal));
+        Assert.Single(
+            layout.Labels,
+            label => label.Kind == GibsPreviewRulerLabelKind.Endpoint
+                && label.Axis == GibsPreviewRulerAxis.Vertical
+                && label.Text.Equals(FormatCoverage(verticalCoverageKilometers), StringComparison.Ordinal));
         Assert.Equal(1, layout.Labels.Count(label => label.Text.Equals(value: "0", StringComparison.Ordinal)));
         Assert.Equal(2, layout.Labels.Count(label => label.Text.Equals(value: "km", StringComparison.Ordinal)));
         AssertLabelBoundsDoNotCollide(layout);
@@ -136,7 +182,12 @@ public sealed class GibsPreviewRulerTests
             PixelWidth: 320,
             PixelHeight: 240));
 
-        AssertMandatoryLabels(layout, widthKilometers: 1_000, heightKilometers: 800);
+        AssertMandatoryLabels(
+            layout,
+            widthKilometers: 1_000,
+            heightKilometers: 800,
+            pixelWidth: 320,
+            pixelHeight: 240);
         Assert.True(layout.Labels.Count(label => label.Kind == GibsPreviewRulerLabelKind.Interval) < 178);
         AssertLabelBoundsDoNotCollide(layout);
     }
@@ -155,11 +206,29 @@ public sealed class GibsPreviewRulerTests
             PixelWidth: 3200,
             PixelHeight: 4800));
 
+        Assert.Equal(15, small.FontPixelHeight);
+        Assert.Equal(150, large.FontPixelHeight);
         Assert.True(large.FontPixelHeight > small.FontPixelHeight);
         Assert.True(large.LineWidth > small.LineWidth);
         Assert.True(large.OutlineWidth > small.OutlineWidth);
         Assert.True(large.MinorTickLength > small.MinorTickLength);
         Assert.True(large.MajorTickLength > small.MajorTickLength);
+    }
+
+    [Fact]
+    public void CreateLayoutPreservesReferenceScaleAxisPlacementWithSmallerText()
+    {
+        GibsPreviewRulerLayout layout = CreateLayout(new(
+            WidthKilometers: 48,
+            HeightKilometers: 60,
+            PixelWidth: 768,
+            PixelHeight: 960));
+
+        Assert.Equal(64, layout.AxisX);
+        Assert.Equal(757, layout.AxisRight);
+        Assert.Equal(895, layout.AxisY);
+        Assert.Equal(35, layout.AxisTop);
+        Assert.Equal(36, layout.FontPixelHeight);
     }
 
     [Theory]
@@ -264,34 +333,56 @@ public sealed class GibsPreviewRulerTests
     private static void AssertMandatoryLabels(
         GibsPreviewRulerLayout layout,
         double widthKilometers,
-        double heightKilometers)
+        double heightKilometers,
+        int pixelWidth,
+        int pixelHeight)
     {
+        double horizontalCoverageKilometers = ExpectedAxisCoverage(
+            widthKilometers,
+            pixelWidth,
+            layout.AxisX,
+            layout.AxisRight);
+        double verticalCoverageKilometers = ExpectedAxisCoverage(
+            heightKilometers,
+            pixelHeight,
+            layout.AxisY,
+            layout.AxisTop);
         Assert.Single(layout.Labels, label => label.Kind == GibsPreviewRulerLabelKind.Origin);
         Assert.Equal(2, layout.Labels.Count(label => label.Kind == GibsPreviewRulerLabelKind.Unit));
         Assert.Single(
             layout.Labels,
             label => label.Kind == GibsPreviewRulerLabelKind.Endpoint
                 && label.Axis == GibsPreviewRulerAxis.Horizontal
-                && label.Kilometer == widthKilometers);
+                && label.Kilometer == horizontalCoverageKilometers);
         Assert.Single(
             layout.Labels,
             label => label.Kind == GibsPreviewRulerLabelKind.Endpoint
                 && label.Axis == GibsPreviewRulerAxis.Vertical
-                && label.Kilometer == heightKilometers);
+                && label.Kilometer == verticalCoverageKilometers);
     }
 
     private static void AssertAxisCoordinates(
         IEnumerable<GibsPreviewRulerTick> ticks,
-        double coverageKilometers,
+        double imageCoverageKilometers,
+        int imagePixelLength,
         int start,
-        int end)
+        int direction)
     {
         Assert.All(
             ticks,
             tick => Assert.Equal(
-                ExpectedCoordinate(tick.Kilometer, coverageKilometers, start, end),
+                start + direction * (int)Math.Round(
+                    (imagePixelLength - 1) * tick.Kilometer / imageCoverageKilometers,
+                    MidpointRounding.AwayFromZero),
                 tick.Coordinate));
     }
+
+    private static double ExpectedAxisCoverage(
+        double imageCoverageKilometers,
+        int imagePixelLength,
+        int start,
+        int end) =>
+        imageCoverageKilometers * Math.Abs(end - start) / (imagePixelLength - 1);
 
     private static int ExpectedCoordinate(
         double kilometer,
@@ -301,6 +392,12 @@ public sealed class GibsPreviewRulerTests
         start + (int)Math.Round(
             (end - start) * kilometer / coverageKilometers,
             MidpointRounding.AwayFromZero);
+
+    private static string FormatCoverage(double value) =>
+        value.ToString(format: "0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static void AssertApproximatelyEqual(double expected, double actual) =>
+        Assert.InRange(Math.Abs(expected - actual), low: 0, high: 0.000000000001);
 
     private static void AssertLabelBoundsDoNotCollide(GibsPreviewRulerLayout layout)
     {
