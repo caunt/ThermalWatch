@@ -35,7 +35,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | Variable | Default | Contract |
 | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | unset | Telegram bot credential. Notifications require this and `TELEGRAM_CHANNEL_ID`. |
-| `TELEGRAM_CHANNEL_ID` | unset | Numeric channel ID or a value beginning with `@`; notifications require this and the bot token. |
+| `TELEGRAM_CHANNEL_ID` | unset | Numeric channel ID or a value beginning with `@`; the channel must have a linked discussion where the bot can post. Notifications require this and the bot token. |
 | `NOTIFICATION_SEND_EXISTING_ON_STARTUP` | `false` | When false, evaluate the first ready snapshot but suppress only incidents that already pass every enabled content criterion; initially ineligible incidents remain retryable. When true, eligible first-snapshot incidents can be delivered. |
 | `NOTIFICATION_CLUSTER_RADIUS_KM` | `5` | Finite number from `0.01` through `100`. |
 | `NOTIFICATION_CLUSTER_TIME_WINDOW` | `01:30:00` | Duration from 1 minute through 1 day. |
@@ -71,7 +71,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 
 Shared policy and lifecycle settings use the provider-neutral `NOTIFICATION_*` prefix because Core applies them to Viewer eligibility/diagnostics as well as Telegram candidates. Only `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHANNEL_ID` remain Telegram-specific. Names are exact and have no legacy aliases; an old `TELEGRAM_*` policy setting is ignored. Every policy option is parsed even when Telegram credentials are absent, so an invalid recognized value can stop startup while Telegram delivery would otherwise be disabled.
 
-No credentials disables Telegram without affecting the API. Supplying only one credential logs a warning and leaves it disabled. With both values, startup calls Telegram to validate the bot, channel type, membership, and permission to post. Validation failure disables notifications until process restart; it does not terminate the API.
+No credentials disables Telegram without affecting the API. Supplying only one credential logs a warning and leaves it disabled. With both values, startup calls Telegram to validate the bot, channel type, membership, permission to post, reciprocal linked-discussion supergroup, and permission to write there. The discussion ID is derived from Telegram and has no separate environment variable. Validation failure disables notifications until process restart; it does not terminate the API.
 
 ## External services and resilience
 
@@ -80,10 +80,10 @@ No credentials disables Telegram without affecting the API. Supplying only one c
 | NASA FIRMS | Country and area CSV plus MAP_KEY status. | Isolated by country/source segment; stale data is retained where available. |
 | NASA GIBS | Exact-date notification previews and diagnostics, spatial base-image probes, availability domains, annual land-cover domains, and latest viewer map tiles. | Preview/land-cover results become unavailable; viewer tiles become partial or transparent; FIRMS and the anomaly API continue. |
 | OpenStreetMap Overpass | Named nodes, ways, and relations within 2 km for ready Telegram candidates and selected Viewer diagnostics. | Returns no nearby context and logs a Warning; candidate delivery, diagnostics, polling, and the anomaly API continue. |
-| Telegram Bot API | Startup validation and outbound channel messages. | Notifier can disable or defer; polling and HTTP API continue. |
+| Telegram Bot API | Startup validation, outbound channel posts, and detail comments in each post's linked discussion. | Notifier can disable or defer; a comment can fail after its main post succeeds; polling and HTTP API continue. |
 | Natural Earth | Embedded boundary data loaded from Core. | Missing or unusable geometry for a configured country is a fatal startup error. |
 | unpkg and Google Maps | Approved browser-only viewer resources. NASA/FIRMS data is same-origin through ThermalWatch. | A browser provider can fail while server APIs and polling continue. |
-| Yandex Maps | No server-side use; a selected-anomaly action can navigate the browser to the observation coordinates. | Navigation failure affects only the external map action. |
+| Yandex Maps | No server-side use; Viewer actions and Telegram notification links can navigate to observation coordinates. | Navigation failure affects only the external map action. |
 
 FIRMS, GIBS, and Telegram HTTP clients use bounded total and attempt timeouts, retry delay with jitter, and `Retry-After` handling. FIRMS uses its configured timeout for the admitted operation through content consumption, permits one transport retry, and assigns each attempt 40 percent of that budget without a fixed attempt ceiling. A FIRMS body-read timeout is left for the next polling cycle instead of immediately repeating the download. GIBS uses two retries and Telegram one within their fixed 30-second handler policies. Overpass uses one request with a 15-second `HttpClient` timeout and no automatic retry, so a free endpoint error does not trigger an immediate repeat. See [Program.cs](../src/ThermalWatch.Api/Program.cs) for executable policy values.
 
@@ -150,9 +150,10 @@ The repository contains no production deployment manifests, immutable release ta
 | GIBS preview unavailable or base crop is mostly no-data | Try other supported same-date, pass-matched satellite bases; if none is usable, reject the cluster for this snapshot when preview is required or send text immediately when optional. | The next published snapshot reevaluates the complete active cluster and retries uncached spatial probes. |
 | GIBS land cover unavailable or invalid | Retain the notification candidate and record fail-open diagnostics. | Later candidates retry after cache expiry. |
 | Overpass HTTP, transport, timeout, oversized, or malformed-response failure | Log one Warning per uncached lookup, return no nearby features, and continue the diagnostic or Telegram delivery. | A lookup after the one-minute failure cache expires retries automatically on demand. |
-| Telegram startup validation failure | Disable notifier for the process lifetime. | Correct credentials/channel permissions and restart. |
-| Telegram automatic send returns `400`, `401`, or `403` | Disable automatic notifier processing for the process lifetime. | Correct the permanent condition and restart. |
-| Telegram transient send failure | Leave the episode undelivered and return to the snapshot loop. | The next published snapshot reevaluates the active cluster and retries it. |
+| Telegram startup validation failure | Disable notifier for the process lifetime. | Correct credentials, channel/discussion linkage, and posting permissions, then restart. |
+| Telegram main-post send returns `400`, `401`, or `403` | Disable automatic notifier processing for the process lifetime. | Correct the permanent condition and restart. |
+| Telegram transient main-post failure | Leave the episode undelivered and return to the snapshot loop. | The next published snapshot reevaluates the active cluster and retries it. |
+| Telegram discussion comment failure after a successful main post | Log a Warning and record the candidate delivered or manually sent; do not duplicate the channel post. | Correct discussion availability or permission; later candidates attempt their own comments, while the missing comment is not retained or retried. |
 | Process restart | Lose snapshots, startup-incident suppression, delivery deduplication, and caches; run an immediate poll. | Expected stateless recovery; monitor startup and first ready snapshot. |
 | Viewer GIBS tile is partial or unavailable | Return a partial or transparent PNG without caching the degraded result and show one coverage warning. | Later tile requests retry GIBS; FIRMS polling and anomaly responses remain available. |
 | Browser map dependency failure | Show provider/UI error; server polling and APIs remain available. | Restore unpkg/Google browser access or backend GIBS access as applicable, then refresh. |

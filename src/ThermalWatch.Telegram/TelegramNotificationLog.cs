@@ -20,6 +20,10 @@ internal static partial class TelegramNotificationLog
         Message = "Telegram notifier disabled: validation failed")]
     internal static partial void ValidationFailed(ILogger logger);
 
+    [LoggerMessage(EventId = 5, Level = LogLevel.Error,
+        Message = "Telegram notifier disabled: configured channel has no linked discussion")]
+    internal static partial void MissingLinkedDiscussion(ILogger logger);
+
     [LoggerMessage(EventId = 6, Level = LogLevel.Information,
         Message = "Sent manual Telegram notification for cluster {ClusterId}")]
     internal static partial void ManualNotificationSent(ILogger logger, string clusterId);
@@ -31,6 +35,14 @@ internal static partial class TelegramNotificationLog
     [LoggerMessage(EventId = 8, Level = LogLevel.Warning,
         Message = "Manual Telegram introductory message failed")]
     internal static partial void ManualStatusFailed(ILogger logger);
+
+    [LoggerMessage(EventId = 9, Level = LogLevel.Error,
+        Message = "Telegram notifier disabled: channel linked discussion is invalid")]
+    internal static partial void InvalidLinkedDiscussion(ILogger logger);
+
+    [LoggerMessage(EventId = 10, Level = LogLevel.Error,
+        Message = "Telegram notifier disabled: bot cannot comment in the linked discussion")]
+    internal static partial void CannotComment(ILogger logger);
 
     [LoggerMessage(EventId = 18, Level = LogLevel.Information,
         Message = "Sent Telegram notification for cluster {ClusterId}, {Satellite} at {AcquiredAtUtc}")]
@@ -47,6 +59,10 @@ internal static partial class TelegramNotificationLog
     [LoggerMessage(EventId = 20, Level = LogLevel.Warning,
         Message = "Telegram send failed transiently for cluster {ClusterId}")]
     internal static partial void TransientSendFailure(ILogger logger, string clusterId);
+
+    [LoggerMessage(EventId = 21, Level = LogLevel.Warning,
+        Message = "Telegram detail comment failed after posting cluster {ClusterId}")]
+    internal static partial void CommentFailed(ILogger logger, string clusterId);
 
     [LoggerMessage(EventId = 22, Level = LogLevel.Information,
         Message = "Notification policy processed {ActiveClusterCount} active clusters; evaluated {EvaluatedClusterCount}; delivered {DeliveredClusterCount}; rejected {RejectedClusterCount}; startup incidents suppressed {StartupSuppressedIncidentCount}; duplicate delivered episodes {DuplicateEpisodeCount}; send failures {SendFailureCount}. Rejections: nighttime {NighttimeCount}; insufficient detections {InsufficientDetectionsCount}; low confidence {LowConfidenceCount}; low FRP {LowFrpCount}; low thermal contrast {LowThermalContrastCount}; missing required value {MissingRequiredValueCount}; preview unavailable {PreviewUnavailableCount}")]

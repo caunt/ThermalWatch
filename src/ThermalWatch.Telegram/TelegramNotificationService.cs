@@ -1,11 +1,9 @@
-using System.Globalization;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
-using Telegram.Bot.Types.ReplyMarkups;
 using ThermalWatch.Core;
 
 namespace ThermalWatch.Telegram;
@@ -92,26 +90,34 @@ public sealed class TelegramNotificationService(
                 clientOptions,
                 httpClientFactory.CreateClient(name: "Telegram"),
                 cancellationToken);
-            var chatId = new ChatId(options.ChannelId!);
+            var channelId = new ChatId(options.ChannelId!);
             User bot = await client.GetMe(cancellationToken).ConfigureAwait(false);
-            ChatFullInfo chat = await client.GetChat(chatId, cancellationToken).ConfigureAwait(false);
+            ChatFullInfo channel = await client.GetChat(channelId, cancellationToken).ConfigureAwait(false);
 
-            if (chat.Type != ChatType.Channel)
+            if (channel.Type != ChatType.Channel)
             {
                 TelegramNotificationLog.InvalidChannel(logger);
                 return null;
             }
 
-            ChatMember member = await client.GetChatMember(chatId, bot.Id, cancellationToken).ConfigureAwait(false);
-            if (member is not ChatMemberOwner
-                && member is not ChatMemberAdministrator { CanPostMessages: true })
+            ChatMember channelMember = await client.GetChatMember(channelId, bot.Id, cancellationToken).ConfigureAwait(false);
+            if (channelMember is not ChatMemberOwner
+                && channelMember is not ChatMemberAdministrator { CanPostMessages: true })
             {
                 TelegramNotificationLog.CannotPost(logger);
                 return null;
             }
 
+            ChatId? discussionId = await TryResolveDiscussionAsync(
+                client,
+                channel,
+                bot.Id,
+                cancellationToken).ConfigureAwait(false);
+            if (discussionId is null)
+                return null;
+
             TelegramNotificationLog.Validated(logger);
-            return new(client, chatId);
+            return new(client, channelId, new(channel.Id), discussionId);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -122,6 +128,36 @@ public sealed class TelegramNotificationService(
             TelegramNotificationLog.ValidationFailed(logger);
             return null;
         }
+    }
+
+    private async Task<ChatId?> TryResolveDiscussionAsync(
+        ITelegramBotClient client,
+        ChatFullInfo channel,
+        long botId,
+        CancellationToken cancellationToken)
+    {
+        if (channel.LinkedChatId is not { } discussionChatId)
+        {
+            TelegramNotificationLog.MissingLinkedDiscussion(logger);
+            return null;
+        }
+
+        var discussionId = new ChatId(discussionChatId);
+        ChatFullInfo discussion = await client.GetChat(discussionId, cancellationToken).ConfigureAwait(false);
+        if (discussion.Type != ChatType.Supergroup || discussion.LinkedChatId != channel.Id)
+        {
+            TelegramNotificationLog.InvalidLinkedDiscussion(logger);
+            return null;
+        }
+
+        ChatMember member = await client.GetChatMember(discussionId, botId, cancellationToken).ConfigureAwait(false);
+        if (!CanSendToDiscussion(member))
+        {
+            TelegramNotificationLog.CannotComment(logger);
+            return null;
+        }
+
+        return discussionId;
     }
 
     private async Task<ManualTelegramSendResult> ExecuteManualSendAsync(
@@ -233,7 +269,7 @@ public sealed class TelegramNotificationService(
         try
         {
             await validated.Client.SendMessage(
-                validated.ChatId,
+                validated.ChannelId,
                 message,
                 parseMode: ParseMode.Html,
                 linkPreviewOptions: new() { IsDisabled = true },
@@ -283,13 +319,29 @@ public sealed class TelegramNotificationService(
         }
     }
 
-    private static async Task SendNotificationAsync(
+    private Task SendNotificationAsync(
         ValidatedTelegram validated,
         PreparedNotificationCandidate candidate,
+        CancellationToken cancellationToken) =>
+        SendNotificationAsync(
+            validated.Client,
+            validated.ChannelId,
+            validated.ChannelReplyId,
+            validated.DiscussionId,
+            candidate,
+            logger,
+            cancellationToken);
+
+    internal static async Task SendNotificationAsync(
+        ITelegramBotClient client,
+        ChatId channelId,
+        ChatId channelReplyId,
+        ChatId discussionId,
+        PreparedNotificationCandidate candidate,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
-        InlineKeyboardMarkup keyboard = CreateLocationKeyboard(candidate.Cluster);
-        string message = TelegramMessageFormatter.Format(
+        TelegramNotificationMessages messages = TelegramMessageFormatter.FormatMessages(
             candidate.Cluster,
             candidate.Preview,
             candidate.PreviewSelection.Dimensions,
@@ -297,47 +349,57 @@ public sealed class TelegramNotificationService(
             candidate.LandCoverSummary,
             candidate.NearbyFeatures);
 
+        Message channelPost;
         if (candidate.Preview.PngBytes is { } pngBytes)
         {
             using var stream = new MemoryStream(pngBytes, writable: false);
-            await validated.Client.SendPhoto(
-                validated.ChatId,
+            channelPost = await client.SendPhoto(
+                channelId,
                 InputFile.FromStream(stream, fileName: "thermal-anomaly.png"),
-                caption: message,
+                caption: messages.MainMessage,
                 parseMode: ParseMode.Html,
-                replyMarkup: keyboard,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         else
         {
-            await validated.Client.SendMessage(
-                validated.ChatId,
-                message,
+            channelPost = await client.SendMessage(
+                channelId,
+                messages.MainMessage,
                 parseMode: ParseMode.Html,
-                replyMarkup: keyboard,
                 linkPreviewOptions: new() { IsDisabled = true },
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
+
+        try
+        {
+            await client.SendMessage(
+                discussionId,
+                messages.CommentMessage,
+                parseMode: ParseMode.Html,
+                replyParameters: new()
+                {
+                    MessageId = channelPost.Id,
+                    ChatId = channelReplyId
+                },
+                linkPreviewOptions: new() { IsDisabled = true },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            TelegramNotificationLog.CommentFailed(logger, candidate.Cluster.Id);
+        }
     }
 
-    internal static InlineKeyboardMarkup CreateLocationKeyboard(NotificationCluster cluster)
+    private static bool CanSendToDiscussion(ChatMember member) => member switch
     {
-        Anomaly representative = cluster.Representative;
-        string yandexMapsUrl = string.Create(
-            CultureInfo.InvariantCulture,
-            handler: $"https://yandex.com/maps/?ll={representative.Longitude:0.######}%2C{representative.Latitude:0.######}&pt={representative.Longitude:0.######}%2C{representative.Latitude:0.######}&z=12&l=sat");
-        return new(
-        [
-            [
-                InlineKeyboardButton.WithUrl(
-                    text: "🗺 Google Maps",
-                    url: representative.GoogleMapsUrl),
-                InlineKeyboardButton.WithUrl(
-                    text: "🗺 Yandex Maps",
-                    url: yandexMapsUrl)
-            ]
-        ]);
-    }
+        ChatMemberOwner or ChatMemberAdministrator or ChatMemberMember => true,
+        ChatMemberRestricted { IsMember: true, CanSendMessages: true } => true,
+        _ => false
+    };
 
     private void DisableValidatedTelegram(ValidatedTelegram validated) =>
         Interlocked.CompareExchange(ref _validated, value: null, validated);
@@ -398,5 +460,9 @@ public sealed class TelegramNotificationService(
             response.FailedClusterCount);
     }
 
-    private sealed record ValidatedTelegram(TelegramBotClient Client, ChatId ChatId);
+    private sealed record ValidatedTelegram(
+        ITelegramBotClient Client,
+        ChatId ChannelId,
+        ChatId ChannelReplyId,
+        ChatId DiscussionId);
 }

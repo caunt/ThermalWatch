@@ -30,6 +30,21 @@ public static class TelegramMessageFormatter
         GibsPreviewDimensions previewDimensions,
         double? clusterDiameterKilometers,
         string? landCoverSummary,
+        IReadOnlyList<NearbyFeature> nearbyFeatures) =>
+        FormatMessages(
+            cluster,
+            preview,
+            previewDimensions,
+            clusterDiameterKilometers,
+            landCoverSummary,
+            nearbyFeatures).MainMessage;
+
+    internal static TelegramNotificationMessages FormatMessages(
+        NotificationCluster cluster,
+        GibsPreview preview,
+        GibsPreviewDimensions previewDimensions,
+        double? clusterDiameterKilometers,
+        string? landCoverSummary,
         IReadOnlyList<NearbyFeature> nearbyFeatures)
     {
         TemplateData data = CreateTemplateData(
@@ -39,27 +54,23 @@ public static class TelegramMessageFormatter
             clusterDiameterKilometers,
             landCoverSummary,
             nearbyFeatures);
-        Func<TemplateData, int, string> build = data.Satellites.Length >= 2
-            ? BuildMultiSatellite
-            : BuildBalanced;
 
-        string message = build(data, 0);
-        if (message.Length <= MaximumPhotoCaptionLength)
-            return message;
+        string mainMessage = BuildMain(data, compactLevel: 0);
+        if (mainMessage.Length > MaximumPhotoCaptionLength)
+            mainMessage = BuildMain(data, compactLevel: 1);
+        if (mainMessage.Length > MaximumPhotoCaptionLength)
+            mainMessage = BuildMain(data, compactLevel: 2);
+        if (mainMessage.Length > MaximumPhotoCaptionLength)
+            mainMessage = BuildMain(data, compactLevel: 3);
 
-        message = build(data, 1);
-        if (message.Length <= MaximumPhotoCaptionLength)
-            return message;
-
-        message = build(data, 2);
-        return message.Length <= MaximumPhotoCaptionLength
-            ? message
-            : BuildMinimal(data);
+        string commentMessage = data.Satellites.Length >= 2
+            ? BuildMultiSatelliteComment(data)
+            : BuildSingleSatelliteComment(data);
+        return new(mainMessage, commentMessage);
     }
 
-    private static string BuildBalanced(TemplateData data, int compactLevel)
+    private static string BuildMain(TemplateData data, int compactLevel)
     {
-        Anomaly representative = data.Cluster.Representative;
         var sections = new List<string>
         {
             "🔥 <b>New thermal anomaly</b>"
@@ -67,35 +78,50 @@ public static class TelegramMessageFormatter
         var observation = new List<string>
         {
             $"📍 <b>{Html(FormatInlineList(data.Countries, compactLevel))}</b>",
-            $"🕓 <b>Observed:</b> {Html(FormatDateTime(representative.AcquiredAtUtc))} UTC"
+            $"🕓 <b>Observed:</b> {Html(FormatDateTime(data.LatestAnomaly.AcquiredAtUtc))} UTC"
         };
-        if (FormatPass(representative.DayNight) is { } pass)
+        if (FormatPass(data.LatestAnomaly.DayNight) is { } pass)
             observation.Add($"{pass.Emoji} <b>Pass:</b> {pass.Name}");
         sections.Add(string.Join('\n', observation));
 
         if (FormatNearbyFeatures(data.NearbyFeatures, compactLevel) is { } nearbyFeatures)
             sections.Add(nearbyFeatures);
 
+        var location = new List<string>();
+        if (FormatNumber(data.ClusterDiameterKilometers) is { } diameter)
+            location.Add($"♾️ <b>Diameter:</b> {Html(diameter)} km");
+        location.Add(FormatCoordinates(data.Cluster.Representative));
+        location.Add(FormatMapLinks(data.Cluster.Representative));
+        sections.Add(string.Join('\n', location));
+
+        return string.Join(separator: "\n\n", sections);
+    }
+
+    private static string BuildSingleSatelliteComment(TemplateData data)
+    {
+        Anomaly representative = data.Cluster.Representative;
         var sensor = new List<string>
         {
-            $"🛰 <b>Satellite:</b> {Html(FormatInlineList(data.Satellites, compactLevel))}",
-            $"📡 <b>Sources:</b> <code>{Html(FormatInlineList(data.Sources, compactLevel))}</code>"
+            $"🛰 <b>Satellite:</b> {Html(FormatSatellite(representative))}",
+            $"📡 <b>Source:</b> <code>{Html(representative.Source)}</code>"
         };
-        if (compactLevel < 2 && FormatConfidence(representative) is { } confidence)
+        if (FormatConfidence(representative) is { } confidence)
             sensor.Add($"🎯 <b>Confidence:</b> {Html(confidence)}");
-        sections.Add(string.Join('\n', sensor));
 
         var metrics = new List<string>();
-        if (compactLevel < 2 && FormatNumber(representative.FrpMegawatts) is { } frp)
+        if (FormatNumber(representative.FrpMegawatts) is { } frp)
             metrics.Add($"⚡ <b>FRP:</b> {Html(frp)} MW");
-        if (compactLevel < 2 && FormatSignedNumber(representative.ThermalContrastKelvin) is { } contrast)
+        if (FormatSignedNumber(representative.ThermalContrastKelvin) is { } contrast)
             metrics.Add($"🌡 <b>Thermal contrast:</b> {Html(contrast)} K");
         metrics.Add($"🔎 <b>Detections:</b> {Html(data.Cluster.Members.Length.ToString(CultureInfo.InvariantCulture))}");
-        if (FormatNumber(data.ClusterDiameterKilometers) is { } diameter)
-            metrics.Add($"📐 <b>Cluster diameter:</b> {Html(diameter)} km");
-        sections.Add(string.Join('\n', metrics));
 
-        if (data.HasPreview && compactLevel < 2)
+        var sections = new List<string>
+        {
+            string.Join('\n', sensor),
+            string.Join('\n', metrics)
+        };
+
+        if (data.HasPreview)
         {
             string imagery = IsSensorMatchedPreview(representative, data.PreviewBaseSource)
                 ? "Sensor-matched"
@@ -109,78 +135,43 @@ public static class TelegramMessageFormatter
             sections.Add(string.Join('\n', preview));
         }
 
-        sections.Add(FormatLocation(data));
         return string.Join(separator: "\n\n", sections);
     }
 
-    private static string BuildMultiSatellite(TemplateData data, int compactLevel)
+    private static string BuildMultiSatelliteComment(TemplateData data)
     {
         Anomaly representative = data.Cluster.Representative;
         var sections = new List<string>
         {
-            "🔥 <b>Multi-satellite thermal anomaly</b>",
-            string.Join('\n',
-                $"📍 <b>{Html(FormatInlineList(data.Countries, compactLevel))}</b>",
-                $"🕓 <b>Latest observation:</b> {Html(FormatDateTime(data.LatestObservation))} UTC",
-                $"✅ <b>Confirmed by:</b> {Html(data.Satellites.Length.ToString(CultureInfo.InvariantCulture))} satellites")
+            $"✅ <b>Confirmed by:</b> {Html(data.Satellites.Length.ToString(CultureInfo.InvariantCulture))} satellites",
+            $"🛰 <b>Satellites:</b>\n{FormatSatelliteBullets(data.Satellites, compactLevel: 0)}",
+            $"📡 <b>Feeds:</b> <code>{Html(FormatInlineList(data.Sources, compactLevel: 0))}</code>"
         };
-        if (FormatNearbyFeatures(data.NearbyFeatures, compactLevel) is { } nearbyFeatures)
-            sections.Add(nearbyFeatures);
-        sections.Add($"🛰 <b>Satellites:</b>\n{FormatSatelliteBullets(data.Satellites, compactLevel)}");
-        sections.Add($"📡 <b>Feeds:</b> <code>{Html(FormatInlineList(data.Sources, compactLevel))}</code>");
 
         var metrics = new List<string>();
-        if (compactLevel < 2 && FormatNumber(data.PeakFrpMegawatts) is { } frp)
+        if (FormatNumber(data.PeakFrpMegawatts) is { } frp)
             metrics.Add($"⚡ <b>Peak FRP:</b> {Html(frp)} MW");
-        if (compactLevel < 2 && FormatSignedNumber(data.PeakThermalContrastKelvin) is { } contrast)
+        if (FormatSignedNumber(data.PeakThermalContrastKelvin) is { } contrast)
             metrics.Add($"🌡 <b>Peak contrast:</b> {Html(contrast)} K");
         metrics.Add($"🔎 <b>Detections:</b> {Html(data.Cluster.Members.Length.ToString(CultureInfo.InvariantCulture))}");
-        if (FormatNumber(data.ClusterDiameterKilometers) is { } diameter)
-            metrics.Add($"📐 <b>Spread:</b> {Html(diameter)} km");
-        if (compactLevel < 2 && data.LandCoverSummary is { Length: > 0 } landCover)
+        if (data.LandCoverSummary is { Length: > 0 } landCover)
             metrics.Add($"🏙 <b>Land cover:</b> {Html(landCover)}");
         sections.Add(string.Join('\n', metrics));
 
-        if (data.HasPreview && compactLevel < 2)
+        if (data.HasPreview)
         {
             string imagery = IsSensorMatchedPreview(representative, data.PreviewBaseSource)
                 ? $"{FormatSatellite(representative)} imagery"
                 : FormatFallbackPreview(representative, data.PreviewBaseSource!.Value);
             var preview = new List<string>
             {
-                $"🖼 <b>Preview:</b> {Html(imagery)} for {Html(FormatDate(representative.AcquiredAtUtc))}"
+                $"🖼 <b>Preview:</b> {Html(imagery)} · {Html(FormatDate(representative.AcquiredAtUtc))}"
             };
             if (FormatCoverage(data.PreviewDimensions) is { } coverage)
                 preview.Add($"📏 <b>Coverage:</b> {Html(coverage)} km");
             sections.Add(string.Join('\n', preview));
         }
 
-        sections.Add(FormatLocation(data));
-        return string.Join(separator: "\n\n", sections);
-    }
-
-    private static string BuildMinimal(TemplateData data)
-    {
-        bool multiSatellite = data.Satellites.Length >= 2;
-        string title = multiSatellite
-            ? "🔥 <b>Multi-satellite thermal anomaly</b>"
-            : "🔥 <b>New thermal anomaly</b>";
-        string timeLabel = multiSatellite ? "Latest observation" : "Observed";
-        DateTimeOffset observedAt = multiSatellite
-            ? data.LatestObservation
-            : data.Cluster.Representative.AcquiredAtUtc;
-        var sections = new List<string>
-        {
-            title,
-            string.Join('\n',
-                $"📍 <b>{Html(FormatInlineList(data.Countries, compactLevel: 2))}</b>",
-                $"🕓 <b>{timeLabel}:</b> {Html(FormatDateTime(observedAt))} UTC",
-                $"🔎 <b>Detections:</b> {Html(data.Cluster.Members.Length.ToString(CultureInfo.InvariantCulture))}")
-        };
-        if (FormatNearbyFeatures(data.NearbyFeatures, compactLevel: 2) is { } nearbyFeatures)
-            sections.Add(nearbyFeatures);
-
-        sections.Add(FormatLocation(data));
         return string.Join(separator: "\n\n", sections);
     }
 
@@ -197,7 +188,10 @@ public static class TelegramMessageFormatter
                 CountryCatalog.GetDisplayName(member.CountryCode))),
             SortedDistinct(cluster.Members.Select(FormatSatellite)),
             SortedDistinct(cluster.Members.Select(member => member.Source)),
-            cluster.Members.Max(member => member.AcquiredAtUtc),
+            cluster.Members
+                .OrderByDescending(member => member.AcquiredAtUtc)
+                .ThenBy(member => member.Id, StringComparer.Ordinal)
+                .First(),
             MaximumAvailable(cluster.Members.Select(member => member.FrpMegawatts)),
             MaximumAvailable(cluster.Members.Select(member => member.ThermalContrastKelvin)),
             preview.IsAvailable,
@@ -233,7 +227,8 @@ public static class TelegramMessageFormatter
         {
             0 => 64,
             1 => 36,
-            _ => 16
+            2 => 16,
+            _ => 4
         };
         if (name.Length <= maximumTextElements)
             return name;
@@ -248,12 +243,19 @@ public static class TelegramMessageFormatter
     private static string FormatNearbyDistance(double value) =>
         value.ToString(format: "0.00", CultureInfo.InvariantCulture);
 
-    private static string FormatLocation(TemplateData data)
+    private static string FormatCoordinates(Anomaly representative)
     {
-        Anomaly representative = data.Cluster.Representative;
         string latitude = representative.Latitude.ToString(format: "0.000000", CultureInfo.InvariantCulture);
         string longitude = representative.Longitude.ToString(format: "0.000000", CultureInfo.InvariantCulture);
         return $"📌 <code>{Html(latitude)}, {Html(longitude)}</code>";
+    }
+
+    private static string FormatMapLinks(Anomaly representative)
+    {
+        string yandexMapsUrl = string.Create(
+            CultureInfo.InvariantCulture,
+            handler: $"https://yandex.com/maps/?ll={representative.Longitude:0.######}%2C{representative.Latitude:0.######}&pt={representative.Longitude:0.######}%2C{representative.Latitude:0.######}&z=12&l=sat");
+        return $"🗺 <a href=\"{Html(representative.GoogleMapsUrl)}\">Google Maps</a> · <a href=\"{Html(yandexMapsUrl)}\">Yandex Maps</a>";
     }
 
     private static string FormatSatelliteBullets(string[] satellites, int compactLevel)
@@ -419,7 +421,7 @@ public static class TelegramMessageFormatter
         string[] Countries,
         string[] Satellites,
         string[] Sources,
-        DateTimeOffset LatestObservation,
+        Anomaly LatestAnomaly,
         double? PeakFrpMegawatts,
         double? PeakThermalContrastKelvin,
         bool HasPreview,
