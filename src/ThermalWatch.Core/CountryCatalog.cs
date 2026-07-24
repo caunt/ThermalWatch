@@ -1,41 +1,277 @@
 using System.Collections.Frozen;
-using System.Globalization;
 
 namespace ThermalWatch.Core;
 
 public static class CountryCatalog
 {
-    private const string IsoAlpha3Codes =
-        "ABW AFG AGO AIA ALA ALB AND ARE ARG ARM ASM ATA ATF ATG AUS AUT AZE BDI BEL BEN BES BFA BGD BGR BHR BHS BIH BLM BLR BLZ BMU BOL BRA BRB BRN BTN BVT BWA CAF CAN CCK CHE CHL CHN CIV CMR COD COG COK COL COM CPV CRI CUB CUW CXR CYM CYP CZE DEU DJI DMA DNK DOM DZA ECU EGY ERI ESH ESP EST ETH FIN FJI FLK FRA FRO FSM GAB GBR GEO GGY GHA GIB GIN GLP GMB GNB GNQ GRC GRD GRL GTM GUF GUM GUY HKG HMD HND HRV HTI HUN IDN IMN IND IOT IRL IRN IRQ ISL ISR ITA JAM JEY JOR JPN KAZ KEN KGZ KHM KIR KNA KOR KWT LAO LBN LBR LBY LCA LIE LKA LSO LTU LUX LVA MAC MAF MAR MCO MDA MDG MDV MEX MHL MKD MLI MLT MMR MNE MNG MNP MOZ MRT MSR MTQ MUS MWI MYS MYT NAM NCL NER NFK NGA NIC NIU NLD NOR NPL NRU NZL OMN PAK PAN PCN PER PHL PLW PNG POL PRI PRK PRT PRY PSE PYF QAT REU ROU RUS RWA SAU SDN SEN SGP SGS SHN SJM SLB SLE SLV SMR SOM SPM SRB SSD STP SUR SVK SVN SWE SWZ SXM SYC SYR TCA TCD TGO THA TJK TKL TKM TLS TON TTO TUN TUR TUV TWN TZA UGA UKR UMI URY USA UZB VAT VCT VEN VGB VIR VNM VUT WLF WSM YEM ZAF ZMB ZWE";
+    private const string IsoCountries = """
+ABW|Aruba
+AFG|Afghanistan
+AGO|Angola
+AIA|Anguilla
+ALA|Åland Islands
+ALB|Albania
+AND|Andorra
+ARE|United Arab Emirates
+ARG|Argentina
+ARM|Armenia
+ASM|American Samoa
+ATA|Antarctica
+ATF|French Southern and Antarctic Lands
+ATG|Antigua and Barbuda
+AUS|Australia
+AUT|Austria
+AZE|Azerbaijan
+BDI|Burundi
+BEL|Belgium
+BEN|Benin
+BES|Caribbean Netherlands
+BFA|Burkina Faso
+BGD|Bangladesh
+BGR|Bulgaria
+BHR|Bahrain
+BHS|Bahamas
+BIH|Bosnia and Herzegovina
+BLM|Saint Barthélemy
+BLR|Belarus
+BLZ|Belize
+BMU|Bermuda
+BOL|Bolivia
+BRA|Brazil
+BRB|Barbados
+BRN|Brunei
+BTN|Bhutan
+BVT|Bouvet Island
+BWA|Botswana
+CAF|Central African Republic
+CAN|Canada
+CCK|Cocos (Keeling) Islands
+CHE|Switzerland
+CHL|Chile
+CHN|China
+CIV|Ivory Coast
+CMR|Cameroon
+COD|DR Congo
+COG|Congo
+COK|Cook Islands
+COL|Colombia
+COM|Comoros
+CPV|Cape Verde
+CRI|Costa Rica
+CUB|Cuba
+CUW|Curaçao
+CXR|Christmas Island
+CYM|Cayman Islands
+CYP|Cyprus
+CZE|Czechia
+DEU|Germany
+DJI|Djibouti
+DMA|Dominica
+DNK|Denmark
+DOM|Dominican Republic
+DZA|Algeria
+ECU|Ecuador
+EGY|Egypt
+ERI|Eritrea
+ESH|Western Sahara
+ESP|Spain
+EST|Estonia
+ETH|Ethiopia
+FIN|Finland
+FJI|Fiji
+FLK|Falkland Islands
+FRA|France
+FRO|Faroe Islands
+FSM|Micronesia
+GAB|Gabon
+GBR|United Kingdom
+GEO|Georgia
+GGY|Guernsey
+GHA|Ghana
+GIB|Gibraltar
+GIN|Guinea
+GLP|Guadeloupe
+GMB|Gambia
+GNB|Guinea-Bissau
+GNQ|Equatorial Guinea
+GRC|Greece
+GRD|Grenada
+GRL|Greenland
+GTM|Guatemala
+GUF|French Guiana
+GUM|Guam
+GUY|Guyana
+HKG|Hong Kong
+HMD|Heard Island and McDonald Islands
+HND|Honduras
+HRV|Croatia
+HTI|Haiti
+HUN|Hungary
+IDN|Indonesia
+IMN|Isle of Man
+IND|India
+IOT|British Indian Ocean Territory
+IRL|Ireland
+IRN|Iran
+IRQ|Iraq
+ISL|Iceland
+ISR|Israel
+ITA|Italy
+JAM|Jamaica
+JEY|Jersey
+JOR|Jordan
+JPN|Japan
+KAZ|Kazakhstan
+KEN|Kenya
+KGZ|Kyrgyzstan
+KHM|Cambodia
+KIR|Kiribati
+KNA|Saint Kitts and Nevis
+KOR|South Korea
+KWT|Kuwait
+LAO|Laos
+LBN|Lebanon
+LBR|Liberia
+LBY|Libya
+LCA|Saint Lucia
+LIE|Liechtenstein
+LKA|Sri Lanka
+LSO|Lesotho
+LTU|Lithuania
+LUX|Luxembourg
+LVA|Latvia
+MAC|Macau
+MAF|Saint Martin
+MAR|Morocco
+MCO|Monaco
+MDA|Moldova
+MDG|Madagascar
+MDV|Maldives
+MEX|Mexico
+MHL|Marshall Islands
+MKD|North Macedonia
+MLI|Mali
+MLT|Malta
+MMR|Myanmar
+MNE|Montenegro
+MNG|Mongolia
+MNP|Northern Mariana Islands
+MOZ|Mozambique
+MRT|Mauritania
+MSR|Montserrat
+MTQ|Martinique
+MUS|Mauritius
+MWI|Malawi
+MYS|Malaysia
+MYT|Mayotte
+NAM|Namibia
+NCL|New Caledonia
+NER|Niger
+NFK|Norfolk Island
+NGA|Nigeria
+NIC|Nicaragua
+NIU|Niue
+NLD|Netherlands
+NOR|Norway
+NPL|Nepal
+NRU|Nauru
+NZL|New Zealand
+OMN|Oman
+PAK|Pakistan
+PAN|Panama
+PCN|Pitcairn Islands
+PER|Peru
+PHL|Philippines
+PLW|Palau
+PNG|Papua New Guinea
+POL|Poland
+PRI|Puerto Rico
+PRK|North Korea
+PRT|Portugal
+PRY|Paraguay
+PSE|Palestine
+PYF|French Polynesia
+QAT|Qatar
+REU|Réunion
+ROU|Romania
+RUS|Russia
+RWA|Rwanda
+SAU|Saudi Arabia
+SDN|Sudan
+SEN|Senegal
+SGP|Singapore
+SGS|South Georgia
+SHN|Saint Helena, Ascension and Tristan da Cunha
+SJM|Svalbard and Jan Mayen
+SLB|Solomon Islands
+SLE|Sierra Leone
+SLV|El Salvador
+SMR|San Marino
+SOM|Somalia
+SPM|Saint Pierre and Miquelon
+SRB|Serbia
+SSD|South Sudan
+STP|São Tomé and Príncipe
+SUR|Suriname
+SVK|Slovakia
+SVN|Slovenia
+SWE|Sweden
+SWZ|Eswatini
+SXM|Sint Maarten
+SYC|Seychelles
+SYR|Syria
+TCA|Turks and Caicos Islands
+TCD|Chad
+TGO|Togo
+THA|Thailand
+TJK|Tajikistan
+TKL|Tokelau
+TKM|Turkmenistan
+TLS|Timor-Leste
+TON|Tonga
+TTO|Trinidad and Tobago
+TUN|Tunisia
+TUR|Türkiye
+TUV|Tuvalu
+TWN|Taiwan
+TZA|Tanzania
+UGA|Uganda
+UKR|Ukraine
+UMI|United States Minor Outlying Islands
+URY|Uruguay
+USA|United States
+UZB|Uzbekistan
+VAT|Vatican City
+VCT|Saint Vincent and the Grenadines
+VEN|Venezuela
+VGB|British Virgin Islands
+VIR|United States Virgin Islands
+VNM|Vietnam
+VUT|Vanuatu
+WLF|Wallis and Futuna
+WSM|Samoa
+YEM|Yemen
+ZAF|South Africa
+ZMB|Zambia
+ZWE|Zimbabwe
+""";
 
-    private static readonly FrozenSet<string> s_codes = IsoAlpha3Codes
-        .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-        .ToFrozenSet(StringComparer.Ordinal);
+    private static readonly FrozenDictionary<string, string> s_displayNames = CreateDisplayNames();
 
-    private static readonly Lazy<FrozenDictionary<string, string>> s_displayNames = new(CreateDisplayNames);
-
-    public static bool IsValid(string countryCode) => s_codes.Contains(countryCode);
+    public static bool IsValid(string countryCode) => s_displayNames.ContainsKey(countryCode);
 
     public static string GetDisplayName(string countryCode) =>
-        s_displayNames.Value.GetValueOrDefault(countryCode, countryCode);
+        s_displayNames.GetValueOrDefault(countryCode, countryCode);
 
-    private static FrozenDictionary<string, string> CreateDisplayNames()
+    private static FrozenDictionary<string, string> CreateDisplayNames() =>
+        IsoCountries
+            .Split(separator: '\n', options: StringSplitOptions.RemoveEmptyEntries)
+            .Select(ParseCountry)
+            .ToFrozenDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+    private static KeyValuePair<string, string> ParseCountry(string country)
     {
-        var names = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        foreach (CultureInfo culture in CultureInfo.GetCultures(CultureTypes.SpecificCultures))
-        {
-            try
-            {
-                var region = new RegionInfo(culture.Name);
-                names.TryAdd(region.ThreeLetterISORegionName.ToUpperInvariant(), region.EnglishName);
-            }
-            catch (ArgumentException)
-            {
-                // Some synthetic cultures do not identify a geographical region.
-            }
-        }
-
-        return names.ToFrozenDictionary(StringComparer.Ordinal);
+        int separatorIndex = country.IndexOf(value: '|');
+        return KeyValuePair.Create(country[..separatorIndex], country[(separatorIndex + 1)..]);
     }
 }

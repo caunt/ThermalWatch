@@ -112,6 +112,38 @@ public sealed class TelegramMessageFormatterTests
     }
 
     [Fact]
+    public void FormatMessagesDecodesAndSortsClusterCountryCodes()
+    {
+        Anomaly representative = CreateAnomaly(
+            id: "representative",
+            satellite: "Suomi-NPP",
+            acquiredAtUtc: Utc(hour: 12),
+            dayNight: "D",
+            frpMegawatts: 100,
+            thermalContrastKelvin: 30,
+            countryCode: "UKR");
+        Anomaly russianAnomaly = CreateAnomaly(
+            id: "russian",
+            satellite: "Suomi-NPP",
+            acquiredAtUtc: Utc(hour: 13),
+            dayNight: "D",
+            frpMegawatts: 90,
+            thermalContrastKelvin: 25,
+            countryCode: "RUS");
+        var cluster = new NotificationCluster(Id: "cluster", representative, [representative, russianAnomaly]);
+
+        TelegramNotificationMessages messages = TelegramMessageFormatter.FormatMessages(
+            cluster,
+            GibsPreview.Unavailable,
+            new(WidthKilometers: 30, HeightKilometers: 20, PixelWidth: 900, PixelHeight: 600),
+            clusterDiameterKilometers: 1,
+            landCoverSummary: null,
+            nearbyFeatures: []);
+
+        Assert.Contains("📍 <b>Russia; Ukraine</b>", messages.MainMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void FormatMessagesBuildsMultiSatelliteComment()
     {
         Anomaly representative = CreateAnomaly(
@@ -287,10 +319,11 @@ public sealed class TelegramMessageFormatterTests
         string dayNight,
         double? frpMegawatts,
         double? thermalContrastKelvin,
-        string? confidenceCategory = "nominal") =>
+        string? confidenceCategory = "nominal",
+        string countryCode = "UKR") =>
         new(
             Id: id,
-            CountryCode: "UKR",
+            CountryCode: countryCode,
             Source: "NOAA-20".Equals(satellite, StringComparison.Ordinal)
                 ? "VIIRS_NOAA20_NRT"
                 : "VIIRS_SNPP_NRT",

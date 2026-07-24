@@ -33,7 +33,7 @@ Core records delivered-episode history only after `Delivered`. A transient main-
 
 ## Message construction
 
-Messages use Telegram HTML without reply markup. Every channel post uses one compact template containing the cluster countries, newest observation time and pass, optional nearby context, diameter, representative coordinates, and inline Google and Yandex Maps links; the Yandex link opens the representative coordinates in satellite view. The formatter progressively compacts nearby names and lists to Telegram's photo-caption limit and HTML-encodes dynamic values.
+Messages use Telegram HTML without reply markup. Every channel post uses one compact template containing the cluster countries, newest observation time and pass, optional nearby context, diameter, representative coordinates, and inline Google and Yandex Maps links; the Yandex link opens the representative coordinates in satellite view. Country labels decode ISO alpha-3 codes to deterministic common English names without depending on the host's globalization data. The formatter progressively compacts nearby names and lists to Telegram's photo-caption limit and HTML-encodes dynamic values.
 
 The linked-discussion comment holds the sensor detail. A single-satellite comment uses representative satellite, source, confidence, FRP, thermal contrast, detection count, and preview detail. A multi-satellite comment uses confirmation count, satellites, feeds, peak metrics, detection count, land-cover summary, and preview detail. Preview wording names its contextual base and representative thermal overlay rather than claiming sensor-matched imagery when Core used a fallback base. These values arrive as prepared Core data; Telegram does not recalculate eligibility or call Overpass.
 
