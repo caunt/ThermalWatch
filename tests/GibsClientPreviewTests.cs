@@ -51,6 +51,22 @@ public sealed class GibsClientPreviewTests
     }
 
     [Fact]
+    public async Task GetPreviewAsyncRequestsFiveTimesLargerThermalAnomalyMarkers()
+    {
+        var handler = new PreviewHandler(_ => PngTestData.CreateSolidRgba(width: 64, height: 64, red: 30, green: 80, blue: 40, alpha: 255));
+        using MemoryCache cache = CreateCache();
+        GibsClient client = CreateClient(handler, cache);
+
+        GibsPreview preview = await client.GetPreviewAsync(
+            CreateAnomaly(source: "VIIRS_NOAA20_NRT", satellite: "NOAA-20"),
+            s_dimensions,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(preview.IsAvailable);
+        Assert.Equal("default,size25", Assert.Single(handler.CompositeStyles));
+    }
+
+    [Fact]
     public async Task GetPreviewAsyncFallsBackWithinSensorFamilyBeforeComposingOriginalOverlay()
     {
         var handler = new PreviewHandler(layer => Noaa21Base.Equals(layer, StringComparison.Ordinal)
@@ -355,6 +371,8 @@ public sealed class GibsClientPreviewTests
 
         public List<string> CompositeLayers { get; } = [];
 
+        public List<string> CompositeStyles { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
@@ -375,6 +393,7 @@ public sealed class GibsClientPreviewTests
                 if (layers.Contains(',', StringComparison.Ordinal))
                 {
                     CompositeLayers.Add(layers);
+                    CompositeStyles.Add(ReadQueryValue(request.RequestUri, name: "STYLES"));
                     bytes = _compositePng;
                 }
                 else

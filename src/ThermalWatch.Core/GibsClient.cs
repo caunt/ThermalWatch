@@ -29,6 +29,7 @@ public sealed partial class GibsClient(
     private const string LandCoverTileMatrixSet = "500m";
     private const int LandCoverTileMatrix = 7;
     private const int PreviewProbePixelSize = 64;
+    private const string PreviewCompositeStyles = "default,size25";
     private const byte PreviewNoDataMaximumChannel = 8;
     private const byte UnknownLandCoverClass = 254;
     private const double MaximumTrigonometricRatio = 1;
@@ -935,7 +936,7 @@ public sealed partial class GibsClient(
         GibsPreviewDimensions dimensions) =>
         BuildWmsUri(
             layerNames: $"{layers.BaseLayer},{layers.OverlayLayer}",
-            styles: "default,size5",
+            styles: PreviewCompositeStyles,
             date,
             bounds,
             dimensions);
