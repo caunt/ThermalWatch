@@ -62,6 +62,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `NOTIFICATION_KEEP_MULTI_SATELLITE_VEGETATION` | `false` | Boolean enabling the configured multi-satellite vegetation exception. |
 | `NOTIFICATION_VISIBILITY_FILTER_ENABLED` | `true` | Boolean. |
 | `NOTIFICATION_MIN_FRP_MW` | `50` | Non-negative finite number; zero disables this requirement. |
+| `NOTIFICATION_MIN_CLUSTER_TOTAL_FRP_MW` | `50` | Non-negative finite number applied to the sum of available member FRP values; zero disables this requirement. |
 | `NOTIFICATION_MIN_THERMAL_CONTRAST_K` | `20` | Non-negative finite number; zero disables this requirement. |
 | `NOTIFICATION_MIN_CLUSTER_DETECTIONS` | `2` | Integer greater than or equal to 1. |
 | `NOTIFICATION_MIN_MODIS_CONFIDENCE_PERCENT` | `60` | Finite percentage from 0 through 100; zero disables the MODIS requirement. |

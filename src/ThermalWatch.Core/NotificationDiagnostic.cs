@@ -9,6 +9,7 @@ public sealed record NotificationDiagnostic(
     ImmutableArray<string> MemberIds,
     int DetectionCount,
     double ClusterDiameterKilometers,
+    double? TotalFrpMegawatts,
     bool IsEligible,
     ImmutableArray<NotificationCriterionResult> Criteria,
     GibsPreviewSource? PreviewBaseSource,

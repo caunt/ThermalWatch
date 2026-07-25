@@ -30,11 +30,11 @@ public sealed class NotificationPolicyTests
             cluster,
             DefaultVisibility())];
 
-        Assert.Equal(5, criteria.Length);
+        Assert.Equal(6, criteria.Length);
         Assert.All(criteria, criterion => Assert.Equal(NotificationCriterionOutcomes.Failed, criterion.Outcome));
         Assert.All(criteria, criterion => Assert.True(criterion.IsBlocking));
         Assert.Equal(
-            ["daytime", "cluster-detections", "confidence", "frp", "thermal-contrast"],
+            ["daytime", "cluster-detections", "confidence", "frp", "cluster-total-frp", "thermal-contrast"],
             criteria.Select(criterion => criterion.Code));
     }
 
@@ -50,7 +50,7 @@ public sealed class NotificationPolicyTests
             cluster,
             DefaultVisibility() with { Enabled = false })];
 
-        Assert.Equal(5, criteria.Length);
+        Assert.Equal(6, criteria.Length);
         Assert.All(criteria, criterion => Assert.Equal(NotificationCriterionOutcomes.Disabled, criterion.Outcome));
         Assert.All(criteria, criterion => Assert.False(criterion.IsBlocking));
     }
@@ -126,10 +126,84 @@ public sealed class NotificationPolicyTests
         Assert.Null(evaluation.RejectionReason);
     }
 
+    [Theory]
+    [InlineData(24, false, "48 MW")]
+    [InlineData(25, true, "50 MW")]
+    public void EvaluateMetadataAppliesMinimumClusterTotalFrp(
+        double memberFrpMegawatts,
+        bool expectedEligible,
+        string expectedActualValue)
+    {
+        NotificationCluster cluster = Cluster(
+            CreateAnomaly(id: "total-frp", frpMegawatts: memberFrpMegawatts),
+            detectionCount: 2);
+        NotificationVisibilityOptions options = DefaultVisibility() with
+        {
+            MinimumFrpMegawatts = 0,
+            MinimumClusterTotalFrpMegawatts = 50
+        };
+
+        NotificationMetadataEvaluation evaluation = NotificationPolicy.EvaluateMetadata(cluster, options);
+        NotificationCriterionResult criterion = Assert.Single(
+            NotificationPolicy.ExplainMetadata(cluster, options),
+            candidate => candidate.Code.Equals(value: "cluster-total-frp", StringComparison.Ordinal));
+
+        Assert.Equal(expectedEligible, evaluation.IsEligible);
+        Assert.Equal(
+            expectedEligible ? null : NotificationRejectionReason.LowClusterTotalFrp,
+            evaluation.RejectionReason);
+        Assert.Equal(expectedEligible, !criterion.IsBlocking);
+        Assert.Equal(expectedActualValue, criterion.ActualValue);
+    }
+
+    [Fact]
+    public void EvaluateMetadataRequiresAnAvailableClusterTotalFrp()
+    {
+        NotificationCluster cluster = Cluster(
+            CreateAnomaly(id: "missing-total-frp", frpMegawatts: null),
+            detectionCount: 2);
+        NotificationVisibilityOptions options = DefaultVisibility() with
+        {
+            MinimumFrpMegawatts = 0,
+            MinimumClusterTotalFrpMegawatts = 50
+        };
+
+        NotificationMetadataEvaluation evaluation = NotificationPolicy.EvaluateMetadata(cluster, options);
+        NotificationCriterionResult criterion = Assert.Single(
+            NotificationPolicy.ExplainMetadata(cluster, options),
+            candidate => candidate.Code.Equals(value: "cluster-total-frp", StringComparison.Ordinal));
+
+        Assert.False(evaluation.IsEligible);
+        Assert.Equal(NotificationRejectionReason.MissingRequiredValue, evaluation.RejectionReason);
+        Assert.Equal("Not available", criterion.ActualValue);
+        Assert.True(criterion.IsBlocking);
+    }
+
+    [Fact]
+    public void ExplainMetadataDisablesZeroMinimumClusterTotalFrp()
+    {
+        NotificationCluster cluster = Cluster(
+            CreateAnomaly(id: "disabled-total-frp", frpMegawatts: null),
+            detectionCount: 2);
+        NotificationVisibilityOptions options = DefaultVisibility() with
+        {
+            MinimumFrpMegawatts = 0,
+            MinimumClusterTotalFrpMegawatts = 0
+        };
+
+        NotificationCriterionResult criterion = Assert.Single(
+            NotificationPolicy.ExplainMetadata(cluster, options),
+            candidate => candidate.Code.Equals(value: "cluster-total-frp", StringComparison.Ordinal));
+
+        Assert.Equal(NotificationCriterionOutcomes.Disabled, criterion.Outcome);
+        Assert.False(criterion.IsBlocking);
+    }
+
     private static NotificationVisibilityOptions DefaultVisibility() =>
         new(
             Enabled: true,
             MinimumFrpMegawatts: 50,
+            MinimumClusterTotalFrpMegawatts: 50,
             MinimumThermalContrastKelvin: 20,
             MinimumClusterDetections: 2,
             MinimumModisConfidencePercent: 60,

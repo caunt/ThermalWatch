@@ -39,7 +39,8 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("first", body.RootElement.GetProperty(propertyName: "selectedAnomalyId").GetString());
         Assert.Equal(2, body.RootElement.GetProperty(propertyName: "detectionCount").GetInt32());
-        Assert.Equal(7, body.RootElement.GetProperty(propertyName: "criteria").GetArrayLength());
+        Assert.Equal(300, body.RootElement.GetProperty(propertyName: "totalFrpMegawatts").GetDouble());
+        Assert.Equal(8, body.RootElement.GetProperty(propertyName: "criteria").GetArrayLength());
         Assert.True(body.RootElement.GetProperty(propertyName: "isEligible").GetBoolean());
         JsonElement nearbyFeature = Assert.Single(
             body.RootElement.GetProperty(propertyName: "nearbyFeatures").EnumerateArray());
@@ -91,6 +92,8 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
         Assert.Equal("VIIRS_SNPP_NRT", cluster.GetProperty(propertyName: "source").GetString());
         Assert.Equal(50, cluster.GetProperty(propertyName: "latitude").GetDouble());
         Assert.Equal(30.02, cluster.GetProperty(propertyName: "longitude").GetDouble());
+        Assert.Equal(200, cluster.GetProperty(propertyName: "frpMegawatts").GetDouble());
+        Assert.Equal(300, cluster.GetProperty(propertyName: "totalFrpMegawatts").GetDouble());
         Assert.Equal(2, cluster.GetProperty(propertyName: "detectionCount").GetInt32());
     }
 
@@ -194,6 +197,7 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
             new(
                 Enabled: true,
                 MinimumFrpMegawatts: 50,
+                MinimumClusterTotalFrpMegawatts: 50,
                 MinimumThermalContrastKelvin: 20,
                 MinimumClusterDetections: 2,
                 MinimumModisConfidencePercent: 60,

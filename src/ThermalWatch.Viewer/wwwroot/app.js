@@ -314,6 +314,7 @@
           || typeof cluster.acquiredAtUtc !== "string"
           || !Number.isFinite(new Date(cluster.acquiredAtUtc).getTime())
           || cluster.frpMegawatts !== null && !Number.isFinite(cluster.frpMegawatts)
+          || cluster.totalFrpMegawatts !== null && !Number.isFinite(cluster.totalFrpMegawatts)
           || !Number.isSafeInteger(cluster.detectionCount)
           || cluster.detectionCount <= 0
           || !Number.isFinite(cluster.clusterDiameterKilometers)
@@ -407,9 +408,9 @@
       textElement("strong", cluster.countryCode),
       textElement(
         "span",
-        cluster.frpMegawatts === null
-          ? "FRP unavailable"
-          : `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(cluster.frpMegawatts)} MW FRP`,
+        cluster.totalFrpMegawatts === null
+          ? "Total FRP unavailable"
+          : `${formatFrp(cluster.totalFrpMegawatts)} total FRP`,
         "eligible-cluster-frp"));
     button.append(
       heading,
@@ -419,7 +420,7 @@
         "eligible-cluster-context"),
       textElement(
         "span",
-        `${cluster.detectionCount} ${plural(cluster.detectionCount, "detection", "detections")} · ${formatDistance(cluster.clusterDiameterKilometers)} diameter`,
+        `${cluster.detectionCount} ${plural(cluster.detectionCount, "detection", "detections")} · ${formatDistance(cluster.clusterDiameterKilometers)} diameter · ${cluster.frpMegawatts === null ? "peak FRP unavailable" : `${formatFrp(cluster.frpMegawatts)} peak FRP`}`,
         "eligible-cluster-stats"),
       textElement(
         "span",
@@ -782,6 +783,7 @@
         || !Array.isArray(diagnostic.nearbyFeatures)
         || typeof diagnostic.clusterId !== "string"
         || typeof diagnostic.representativeId !== "string"
+        || diagnostic.totalFrpMegawatts !== null && !Number.isFinite(diagnostic.totalFrpMegawatts)
         || typeof diagnostic.isEligible !== "boolean") {
       throw new Error("The notification diagnostic response is invalid.");
     }
@@ -995,7 +997,7 @@
         `diagnostic-outcome ${diagnostic.isEligible ? "passed" : "failed"}`),
       textElement(
         "p",
-        `${diagnostic.detectionCount} ${plural(diagnostic.detectionCount, "detection", "detections")} · ${formatDistance(diagnostic.clusterDiameterKilometers)} diameter`),
+        `${diagnostic.detectionCount} ${plural(diagnostic.detectionCount, "detection", "detections")} · ${formatDistance(diagnostic.clusterDiameterKilometers)} diameter · ${diagnostic.totalFrpMegawatts === null ? "total FRP unavailable" : `${formatFrp(diagnostic.totalFrpMegawatts)} total FRP`}`),
       textElement(
         "p",
         diagnostic.representativeId === diagnostic.selectedAnomalyId
@@ -1045,6 +1047,10 @@
     return typeof value === "number" && Number.isFinite(value)
       ? `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value)} km`
       : "Unknown";
+  }
+
+  function formatFrp(value) {
+    return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} MW`;
   }
 
   function section(title) {

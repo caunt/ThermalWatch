@@ -578,6 +578,7 @@ public sealed class TelegramNotificationService(
             int insufficientDetectionsCount = summary.RejectionCount(NotificationRejectionReason.InsufficientDetections);
             int lowConfidenceCount = summary.RejectionCount(NotificationRejectionReason.LowConfidence);
             int lowFrpCount = summary.RejectionCount(NotificationRejectionReason.LowFrp);
+            int lowClusterTotalFrpCount = summary.RejectionCount(NotificationRejectionReason.LowClusterTotalFrp);
             int lowThermalContrastCount = summary.RejectionCount(NotificationRejectionReason.LowThermalContrast);
             int missingRequiredValueCount = summary.RejectionCount(NotificationRejectionReason.MissingRequiredValue);
             int previewUnavailableCount = summary.RejectionCount(NotificationRejectionReason.PreviewUnavailable);
@@ -594,6 +595,7 @@ public sealed class TelegramNotificationService(
                 insufficientDetectionsCount,
                 lowConfidenceCount,
                 lowFrpCount,
+                lowClusterTotalFrpCount,
                 lowThermalContrastCount,
                 missingRequiredValueCount,
                 previewUnavailableCount);

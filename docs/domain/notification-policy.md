@@ -27,7 +27,9 @@ Clusters can cross configured countries, FIRMS sources, and satellites. Members 
 2. Newest acquisition time.
 3. Lexically smallest anomaly ID.
 
-The cluster ID is a deterministic hash of its sorted member IDs. Preview sensor/date, filter metadata, map links, and much of the message are based on the representative, while multi-satellite and detection-count facts use all members. Because adding a member changes that hash, automatic delivery does not use cluster ID alone as the identity of an ongoing episode.
+The cluster ID is a deterministic hash of its sorted member IDs. Total cluster FRP sums every member's available finite FRP and is unavailable only when no member supplies a usable value. Members without FRP do not prevent the remaining values from contributing. Because a connected cluster can cross acquisition times, FIRMS sources, and satellites, this sum is a notification-priority heuristic rather than an instantaneous physical power measurement.
+
+Preview sensor/date, representative filters, map links, and much of the message are based on the representative, while total FRP, multi-satellite, and detection-count facts use all members. Because adding a member changes the cluster hash, automatic delivery does not use cluster ID alone as the identity of an ongoing episode.
 
 After an automatic message sends successfully, its members establish a delivered episode. A later cluster continues that episode when any new member is linked to a delivered member by the same radius and acquisition-time rule. Suppressed members extend the history, so continuity is transitive across snapshots: A linked to B and B linked to C remains one episode even if A is not linked directly to C. A cluster outside both limits can establish a new episode. The first successful message is not edited when later detections extend it.
 
@@ -39,7 +41,7 @@ On each ready snapshot:
 2. On the first ready snapshot with `NOTIFICATION_SEND_EXISTING_ON_STARTUP` disabled, apply the complete metadata, land-cover, and required-preview policy to every cluster. Record each eligible cluster as a startup incident without sending it. Leave every ineligible cluster unrecorded so later snapshots can reevaluate it.
 3. On later snapshots, suppress and extend clusters continuing a recorded startup incident without rerunning filters or imagery work.
 4. If a cluster continues an already delivered episode, suppress it and extend that episode without rerunning filters or imagery work.
-5. For every remaining cluster, apply representative metadata visibility rules, then evaluate NASA land cover for every cluster member when enabled.
+5. For every remaining cluster, apply metadata visibility rules, then evaluate NASA land cover for every cluster member when enabled.
 6. Attempt the current exact-date preview once. A missing required preview rejects the cluster for this snapshot; when previews are optional, continue with a text candidate immediately.
 7. Look up nearby mapped context around the representative and send. Only successful automatic delivery establishes a delivered episode; rejection, nearby-context failure, and send failure do not.
 
@@ -53,9 +55,10 @@ When enabled, [NotificationPolicy.cs](../../src/ThermalWatch.Core/NotificationPo
 2. Minimum cluster member count.
 3. Source-specific representative confidence: MODIS numeric percentage or ordered VIIRS low/nominal/high category.
 4. Minimum representative FRP when the configured threshold is greater than zero.
-5. Minimum representative thermal contrast when the configured threshold is greater than zero.
+5. Minimum total cluster FRP when the configured threshold is greater than zero.
+6. Minimum representative thermal contrast when the configured threshold is greater than zero.
 
-A required value that is absent rejects the candidate. Exact defaults and ranges live in [operations](../operations.md); tests should express policy edge cases rather than prose duplicating implementation branches.
+A required value that is absent rejects the candidate. For total cluster FRP, absence means every member lacks a usable FRP value; partially available clusters use the sum of their known values. Exact defaults and ranges live in [operations](../operations.md); tests should express policy edge cases rather than prose duplicating implementation branches.
 
 ## Land-cover policy
 
@@ -85,7 +88,7 @@ This list is criteria-only, not a promise that automatic delivery will send a cl
 
 Selecting an anomaly in the viewer asks the Core candidate engine to cluster every observation in the current active snapshot and find the connected component containing that anomaly. The diagnostic uses the same radius, time window, representative selection, metadata rules, land-cover policy, preview sizing, and exact-date preview client as automatic and manual candidate preparation. It also attaches nearby mapped context for the selected observation; that context remains outside eligibility criteria.
 
-The diagnostic is deliberately exhaustive: it reports daytime, detection-count, source-specific confidence, FRP, thermal-contrast, land-cover, and exact-preview outcomes even when an earlier criterion already blocks the candidate. Disabled criteria are identified explicitly. Unavailable land cover remains non-blocking because the policy fails open; an unavailable required preview blocks the current result and explains that later snapshots reevaluate the active cluster.
+The diagnostic is deliberately exhaustive: it reports daytime, detection-count, source-specific confidence, representative FRP, total cluster FRP, thermal-contrast, land-cover, and exact-preview outcomes even when an earlier criterion already blocks the candidate. Disabled criteria are identified explicitly. Unavailable land cover remains non-blocking because the policy fails open; an unavailable required preview blocks the current result and explains that later snapshots reevaluate the active cluster.
 
 This is a fresh, read-only evaluation. It neither reads nor changes startup incidents or delivered episodes. Refreshing diagnostics can therefore observe newly available GIBS data without changing later automatic or manual behavior.
 
@@ -106,7 +109,7 @@ Every successfully composed notification preview is losslessly re-encoded as a P
 - It evaluates the entire current snapshot and does not refresh FIRMS.
 - It bypasses startup-incident and delivered-episode checks without modifying automatic state or future deduplication.
 - It obtains each preview once; a required missing preview skips the candidate.
-- It ranks eligible clusters by available/highest representative FRP, member count, diameter, acquisition time, and ID, then selects the requested count.
+- It ranks eligible clusters by available/highest total FRP, then representative FRP, member count, diameter, acquisition time, and ID before selecting the requested count.
 - It looks up nearby mapped context only for those selected representatives, after ranking, so unselected eligible clusters create no Overpass traffic.
 - It serializes manual operations, sends an introductory status message, and continues after individual candidate-send failures.
 

@@ -10,5 +10,6 @@ public sealed record EligibleNotificationCluster(
     double Longitude,
     DateTimeOffset AcquiredAtUtc,
     double? FrpMegawatts,
+    double? TotalFrpMegawatts,
     int DetectionCount,
     double ClusterDiameterKilometers);

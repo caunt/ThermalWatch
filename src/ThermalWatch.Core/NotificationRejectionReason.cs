@@ -6,6 +6,7 @@ public enum NotificationRejectionReason
     InsufficientDetections,
     LowConfidence,
     LowFrp,
+    LowClusterTotalFrp,
     LowThermalContrast,
     MissingRequiredValue,
     PreviewUnavailable

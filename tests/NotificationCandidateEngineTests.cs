@@ -37,9 +37,10 @@ public sealed class NotificationCandidateEngineTests
                 TestContext.Current.CancellationToken));
 
         Assert.Equal(3, diagnostic.DetectionCount);
+        Assert.Equal(450, diagnostic.TotalFrpMegawatts);
         Assert.Equal("bridge", diagnostic.RepresentativeId);
         Assert.Equal(["bridge", "first", "last"], diagnostic.MemberIds.Order(StringComparer.Ordinal));
-        Assert.Equal(7, diagnostic.Criteria.Length);
+        Assert.Equal(8, diagnostic.Criteria.Length);
         Assert.True(diagnostic.IsEligible);
         Assert.Equal(0, handler.RequestCount);
 
@@ -127,7 +128,7 @@ public sealed class NotificationCandidateEngineTests
             CreateAnomaly(id: "low", longitude: 30, frpMegawatts: 100),
             CreateAnomaly(id: "low-context", longitude: 30.01, frpMegawatts: 90),
             CreateAnomaly(id: "highest", longitude: 31, frpMegawatts: 300),
-            CreateAnomaly(id: "highest-context", longitude: 31.01, frpMegawatts: 290),
+            CreateAnomaly(id: "highest-context", longitude: 31.01, frpMegawatts: 10),
             CreateAnomaly(id: "middle", longitude: 32, frpMegawatts: 200),
             CreateAnomaly(id: "middle-context", longitude: 32.01, frpMegawatts: 190));
 
@@ -138,7 +139,7 @@ public sealed class NotificationCandidateEngineTests
 
         Assert.Single(manual.SelectedCandidates);
         string manualQuery = Assert.Single(manualNearby.Queries);
-        Assert.Contains("around:2000,50.000000,31.000000", manualQuery, StringComparison.Ordinal);
+        Assert.Contains("around:2000,50.000000,32.000000", manualQuery, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -157,7 +158,7 @@ public sealed class NotificationCandidateEngineTests
             CreateAnomaly(id: "low", longitude: 30, frpMegawatts: 100),
             CreateAnomaly(id: "low-context", longitude: 30.01, frpMegawatts: 90),
             CreateAnomaly(id: "highest", longitude: 31, frpMegawatts: 300),
-            CreateAnomaly(id: "highest-context", longitude: 31.01, frpMegawatts: 290),
+            CreateAnomaly(id: "highest-context", longitude: 31.01, frpMegawatts: 10),
             CreateAnomaly(id: "middle", longitude: 32, frpMegawatts: 200),
             CreateAnomaly(id: "middle-context", longitude: 32.01, frpMegawatts: 190),
             CreateAnomaly(id: "filtered-singleton", longitude: 33, frpMegawatts: 500));
@@ -169,13 +170,15 @@ public sealed class NotificationCandidateEngineTests
         Assert.Equal(snapshot.GeneratedAtUtc, result.SnapshotGeneratedAtUtc);
         Assert.Equal(4, result.EvaluatedClusterCount);
         Assert.Equal(3, result.EligibleClusterCount);
-        Assert.Equal(["highest", "middle", "low"], result.Clusters.Select(cluster => cluster.RepresentativeId));
+        Assert.Equal(["middle", "highest", "low"], result.Clusters.Select(cluster => cluster.RepresentativeId));
         EligibleNotificationCluster first = result.Clusters[0];
         Assert.Equal("RUS", first.CountryCode);
         Assert.Equal("VIIRS_SNPP_NRT", first.Source);
         Assert.Equal("N", first.Satellite);
         Assert.Equal(50, first.Latitude);
-        Assert.Equal(31, first.Longitude);
+        Assert.Equal(32, first.Longitude);
+        Assert.Equal(200, first.FrpMegawatts);
+        Assert.Equal(390, first.TotalFrpMegawatts);
         Assert.Equal(2, first.DetectionCount);
         Assert.True(first.ClusterDiameterKilometers > 0);
         Assert.Equal(0, gibsHandler.RequestCount);
@@ -545,6 +548,7 @@ public sealed class NotificationCandidateEngineTests
             new(
                 Enabled: true,
                 MinimumFrpMegawatts: 50,
+                MinimumClusterTotalFrpMegawatts: 50,
                 MinimumThermalContrastKelvin: 20,
                 MinimumClusterDetections: 2,
                 MinimumModisConfidencePercent: 60,

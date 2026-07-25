@@ -85,7 +85,7 @@ internal static partial class TelegramNotificationLog
     internal static partial void CommentFailed(ILogger logger, string clusterId);
 
     [LoggerMessage(EventId = 22, Level = LogLevel.Information,
-        Message = "Notification policy processed {ActiveClusterCount} active clusters; evaluated {EvaluatedClusterCount}; delivered {DeliveredClusterCount}; rejected {RejectedClusterCount}; startup incidents suppressed {StartupSuppressedIncidentCount}; duplicate delivered episodes {DuplicateEpisodeCount}; send failures {SendFailureCount}. Rejections: nighttime {NighttimeCount}; insufficient detections {InsufficientDetectionsCount}; low confidence {LowConfidenceCount}; low FRP {LowFrpCount}; low thermal contrast {LowThermalContrastCount}; missing required value {MissingRequiredValueCount}; preview unavailable {PreviewUnavailableCount}")]
+        Message = "Notification policy processed {ActiveClusterCount} active clusters; evaluated {EvaluatedClusterCount}; delivered {DeliveredClusterCount}; rejected {RejectedClusterCount}; startup incidents suppressed {StartupSuppressedIncidentCount}; duplicate delivered episodes {DuplicateEpisodeCount}; send failures {SendFailureCount}. Rejections: nighttime {NighttimeCount}; insufficient detections {InsufficientDetectionsCount}; low confidence {LowConfidenceCount}; low FRP {LowFrpCount}; low total FRP {LowClusterTotalFrpCount}; low thermal contrast {LowThermalContrastCount}; missing required value {MissingRequiredValueCount}; preview unavailable {PreviewUnavailableCount}")]
     internal static partial void VisibilitySummary(
         ILogger logger,
         int activeClusterCount,
@@ -99,6 +99,7 @@ internal static partial class TelegramNotificationLog
         int insufficientDetectionsCount,
         int lowConfidenceCount,
         int lowFrpCount,
+        int lowClusterTotalFrpCount,
         int lowThermalContrastCount,
         int missingRequiredValueCount,
         int previewUnavailableCount);

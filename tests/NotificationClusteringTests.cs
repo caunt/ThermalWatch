@@ -63,6 +63,58 @@ public sealed class NotificationClusteringTests
     }
 
     [Fact]
+    public void ClusterTotalFrpSumsEveryAvailableMemberValue()
+    {
+        Anomaly first = CreateAnomaly(
+            id: "first",
+            s_observedAt,
+            latitude: 50,
+            longitude: 30,
+            frpMegawatts: 20);
+        Anomaly missing = CreateAnomaly(
+            id: "missing",
+            s_observedAt.AddMinutes(minutes: 1),
+            latitude: 50.01,
+            longitude: 30.01,
+            frpMegawatts: null);
+        Anomaly last = CreateAnomaly(
+            id: "last",
+            s_observedAt.AddMinutes(minutes: 2),
+            latitude: 50.02,
+            longitude: 30.02,
+            frpMegawatts: 30);
+        Anomaly nonFinite = CreateAnomaly(
+            id: "non-finite",
+            s_observedAt.AddMinutes(minutes: 3),
+            latitude: 50.03,
+            longitude: 30.03,
+            frpMegawatts: double.PositiveInfinity);
+
+        NotificationCluster cluster = Assert.Single(NotificationClustering.Create(
+            [first, missing, last, nonFinite],
+            radiusKilometers: 5,
+            timeWindow: TimeSpan.FromMinutes(minutes: 90)));
+
+        Assert.Equal(50, cluster.TotalFrpMegawatts);
+    }
+
+    [Fact]
+    public void ClusterTotalFrpIsUnavailableWithoutAnAvailableMemberValue()
+    {
+        NotificationCluster cluster = Assert.Single(NotificationClustering.Create(
+            [CreateAnomaly(
+                id: "missing",
+                s_observedAt,
+                latitude: 50,
+                longitude: 30,
+                frpMegawatts: null)],
+            radiusKilometers: 5,
+            timeWindow: TimeSpan.FromMinutes(minutes: 90)));
+
+        Assert.Null(cluster.TotalFrpMegawatts);
+    }
+
+    [Fact]
     public void CreateReturnsUnrelatedActiveDetectionsAsSeparateClusters()
     {
         Anomaly first = CreateAnomaly(
@@ -155,7 +207,7 @@ public sealed class NotificationClusteringTests
         DateTimeOffset acquiredAtUtc,
         double latitude,
         double longitude,
-        double frpMegawatts = 100) =>
+        double? frpMegawatts = 100) =>
         new(
             id,
             CountryCode: "UKR",

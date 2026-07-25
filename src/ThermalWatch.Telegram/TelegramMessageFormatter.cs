@@ -109,6 +109,8 @@ public static class TelegramMessageFormatter
             sensor.Add($"🎯 <b>Confidence:</b> {Html(confidence)}");
 
         var metrics = new List<string>();
+        if (FormatNumber(data.TotalFrpMegawatts) is { } totalFrp)
+            metrics.Add($"⚡ <b>Total FRP:</b> {Html(totalFrp)} MW");
         if (FormatNumber(representative.FrpMegawatts) is { } frp)
             metrics.Add($"⚡ <b>FRP:</b> {Html(frp)} MW");
         if (FormatSignedNumber(representative.ThermalContrastKelvin) is { } contrast)
@@ -149,6 +151,8 @@ public static class TelegramMessageFormatter
         };
 
         var metrics = new List<string>();
+        if (FormatNumber(data.TotalFrpMegawatts) is { } totalFrp)
+            metrics.Add($"⚡ <b>Total FRP:</b> {Html(totalFrp)} MW");
         if (FormatNumber(data.PeakFrpMegawatts) is { } frp)
             metrics.Add($"⚡ <b>Peak FRP:</b> {Html(frp)} MW");
         if (FormatSignedNumber(data.PeakThermalContrastKelvin) is { } contrast)
@@ -192,6 +196,7 @@ public static class TelegramMessageFormatter
                 .OrderByDescending(member => member.AcquiredAtUtc)
                 .ThenBy(member => member.Id, StringComparer.Ordinal)
                 .First(),
+            cluster.TotalFrpMegawatts,
             MaximumAvailable(cluster.Members.Select(member => member.FrpMegawatts)),
             MaximumAvailable(cluster.Members.Select(member => member.ThermalContrastKelvin)),
             preview.IsAvailable,
@@ -422,6 +427,7 @@ public static class TelegramMessageFormatter
         string[] Satellites,
         string[] Sources,
         Anomaly LatestAnomaly,
+        double? TotalFrpMegawatts,
         double? PeakFrpMegawatts,
         double? PeakThermalContrastKelvin,
         bool HasPreview,

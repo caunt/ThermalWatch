@@ -100,6 +100,7 @@ public sealed class TelegramMessageFormatterTests
             📡 <b>Source:</b> <code>VIIRS_SNPP_NRT</code>
             🎯 <b>Confidence:</b> Nominal
 
+            ⚡ <b>Total FRP:</b> 180 MW
             ⚡ <b>FRP:</b> 100 MW
             🌡 <b>Thermal contrast:</b> +30 K
             🔎 <b>Detections:</b> 2
@@ -179,6 +180,7 @@ public sealed class TelegramMessageFormatterTests
 
             📡 <b>Feeds:</b> <code>VIIRS_NOAA20_NRT; VIIRS_SNPP_NRT</code>
 
+            ⚡ <b>Total FRP:</b> 220 MW
             ⚡ <b>Peak FRP:</b> 120 MW
             🌡 <b>Peak contrast:</b> +35 K
             🔎 <b>Detections:</b> 2

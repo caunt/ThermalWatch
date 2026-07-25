@@ -27,6 +27,12 @@ public static class NotificationPolicy
             return frpResult;
         }
 
+        if (options.MinimumClusterTotalFrpMegawatts > 0
+            && EvaluateClusterTotalFrp(cluster, options) is { IsEligible: false } totalFrpResult)
+        {
+            return totalFrpResult;
+        }
+
         if (options.MinimumThermalContrastKelvin > 0
             && EvaluateThermalContrast(cluster.Representative, options) is { IsEligible: false } thermalContrastResult)
         {
@@ -48,6 +54,7 @@ public static class NotificationPolicy
                 NotificationCriterionResult.Disabled(code: "cluster-detections", label: "Cluster detections"),
                 NotificationCriterionResult.Disabled(code: "confidence", label: "Representative confidence"),
                 NotificationCriterionResult.Disabled(code: "frp", label: "Representative FRP"),
+                NotificationCriterionResult.Disabled(code: "cluster-total-frp", label: "Total cluster FRP"),
                 NotificationCriterionResult.Disabled(code: "thermal-contrast", label: "Thermal contrast")
             ];
         }
@@ -59,6 +66,7 @@ public static class NotificationPolicy
             ExplainDetectionCount(cluster, options),
             ExplainConfidence(representative, options),
             ExplainFrp(representative, options),
+            ExplainClusterTotalFrp(cluster, options),
             ExplainThermalContrast(representative, options)
         ];
     }
@@ -111,6 +119,14 @@ public static class NotificationPolicy
             anomaly.FrpMegawatts,
             options.MinimumFrpMegawatts,
             NotificationRejectionReason.LowFrp);
+
+    private static NotificationMetadataEvaluation EvaluateClusterTotalFrp(
+        NotificationCluster cluster,
+        NotificationVisibilityOptions options) =>
+        EvaluateMinimumRequiredValue(
+            cluster.TotalFrpMegawatts,
+            options.MinimumClusterTotalFrpMegawatts,
+            NotificationRejectionReason.LowClusterTotalFrp);
 
     private static NotificationMetadataEvaluation EvaluateThermalContrast(
         Anomaly anomaly,
@@ -237,6 +253,29 @@ public static class NotificationPolicy
                 : passed
                     ? "The representative meets the FRP threshold."
                     : "The representative is below the FRP threshold.");
+    }
+
+    private static NotificationCriterionResult ExplainClusterTotalFrp(
+        NotificationCluster cluster,
+        NotificationVisibilityOptions options)
+    {
+        if (options.MinimumClusterTotalFrpMegawatts == 0)
+            return NotificationCriterionResult.Disabled(code: "cluster-total-frp", label: "Total cluster FRP");
+
+        bool passed = EvaluateClusterTotalFrp(cluster, options).IsEligible;
+        return Criterion(
+            code: "cluster-total-frp",
+            label: "Total cluster FRP",
+            passed,
+            actualValue: cluster.TotalFrpMegawatts is { } value
+                ? $"{FormatNumber(value)} MW"
+                : "Not available",
+            requirement: $"At least {FormatNumber(options.MinimumClusterTotalFrpMegawatts)} MW",
+            explanation: cluster.TotalFrpMegawatts is null
+                ? "No cluster member contains an available FRP value."
+                : passed
+                    ? "The sum of available member FRP values meets the threshold."
+                    : "The sum of available member FRP values is below the threshold.");
     }
 
     private static NotificationCriterionResult ExplainThermalContrast(

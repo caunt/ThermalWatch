@@ -227,7 +227,8 @@ public sealed class NotificationCandidateEngine(
         [
             .. OrderByNotificationPriority(
                     candidates: eligibleCandidates,
-                    frpSelector: static candidate => candidate.Cluster.Representative.FrpMegawatts,
+                    totalFrpSelector: static candidate => candidate.Cluster.TotalFrpMegawatts,
+                    peakFrpSelector: static candidate => candidate.Cluster.Representative.FrpMegawatts,
                     detectionCountSelector: static candidate => candidate.Cluster.Members.Length,
                     diameterSelector: static candidate => candidate.PreviewSelection.ClusterDiameterKilometers,
                     acquisitionSelector: static candidate => candidate.Cluster.Representative.AcquiredAtUtc,
@@ -289,6 +290,7 @@ public sealed class NotificationCandidateEngine(
                 representative.Longitude,
                 representative.AcquiredAtUtc,
                 representative.FrpMegawatts,
+                cluster.TotalFrpMegawatts,
                 cluster.Members.Length,
                 previewSelection.ClusterDiameterKilometers));
         }
@@ -297,7 +299,8 @@ public sealed class NotificationCandidateEngine(
         [
             .. OrderByNotificationPriority(
                 candidates: eligible,
-                frpSelector: static candidate => candidate.FrpMegawatts,
+                totalFrpSelector: static candidate => candidate.TotalFrpMegawatts,
+                peakFrpSelector: static candidate => candidate.FrpMegawatts,
                 detectionCountSelector: static candidate => candidate.DetectionCount,
                 diameterSelector: static candidate => candidate.ClusterDiameterKilometers,
                 acquisitionSelector: static candidate => candidate.AcquiredAtUtc,
@@ -369,6 +372,7 @@ public sealed class NotificationCandidateEngine(
             [.. cluster.Members.Select(member => member.Id)],
             cluster.Members.Length,
             previewSelection.ClusterDiameterKilometers,
+            cluster.TotalFrpMegawatts,
             IsEligible: !criterionResults.Any(criterion => criterion.IsBlocking),
             criterionResults,
             previewBaseSource,
@@ -398,14 +402,17 @@ public sealed class NotificationCandidateEngine(
 
     private static IOrderedEnumerable<candidateType> OrderByNotificationPriority<candidateType>(
         IEnumerable<candidateType> candidates,
-        Func<candidateType, double?> frpSelector,
+        Func<candidateType, double?> totalFrpSelector,
+        Func<candidateType, double?> peakFrpSelector,
         Func<candidateType, int> detectionCountSelector,
         Func<candidateType, double> diameterSelector,
         Func<candidateType, DateTimeOffset> acquisitionSelector,
         Func<candidateType, string> clusterIdSelector) =>
         candidates
-            .OrderByDescending(candidate => frpSelector(candidate).HasValue)
-            .ThenByDescending(frpSelector)
+            .OrderByDescending(candidate => totalFrpSelector(candidate).HasValue)
+            .ThenByDescending(totalFrpSelector)
+            .ThenByDescending(candidate => peakFrpSelector(candidate).HasValue)
+            .ThenByDescending(peakFrpSelector)
             .ThenByDescending(detectionCountSelector)
             .ThenByDescending(diameterSelector)
             .ThenByDescending(acquisitionSelector)

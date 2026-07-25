@@ -28,6 +28,7 @@ public sealed class NotificationOptionsTests
         "NOTIFICATION_KEEP_MULTI_SATELLITE_VEGETATION",
         "NOTIFICATION_VISIBILITY_FILTER_ENABLED",
         "NOTIFICATION_MIN_FRP_MW",
+        "NOTIFICATION_MIN_CLUSTER_TOTAL_FRP_MW",
         "NOTIFICATION_MIN_THERMAL_CONTRAST_K",
         "NOTIFICATION_MIN_CLUSTER_DETECTIONS",
         "NOTIFICATION_MIN_MODIS_CONFIDENCE_PERCENT",
@@ -69,6 +70,28 @@ public sealed class NotificationOptionsTests
         Assert.Equal(300, options.LandCover.VegetationMaximumFrpMegawatts);
         Assert.False(options.LandCover.KeepHighFrpVegetation);
         Assert.False(options.LandCover.KeepMultiSatelliteVegetation);
+    }
+
+    [Fact]
+    public void FromEnvironmentUsesBothFiftyMegawattFrpDefaults()
+    {
+        NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(_ => null);
+
+        Assert.Equal(50, options.Visibility.MinimumFrpMegawatts);
+        Assert.Equal(50, options.Visibility.MinimumClusterTotalFrpMegawatts);
+    }
+
+    [Theory]
+    [InlineData("0", 0)]
+    [InlineData("125.5", 125.5)]
+    public void FromEnvironmentReadsMinimumClusterTotalFrp(string configured, double expected)
+    {
+        NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(name =>
+            name.Equals(value: "NOTIFICATION_MIN_CLUSTER_TOTAL_FRP_MW", StringComparison.Ordinal)
+                ? configured
+                : null);
+
+        Assert.Equal(expected, options.Visibility.MinimumClusterTotalFrpMegawatts);
     }
 
     [Fact]
