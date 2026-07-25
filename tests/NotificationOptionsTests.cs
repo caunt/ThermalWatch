@@ -73,12 +73,25 @@ public sealed class NotificationOptionsTests
     }
 
     [Fact]
-    public void FromEnvironmentUsesBothFiftyMegawattFrpDefaults()
+    public void FromEnvironmentDisablesRepresentativeFrpAndKeepsFiftyMegawattClusterTotalDefault()
     {
         NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(_ => null);
 
-        Assert.Equal(50, options.Visibility.MinimumFrpMegawatts);
+        Assert.Equal(0, options.Visibility.MinimumFrpMegawatts);
         Assert.Equal(50, options.Visibility.MinimumClusterTotalFrpMegawatts);
+    }
+
+    [Theory]
+    [InlineData("0", 0)]
+    [InlineData("125.5", 125.5)]
+    public void FromEnvironmentReadsMinimumRepresentativeFrp(string configured, double expected)
+    {
+        NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(name =>
+            name.Equals(value: "NOTIFICATION_MIN_FRP_MW", StringComparison.Ordinal)
+                ? configured
+                : null);
+
+        Assert.Equal(expected, options.Visibility.MinimumFrpMegawatts);
     }
 
     [Fact]

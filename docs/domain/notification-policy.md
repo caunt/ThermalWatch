@@ -60,6 +60,8 @@ When enabled, [NotificationPolicy.cs](../../src/ThermalWatch.Core/NotificationPo
 
 A daytime pass is not required by default. Set `NOTIFICATION_REQUIRE_DAYTIME=true` to reject clusters whose representative is not from a daytime pass; disabling the criterion still permits nighttime preview selection and pass-matched imagery.
 
+Of the two FRP criteria, only total cluster FRP is enabled by default. Representative FRP defaults to zero, which disables that criterion; set `NOTIFICATION_MIN_FRP_MW` to a positive threshold to opt in.
+
 A required value that is absent rejects the candidate. For total cluster FRP, absence means every member lacks a usable FRP value; partially available clusters use the sum of their known values. Exact defaults and ranges live in [operations](../operations.md); tests should express policy edge cases rather than prose duplicating implementation branches.
 
 ## Land-cover policy

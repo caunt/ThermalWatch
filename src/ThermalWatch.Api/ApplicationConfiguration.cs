@@ -85,7 +85,7 @@ public sealed record ApplicationConfiguration(
                 ParseBool(get, name: "NOTIFICATION_KEEP_MULTI_SATELLITE_VEGETATION", defaultValue: false)),
             new(
                 ParseBool(get, name: "NOTIFICATION_VISIBILITY_FILTER_ENABLED", defaultValue: true),
-                ParseNonNegativeDouble(get, name: "NOTIFICATION_MIN_FRP_MW", defaultValue: 50),
+                ParseNonNegativeDouble(get, name: "NOTIFICATION_MIN_FRP_MW", defaultValue: 0),
                 ParseNonNegativeDouble(get, name: "NOTIFICATION_MIN_CLUSTER_TOTAL_FRP_MW", defaultValue: 50),
                 ParseNonNegativeDouble(get, name: "NOTIFICATION_MIN_THERMAL_CONTRAST_K", defaultValue: 20),
                 ParsePositiveInt(get, name: "NOTIFICATION_MIN_CLUSTER_DETECTIONS", defaultValue: 2),
