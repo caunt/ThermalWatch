@@ -81,6 +81,25 @@ public sealed class NotificationOptionsTests
         Assert.Equal(50, options.Visibility.MinimumClusterTotalFrpMegawatts);
     }
 
+    [Fact]
+    public void FromEnvironmentDisablesDaytimeRequirementByDefault()
+    {
+        NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(_ => null);
+
+        Assert.False(options.Visibility.RequireDaytime);
+    }
+
+    [Fact]
+    public void FromEnvironmentCanRequireDaytime()
+    {
+        NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(name =>
+            name.Equals(value: "NOTIFICATION_REQUIRE_DAYTIME", StringComparison.Ordinal)
+                ? "true"
+                : null);
+
+        Assert.True(options.Visibility.RequireDaytime);
+    }
+
     [Theory]
     [InlineData("0", 0)]
     [InlineData("125.5", 125.5)]

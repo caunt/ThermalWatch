@@ -91,7 +91,7 @@ public sealed record ApplicationConfiguration(
                 ParsePositiveInt(get, name: "NOTIFICATION_MIN_CLUSTER_DETECTIONS", defaultValue: 2),
                 ParseDouble(get, name: "NOTIFICATION_MIN_MODIS_CONFIDENCE_PERCENT", defaultValue: 60, minimum: 0, maximum: 100),
                 ParseViirsConfidence(get),
-                ParseBool(get, name: "NOTIFICATION_REQUIRE_DAYTIME", defaultValue: true),
+                ParseBool(get, name: "NOTIFICATION_REQUIRE_DAYTIME", defaultValue: false),
                 ParseBool(get, name: "NOTIFICATION_REQUIRE_PREVIEW", defaultValue: true)));
 
     private static ImmutableArray<string> ParseCountryCodes(string value)

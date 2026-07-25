@@ -58,6 +58,8 @@ When enabled, [NotificationPolicy.cs](../../src/ThermalWatch.Core/NotificationPo
 5. Minimum total cluster FRP when the configured threshold is greater than zero.
 6. Minimum representative thermal contrast when the configured threshold is greater than zero.
 
+A daytime pass is not required by default. Set `NOTIFICATION_REQUIRE_DAYTIME=true` to reject clusters whose representative is not from a daytime pass; disabling the criterion still permits nighttime preview selection and pass-matched imagery.
+
 A required value that is absent rejects the candidate. For total cluster FRP, absence means every member lacks a usable FRP value; partially available clusters use the sum of their known values. Exact defaults and ranges live in [operations](../operations.md); tests should express policy edge cases rather than prose duplicating implementation branches.
 
 ## Land-cover policy
