@@ -85,7 +85,7 @@ public sealed partial class NearbyFeatureClient(
     {
         string query = string.Create(
             CultureInfo.InvariantCulture,
-            handler: $"[out:json][timeout:10];nwr(around:{RadiusMeters},{latitude:0.000000},{longitude:0.000000})[\"name\"][!\"highway\"];out center;");
+            handler: $"[out:json][timeout:10];nwr(around:{RadiusMeters},{latitude:0.000000},{longitude:0.000000})[\"name\"][!\"highway\"][\"type\"!=\"public_transport\"];out center;");
         using var request = new HttpRequestMessage(HttpMethod.Post, requestUri: "interpreter")
         {
             Content = new FormUrlEncodedContent([new(key: "data", value: query)])

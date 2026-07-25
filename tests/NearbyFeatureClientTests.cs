@@ -11,7 +11,7 @@ namespace ThermalWatch.Tests;
 public sealed class NearbyFeatureClientTests
 {
     [Fact]
-    public async Task FindNearbyAsyncQueriesNamedNonHighwayFeaturesSortsByDistanceAndClampsToFive()
+    public async Task FindNearbyAsyncQueriesFilteredNamedFeaturesSortsByDistanceAndClampsToFive()
     {
         const string responseJson = """
             {
@@ -46,7 +46,7 @@ public sealed class NearbyFeatureClientTests
         Assert.Equal(HttpMethod.Post, handler.Method);
         Assert.Equal("https://overpass.example.test/api/interpreter", handler.RequestUri?.AbsoluteUri);
         Assert.Equal(
-            "[out:json][timeout:10];nwr(around:2000,0.000000,0.000000)[\"name\"][!\"highway\"];out center;",
+            "[out:json][timeout:10];nwr(around:2000,0.000000,0.000000)[\"name\"][!\"highway\"][\"type\"!=\"public_transport\"];out center;",
             DecodeQuery(handler.RequestBody));
     }
 
