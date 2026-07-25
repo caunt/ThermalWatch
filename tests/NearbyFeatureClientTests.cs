@@ -11,18 +11,18 @@ namespace ThermalWatch.Tests;
 public sealed class NearbyFeatureClientTests
 {
     [Fact]
-    public async Task FindNearbyAsyncQueriesFilteredNamedFeaturesSortsAndAppliesCallerLimit()
+    public async Task FindNearbyAsyncQueriesFilteredNamedFeaturesRanksByTagCountAndAppliesCallerLimit()
     {
         const string responseJson = """
             {
               "elements": [
-                { "type": "node", "id": 1, "lat": 0, "lon": 0.008, "tags": { "name": "Fourth" } },
-                { "type": "way", "id": 2, "center": { "lat": 0, "lon": 0.002 }, "tags": { "name": "First" } },
-                { "type": "relation", "id": 3, "center": { "lat": 0, "lon": 0.004 }, "tags": { "name": "Second" } },
-                { "type": "node", "id": 4, "lat": 0, "lon": 0.006, "tags": { "name": "Third" } },
-                { "type": "node", "id": 5, "lat": 0, "lon": 0.010, "tags": { "name": "Fifth" } },
-                { "type": "node", "id": 6, "lat": 0, "lon": 0.012, "tags": { "name": "Sixth" } },
-                { "type": "node", "id": 7, "lat": 0, "lon": 0.014, "tags": { "name": "Seventh" } },
+                { "type": "node", "id": 1, "lat": 0, "lon": 0.008, "tags": { "name": "Most tagged", "man_made": "works", "industrial": "oil", "operator": "Operator", "website": "https://example.test" } },
+                { "type": "way", "id": 2, "center": { "lat": 0, "lon": 0.002 }, "tags": { "name": "Nearest" } },
+                { "type": "relation", "id": 3, "center": { "lat": 0, "lon": 0.004 }, "tags": { "name": "Four tags", "landuse": "industrial", "operator": "Operator", "source": "survey" } },
+                { "type": "node", "id": 4, "lat": 0, "lon": 0.006, "tags": { "name": "Three tags", "man_made": "works", "product": "cement" } },
+                { "type": "node", "id": 5, "lat": 0, "lon": 0.010, "tags": { "name": "Two tags nearer", "industrial": "warehouse" } },
+                { "type": "node", "id": 6, "lat": 0, "lon": 0.012, "tags": { "name": "Two tags farther", "industrial": "warehouse" } },
+                { "type": "node", "id": 7, "lat": 0, "lon": 0.014, "tags": { "name": "One tag farther" } },
                 { "type": "node", "id": 8, "lat": 0, "lon": 0.030, "tags": { "name": "Outside" } },
                 { "type": "way", "id": 9, "tags": { "name": "No center" } },
                 { "type": "node", "id": 10, "lat": 0, "lon": 0.001, "tags": {} }
@@ -42,13 +42,13 @@ public sealed class NearbyFeatureClientTests
             maximumResults: 25,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal([2, 3, 4, 1, 5], features.Select(feature => feature.OsmId));
-        Assert.Equal([2, 3, 4, 1, 5, 6, 7], expanded.Select(feature => feature.OsmId));
+        Assert.Equal([1, 3, 4, 5, 6], features.Select(feature => feature.OsmId));
+        Assert.Equal([1, 3, 4, 5, 6, 2, 7], expanded.Select(feature => feature.OsmId));
         NearbyFeature first = features[0];
-        Assert.Equal("way", first.OsmType);
-        Assert.Equal("First", first.Name);
-        Assert.Equal("https://www.openstreetmap.org/way/2", first.OpenStreetMapUrl);
-        Assert.InRange(first.DistanceKilometers, low: 0.22, high: 0.23);
+        Assert.Equal("node", first.OsmType);
+        Assert.Equal("Most tagged", first.Name);
+        Assert.Equal("https://www.openstreetmap.org/node/1", first.OpenStreetMapUrl);
+        Assert.InRange(first.DistanceKilometers, low: 0.88, high: 0.90);
         Assert.Equal(HttpMethod.Post, handler.Method);
         Assert.Equal("https://overpass.example.test/api/interpreter", handler.RequestUri?.AbsoluteUri);
         Assert.Equal(1, handler.RequestCount);
@@ -103,7 +103,7 @@ public sealed class NearbyFeatureClientTests
             maximumResults: 5,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal([3, 4, 5, 6, 7], features.Select(feature => feature.OsmId));
+        Assert.Equal([4, 3, 5, 6, 7], features.Select(feature => feature.OsmId));
     }
 
     [Theory]

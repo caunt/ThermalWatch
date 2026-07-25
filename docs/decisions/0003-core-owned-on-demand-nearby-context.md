@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded
 
 ## Context
 
@@ -57,4 +57,4 @@ Provider requests are globally serialized and bounded. HTTP, transport, timeout,
 ## Supersedes / Superseded by
 
 - Supersedes: None.
-- Superseded by: None.
+- Superseded by: [0007](0007-rank-nearby-context-by-osm-tag-count.md)

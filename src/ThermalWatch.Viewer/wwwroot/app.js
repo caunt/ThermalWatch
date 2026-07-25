@@ -926,7 +926,7 @@
     const nearbySection = section("Possible nearby sources");
     nearbySection.append(textElement(
       "p",
-      "Named OpenStreetMap features within 2 km of the selected anomaly, nearest first.",
+      "Named OpenStreetMap features within 2 km of the selected anomaly, with more tags first and distance breaking ties.",
       "details-subtitle"));
     const list = document.createElement("ul");
     list.className = "nearby-feature-list";

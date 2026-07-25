@@ -131,14 +131,14 @@ public sealed partial class NearbyFeatureClient(
             throw new JsonException(message: "The Overpass response does not contain an elements array.");
         }
 
-        var features = new List<NearbyFeature>();
+        var features = new List<(NearbyFeature Feature, int TagCount)>();
         var identities = new HashSet<(string Type, long Id)>();
         foreach (JsonElement element in elements.EnumerateArray())
         {
             if (!TryReadIdentity(element, out string? osmType, out long osmId)
                 || HasBlacklistedTag(element)
                 || !identities.Add((osmType, osmId))
-                || !TryReadName(element, out string? name)
+                || !TryReadName(element, out string? name, out int tagCount)
                 || !TryReadCoordinates(element, osmType, out double latitude, out double longitude))
             {
                 continue;
@@ -152,23 +152,27 @@ public sealed partial class NearbyFeatureClient(
             if (distanceKilometers > RadiusKilometers + DistanceToleranceKilometers)
                 continue;
 
-            features.Add(new(
-                osmType,
-                osmId,
-                name,
-                latitude,
-                longitude,
-                distanceKilometers,
-                OpenStreetMapUrl: $"https://www.openstreetmap.org/{osmType}/{osmId.ToString(CultureInfo.InvariantCulture)}"));
+            features.Add((
+                Feature: new(
+                    osmType,
+                    osmId,
+                    name,
+                    latitude,
+                    longitude,
+                    distanceKilometers,
+                    OpenStreetMapUrl: $"https://www.openstreetmap.org/{osmType}/{osmId.ToString(CultureInfo.InvariantCulture)}"),
+                TagCount: tagCount));
         }
 
         return
         [
             .. features
-                .OrderBy(feature => feature.DistanceKilometers)
-                .ThenBy(feature => feature.OsmType, StringComparer.Ordinal)
-                .ThenBy(feature => feature.OsmId)
+                .OrderByDescending(result => result.TagCount)
+                .ThenBy(result => result.Feature.DistanceKilometers)
+                .ThenBy(result => result.Feature.OsmType, StringComparer.Ordinal)
+                .ThenBy(result => result.Feature.OsmId)
                 .Take(MaximumCachedResults)
+                .Select(result => result.Feature)
         ];
     }
 
@@ -221,9 +225,10 @@ public sealed partial class NearbyFeatureClient(
         return true;
     }
 
-    private static bool TryReadName(JsonElement element, out string name)
+    private static bool TryReadName(JsonElement element, out string name, out int tagCount)
     {
         name = string.Empty;
+        tagCount = 0;
         if (!element.TryGetProperty(propertyName: "tags", out JsonElement tags)
             || tags.ValueKind != JsonValueKind.Object
             || !tags.TryGetProperty(propertyName: "name", out JsonElement nameElement)
@@ -234,6 +239,7 @@ public sealed partial class NearbyFeatureClient(
         }
 
         name = nameElement.GetString()!.Trim();
+        tagCount = tags.EnumerateObject().Count();
         return true;
     }
 

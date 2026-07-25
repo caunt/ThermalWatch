@@ -37,7 +37,7 @@ Messages use Telegram HTML without reply markup. Every channel post uses one com
 
 The linked-discussion comment holds the sensor detail. Both variants show available total cluster FRP while retaining the existing representative or peak FRP. A single-satellite comment also uses representative satellite, source, confidence, thermal contrast, detection count, and preview detail. A multi-satellite comment also uses confirmation count, satellites, feeds, peak contrast, detection count, land-cover summary, and preview detail. Preview wording names its contextual base and representative thermal overlay rather than claiming sensor-matched imagery when Core used a fallback base. These values arrive as prepared Core data; Telegram does not recalculate eligibility or call Overpass.
 
-When Core supplies one or more nearby features, “Possible nearby sources” appears in the channel post before its diameter and renders every result as a distance-first monospace line using the fixed `0.00 km` form. Empty or unavailable lookups add no section. Progressive compaction shortens names while retaining all five bounded results within the photo-caption limit.
+When Core supplies one or more nearby features, “Possible nearby sources” appears in the channel post before its diameter and preserves Core's descending OSM-tag-count order, with distance breaking equal-count ties. Every result remains a distance-first monospace line using the fixed `0.00 km` form. Empty or unavailable lookups add no section. Progressive compaction shortens names while retaining all five bounded results within the photo-caption limit.
 
 ## Manual send path
 
