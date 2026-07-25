@@ -14,7 +14,7 @@ Add the sum of available member fire radiative power to notification clusters. O
 - [x] Expose total FRP through candidate ordering, Viewer contracts/UI, and Telegram comments with tests. (2026-07-25T11:24:15Z)
 - [x] Synchronize durable documentation. (2026-07-25T11:24:15Z)
 - [x] Complete focused, full, publish, and live visual validation. (2026-07-25T11:32:00Z)
-- [ ] Commit and push the verified change to `origin/main`.
+- [x] Commit and push the verified change to `origin/main` as `2bffb7e`. (2026-07-25T11:34:50Z)
 
 ## Surprises and discoveries
 
@@ -51,4 +51,4 @@ Core now computes one nullable finite total from available member FRP values and
 
 Validation completed with a zero-warning Release build, 270 passing .NET tests, 36 passing Node tests, seven passing documentation checks, clean format/diff checks, and a successful Release publish/static-asset assertion. A Telegram-disabled live run exercised four passing rows and selected diagnostics across NASA and Google at desktop and narrow sizes plus two provider round trips. All five final images under `/tmp/thermalwatch-total-frp.jLJUrV/` were opened and inspected; total/peak values and the active criterion were readable, maps and markers remained usable, and no overflow or provider defect remained. The ignored owner-only `.env` was preserved and no Telegram request was made.
 
-Durable behavior is recorded in the root README plus the architecture, operations, notification-policy, web-viewer, and Telegram-notifier documents. Documentation routing remains accurate and no ADR was warranted. Commit and push remain pending.
+Durable behavior is recorded in the root README plus the architecture, operations, notification-policy, web-viewer, and Telegram-notifier documents. Documentation routing remains accurate and no ADR was warranted. Implementation commit `2bffb7e` was pushed to `origin/main`; this plan closure is the only follow-up publication step.
