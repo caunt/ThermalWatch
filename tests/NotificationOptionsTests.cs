@@ -73,12 +73,12 @@ public sealed class NotificationOptionsTests
     }
 
     [Fact]
-    public void FromEnvironmentDisablesRepresentativeFrpAndKeepsFiftyMegawattClusterTotalDefault()
+    public void FromEnvironmentDisablesRepresentativeFrpAndUsesOneHundredMegawattClusterTotalDefault()
     {
         NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(_ => null);
 
         Assert.Equal(0, options.Visibility.MinimumFrpMegawatts);
-        Assert.Equal(50, options.Visibility.MinimumClusterTotalFrpMegawatts);
+        Assert.Equal(100, options.Visibility.MinimumClusterTotalFrpMegawatts);
     }
 
     [Theory]
