@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using ThermalWatch.Core;
@@ -140,6 +141,45 @@ public sealed class NotificationCandidateEngineTests
         Assert.Single(manual.SelectedCandidates);
         string manualQuery = Assert.Single(manualNearby.Queries);
         Assert.Contains("around:2000,50.000000,32.000000", manualQuery, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NearbyFeatureLimitsKeepCandidatesAtFiveAndExpandDiagnosticsToTwentyFive()
+    {
+        var gibsHandler = new NotFoundHandler();
+        var nearbyHandler = new NearbyHandler(CreateNearbyResponse(featureCount: 26));
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationCandidateEngine engine = CreateEngine(gibsHandler, cache, nearbyHandler);
+        AnomalySnapshot snapshot = Snapshot(
+            CreateAnomaly(id: "selected", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "representative", longitude: 30.02, frpMegawatts: 200));
+
+        PreparedNotificationCandidate? delivered = null;
+        await engine.ProcessAutomaticNotificationsAsync(
+            snapshot,
+            (candidate, _) =>
+            {
+                delivered = candidate;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+        ManualNotificationCandidateSelection manual = await engine.PrepareManualCandidatesAsync(
+            snapshot,
+            requestedClusterCount: 1,
+            TestContext.Current.CancellationToken);
+        NotificationDiagnostic diagnostic = Assert.IsType<NotificationDiagnostic>(
+            await engine.GetNotificationDiagnosticAsync(
+                snapshot,
+                anomalyId: "representative",
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(5, Assert.IsType<PreparedNotificationCandidate>(delivered).NearbyFeatures.Length);
+        Assert.Equal(5, Assert.Single(manual.SelectedCandidates).NearbyFeatures.Length);
+        Assert.Equal(25, diagnostic.NearbyFeatures.Length);
+        Assert.Equal(
+            Enumerable.Range(start: 1, count: 25),
+            diagnostic.NearbyFeatures.Select(feature => (int)feature.OsmId));
+        Assert.Single(nearbyHandler.Queries);
     }
 
     [Fact]
@@ -556,6 +596,19 @@ public sealed class NotificationCandidateEngineTests
                 RequireDaytime: true,
                 RequirePreview: false));
 
+    private static string CreateNearbyResponse(int featureCount) =>
+        JsonSerializer.Serialize(new
+        {
+            elements = Enumerable.Range(start: 1, count: featureCount).Select(id => new
+            {
+                type = "node",
+                id,
+                lat = 50,
+                lon = 30.02,
+                tags = new { name = $"Nearby {id}" }
+            })
+        });
+
     private static AnomalySnapshot Snapshot(params Anomaly[] anomalies) =>
         new(
             s_observedAt.AddHours(1),
@@ -608,7 +661,7 @@ public sealed class NotificationCandidateEngineTests
         }
     }
 
-    private sealed class NearbyHandler : HttpMessageHandler
+    private sealed class NearbyHandler(string responseJson = "{\"elements\":[]}") : HttpMessageHandler
     {
         public List<string> Queries { get; } = [];
 
@@ -622,7 +675,7 @@ public sealed class NotificationCandidateEngineTests
             return new(HttpStatusCode.OK)
             {
                 Content = new StringContent(
-                    content: "{\"elements\":[]}",
+                    content: responseJson,
                     Encoding.UTF8,
                     mediaType: "application/json")
             };

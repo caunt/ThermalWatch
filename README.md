@@ -12,7 +12,7 @@ ThermalWatch is a small .NET 10 service that polls NASA FIRMS near-real-time the
 - Serves all valid active observations and backend-composed NASA map imagery through an unauthenticated, CORS-enabled API and a framework-free browser viewer.
 - Lists every active cluster that passes all enabled notification content criteria, ordered by total cluster FRP, and can search a chosen representative directly from the viewer.
 - Explains the shared notification policy for a selected anomaly and highlights its complete active-snapshot cluster in the viewer.
-- Adds up to five distance-ordered named OpenStreetMap features within 2 km to selected-anomaly diagnostics and prepared Telegram notifications when any are available.
+- Adds distance-ordered named OpenStreetMap features within 2 km when available: up to 25 in selected-anomaly diagnostics and up to five in prepared Telegram notifications.
 - Optionally clusters and filters observations for outbound Telegram notifications with sensor-matched NASA GIBS imagery and nearby mapped context.
 
 All runtime state is in memory. Restarting clears the current snapshot, imagery caches, startup-incident suppression, and delivery-deduplication state, then starts a fresh FIRMS poll. Unsent notification candidates are not retained.
@@ -48,7 +48,7 @@ All current routes are unauthenticated. Cross-origin `GET` requests are allowed.
 | `GET /api/viewer/config` | Reports optional browser map configuration and exposes the Google browser key when configured. |
 | `GET /api/viewer/imagery/gibs/{z}/{x}/{y}.png` | Returns a backend-composed latest NASA GIBS map tile and coverage metadata. |
 | `GET /api/viewer/eligible-notification-clusters` | Returns notification-priority-ordered summaries of active clusters that pass every enabled content criterion. |
-| `GET /api/viewer/notification-diagnostics/{anomalyId}` | Builds the selected anomaly's active-snapshot cluster, explains every current notification criterion, and returns up to five nearby named OSM features. |
+| `GET /api/viewer/notification-diagnostics/{anomalyId}` | Builds the selected anomaly's active-snapshot cluster, explains every current notification criterion, and returns up to 25 nearby named OSM features. |
 | `GET /api/telegram/send-top?count=5` | Sends selected current clusters to Telegram. This is a side-effecting operator endpoint and must be protected by the deployment's network boundary. |
 
 `/api/anomalies` accepts `country`, `source`, and `satellite` comma-separated filters, plus `dayNight=D|N` and `since`. The `since` value must be an ISO-8601 UTC timestamp and must not be older than the current active-window cutoff. The current parser also accepts future UTC values, which can produce an empty result.

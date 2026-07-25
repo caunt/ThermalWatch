@@ -9,6 +9,8 @@ public sealed class NotificationCandidateEngine(
     NearbyFeatureClient nearbyFeatureClient,
     TimeProvider timeProvider)
 {
+    private const int MaximumCandidateNearbyFeatures = 5;
+    private const int MaximumDiagnosticNearbyFeatures = 25;
     private readonly NotificationEpisodeHistory _startupIncidentHistory = new(
         options.ClusterRadiusKilometers,
         options.ClusterTimeWindow,
@@ -141,6 +143,7 @@ public sealed class NotificationCandidateEngine(
 
         ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
             cluster.Representative,
+            maximumResults: MaximumCandidateNearbyFeatures,
             cancellationToken).ConfigureAwait(false);
         return new(
             cluster,
@@ -242,6 +245,7 @@ public sealed class NotificationCandidateEngine(
         {
             ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
                 candidate.Cluster.Representative,
+                maximumResults: MaximumCandidateNearbyFeatures,
                 cancellationToken).ConfigureAwait(false);
             selectedCandidates.Add(candidate with { NearbyFeatures = nearbyFeatures });
         }
@@ -363,7 +367,7 @@ public sealed class NotificationCandidateEngine(
 
         ImmutableArray<NotificationCriterionResult> criterionResults = criteria.ToImmutable();
         ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
-            found.SelectedAnomaly,
+            found.SelectedAnomaly, maximumResults: MaximumDiagnosticNearbyFeatures,
             cancellationToken).ConfigureAwait(false);
         return new(
             anomalyId,

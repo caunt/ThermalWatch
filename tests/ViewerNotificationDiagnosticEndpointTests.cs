@@ -42,12 +42,16 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
         Assert.Equal(300, body.RootElement.GetProperty(propertyName: "totalFrpMegawatts").GetDouble());
         Assert.Equal(8, body.RootElement.GetProperty(propertyName: "criteria").GetArrayLength());
         Assert.True(body.RootElement.GetProperty(propertyName: "isEligible").GetBoolean());
-        JsonElement nearbyFeature = Assert.Single(
-            body.RootElement.GetProperty(propertyName: "nearbyFeatures").EnumerateArray());
-        Assert.Equal("Nearby workshop", nearbyFeature.GetProperty(propertyName: "name").GetString());
-        Assert.Equal("https://www.openstreetmap.org/node/123", nearbyFeature
+        JsonElement[] nearbyFeatures =
+        [
+            .. body.RootElement.GetProperty(propertyName: "nearbyFeatures").EnumerateArray()
+        ];
+        Assert.Equal(25, nearbyFeatures.Length);
+        Assert.Equal("Nearby workshop 1", nearbyFeatures[0].GetProperty(propertyName: "name").GetString());
+        Assert.Equal("https://www.openstreetmap.org/node/1", nearbyFeatures[0]
             .GetProperty(propertyName: "openStreetMapUrl")
             .GetString());
+        Assert.Equal(25, nearbyFeatures[^1].GetProperty(propertyName: "osmId").GetInt64());
         Assert.Equal(
             ["first", "second"],
             body.RootElement.GetProperty(propertyName: "memberIds")
@@ -250,19 +254,17 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            const string json = """
+            string json = JsonSerializer.Serialize(new
+            {
+                elements = Enumerable.Range(start: 1, count: 26).Select(id => new
                 {
-                  "elements": [
-                    {
-                      "type": "node",
-                      "id": 123,
-                      "lat": 50,
-                      "lon": 30.001,
-                      "tags": { "name": "Nearby workshop" }
-                    }
-                  ]
-                }
-                """;
+                    type = "node",
+                    id,
+                    lat = 50,
+                    lon = 30.001,
+                    tags = new { name = $"Nearby workshop {id}" }
+                })
+            });
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(json, Encoding.UTF8, mediaType: "application/json")

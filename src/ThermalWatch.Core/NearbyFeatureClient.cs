@@ -12,7 +12,7 @@ public sealed partial class NearbyFeatureClient(
     ILogger<NearbyFeatureClient> logger) : IDisposable
 {
     private const int MaximumResponseBytes = 10 * 1024 * 1024;
-    private const int MaximumResults = 5;
+    private const int MaximumCachedResults = 25;
     private const int RadiusMeters = 2000;
     private const double RadiusKilometers = RadiusMeters / 1000d;
     private const double DistanceToleranceKilometers = 0.000001;
@@ -26,8 +26,17 @@ public sealed partial class NearbyFeatureClient(
 
     public async Task<ImmutableArray<NearbyFeature>> FindNearbyAsync(
         Anomaly anomaly,
+        int maximumResults,
         CancellationToken cancellationToken)
     {
+        if (maximumResults is < 1 or > MaximumCachedResults)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximumResults),
+                maximumResults,
+                message: $"Maximum results must be between 1 and {MaximumCachedResults}.");
+        }
+
         double latitude = Math.Round(anomaly.Latitude, digits: 6, MidpointRounding.AwayFromZero);
         double longitude = Math.Round(anomaly.Longitude, digits: 6, MidpointRounding.AwayFromZero);
         (string Prefix, double Latitude, double Longitude) cacheKey = (
@@ -35,13 +44,13 @@ public sealed partial class NearbyFeatureClient(
             latitude,
             longitude);
         if (cache.TryGetValue(cacheKey, out ImmutableArray<NearbyFeature> cached))
-            return cached;
+            return TakeResults(cached, maximumResults);
 
         await _requestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (cache.TryGetValue(cacheKey, out cached))
-                return cached;
+                return TakeResults(cached, maximumResults);
 
             NearbyFeatureLookup lookup;
             try
@@ -70,7 +79,7 @@ public sealed partial class NearbyFeatureClient(
                         : s_failureCacheDuration,
                     Size = Math.Max(lookup.Features.Length * 256, val2: 1)
                 });
-            return lookup.Features;
+            return TakeResults(lookup.Features, maximumResults);
         }
         finally
         {
@@ -159,9 +168,16 @@ public sealed partial class NearbyFeatureClient(
                 .OrderBy(feature => feature.DistanceKilometers)
                 .ThenBy(feature => feature.OsmType, StringComparer.Ordinal)
                 .ThenBy(feature => feature.OsmId)
-                .Take(MaximumResults)
+                .Take(MaximumCachedResults)
         ];
     }
+
+    private static ImmutableArray<NearbyFeature> TakeResults(
+        ImmutableArray<NearbyFeature> features,
+        int maximumResults) =>
+        features.Length <= maximumResults
+            ? features
+            : [.. features.Take(maximumResults)];
 
     private static bool HasBlacklistedTag(JsonElement element)
     {

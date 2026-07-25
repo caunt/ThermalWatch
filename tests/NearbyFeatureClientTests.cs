@@ -11,7 +11,7 @@ namespace ThermalWatch.Tests;
 public sealed class NearbyFeatureClientTests
 {
     [Fact]
-    public async Task FindNearbyAsyncQueriesFilteredNamedFeaturesSortsByDistanceAndClampsToFive()
+    public async Task FindNearbyAsyncQueriesFilteredNamedFeaturesSortsAndAppliesCallerLimit()
     {
         const string responseJson = """
             {
@@ -35,9 +35,15 @@ public sealed class NearbyFeatureClientTests
 
         ImmutableArray<NearbyFeature> features = await client.FindNearbyAsync(
             CreateAnomaly(latitude: 0, longitude: 0),
+            maximumResults: 5,
+            TestContext.Current.CancellationToken);
+        ImmutableArray<NearbyFeature> expanded = await client.FindNearbyAsync(
+            CreateAnomaly(latitude: 0, longitude: 0),
+            maximumResults: 25,
             TestContext.Current.CancellationToken);
 
         Assert.Equal([2, 3, 4, 1, 5], features.Select(feature => feature.OsmId));
+        Assert.Equal([2, 3, 4, 1, 5, 6, 7], expanded.Select(feature => feature.OsmId));
         NearbyFeature first = features[0];
         Assert.Equal("way", first.OsmType);
         Assert.Equal("First", first.Name);
@@ -45,6 +51,7 @@ public sealed class NearbyFeatureClientTests
         Assert.InRange(first.DistanceKilometers, low: 0.22, high: 0.23);
         Assert.Equal(HttpMethod.Post, handler.Method);
         Assert.Equal("https://overpass.example.test/api/interpreter", handler.RequestUri?.AbsoluteUri);
+        Assert.Equal(1, handler.RequestCount);
         Assert.Equal(
             "[out:json][timeout:10];nwr(around:2000,0.000000,0.000000)[\"name\"][!\"highway\"][!\"railway\"][\"type\"!=\"public_transport\"];out center;",
             DecodeQuery(handler.RequestBody));
@@ -93,9 +100,27 @@ public sealed class NearbyFeatureClientTests
 
         ImmutableArray<NearbyFeature> features = await client.FindNearbyAsync(
             CreateAnomaly(latitude: 0, longitude: 0),
+            maximumResults: 5,
             TestContext.Current.CancellationToken);
 
         Assert.Equal([3, 4, 5, 6, 7], features.Select(feature => feature.OsmId));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(26)]
+    public async Task FindNearbyAsyncRejectsUnsupportedMaximumResultCounts(int maximumResults)
+    {
+        var handler = new RecordingHandler((_, _) => JsonResponse(json: "{\"elements\":[]}"));
+        using MemoryCache cache = CreateCache();
+        using NearbyFeatureClient client = CreateClient(handler, cache);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => client.FindNearbyAsync(
+            CreateAnomaly(latitude: 0, longitude: 0),
+            maximumResults,
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal(0, handler.RequestCount);
     }
 
     [Fact]
@@ -107,9 +132,11 @@ public sealed class NearbyFeatureClientTests
 
         await successfulClient.FindNearbyAsync(
             CreateAnomaly(latitude: 10.0000001, longitude: 20.0000001),
+            maximumResults: 5,
             TestContext.Current.CancellationToken);
         await successfulClient.FindNearbyAsync(
             CreateAnomaly(latitude: 10.0000002, longitude: 20.0000002),
+            maximumResults: 5,
             TestContext.Current.CancellationToken);
 
         Assert.Equal(1, successfulHandler.RequestCount);
@@ -122,9 +149,11 @@ public sealed class NearbyFeatureClientTests
 
         ImmutableArray<NearbyFeature> first = await failedClient.FindNearbyAsync(
             CreateAnomaly(latitude: 30, longitude: 40),
+            maximumResults: 5,
             TestContext.Current.CancellationToken);
         ImmutableArray<NearbyFeature> second = await failedClient.FindNearbyAsync(
             CreateAnomaly(latitude: 30, longitude: 40),
+            maximumResults: 5,
             TestContext.Current.CancellationToken);
 
         Assert.Empty(first);
@@ -143,6 +172,7 @@ public sealed class NearbyFeatureClientTests
 
         ImmutableArray<NearbyFeature> malformed = await malformedClient.FindNearbyAsync(
             CreateAnomaly(latitude: 1, longitude: 1),
+            maximumResults: 5,
             TestContext.Current.CancellationToken);
 
         var oversizedHandler = new RecordingHandler((_, _) =>
@@ -156,6 +186,7 @@ public sealed class NearbyFeatureClientTests
 
         ImmutableArray<NearbyFeature> oversized = await oversizedClient.FindNearbyAsync(
             CreateAnomaly(latitude: 2, longitude: 2),
+            maximumResults: 5,
             TestContext.Current.CancellationToken);
 
         Assert.Empty(malformed);
@@ -180,10 +211,12 @@ public sealed class NearbyFeatureClientTests
 
         Task<ImmutableArray<NearbyFeature>> first = client.FindNearbyAsync(
             CreateAnomaly(latitude: 10, longitude: 10),
+            maximumResults: 5,
             TestContext.Current.CancellationToken);
         await firstStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
         Task<ImmutableArray<NearbyFeature>> second = client.FindNearbyAsync(
             CreateAnomaly(latitude: 20, longitude: 20),
+            maximumResults: 5,
             TestContext.Current.CancellationToken);
 
         Assert.Equal(1, handler.RequestCount);
@@ -196,6 +229,7 @@ public sealed class NearbyFeatureClientTests
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.FindNearbyAsync(
             CreateAnomaly(latitude: 30, longitude: 30),
+            maximumResults: 5,
             cancellation.Token));
     }
 
