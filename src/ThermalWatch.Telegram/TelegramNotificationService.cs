@@ -482,6 +482,7 @@ public sealed class TelegramNotificationService(
             candidate.PreviewSelection.Dimensions,
             candidate.PreviewSelection.ClusterDiameterKilometers,
             candidate.LandCoverSummary,
+            candidate.SettlementName,
             candidate.NearbyFeatures);
 
         Message channelPost = await SendChannelPostAsync(

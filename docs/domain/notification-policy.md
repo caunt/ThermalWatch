@@ -13,7 +13,7 @@ The HTTP API is the raw-observation boundary:
 
 - It returns every valid FIRMS observation in the active snapshot, across MODIS and all three VIIRS feeds.
 - It may apply only caller-requested query filters from [AnomalyQuery.cs](../../src/ThermalWatch.Api/AnomalyQuery.cs).
-- Notification visibility, land-cover, preview, nearby mapped context, deduplication, and clustering state never remove or annotate API anomalies.
+- Notification visibility, land-cover, preview, mapped location context, deduplication, and clustering state never remove or annotate API anomalies.
 
 An anomaly ID is a deterministic truncated SHA-256 hash of country, source, satellite, UTC acquisition second, latitude, and longitude. Thermal contrast is primary brightness minus secondary/background brightness only when both values exist. [AnomalyId.cs](../../src/ThermalWatch.Core/AnomalyId.cs) and [Anomaly.cs](../../src/ThermalWatch.Core/Anomaly.cs) define these contracts.
 
@@ -43,7 +43,7 @@ On each ready snapshot:
 4. If a cluster continues an already delivered episode, suppress it and extend that episode without rerunning filters or imagery work.
 5. For every remaining cluster, apply metadata visibility rules, then evaluate NASA land cover for every cluster member when enabled.
 6. Attempt the current exact-date preview once. A missing required preview rejects the cluster for this snapshot; when previews are optional, continue with a text candidate immediately.
-7. Look up nearby mapped context around the representative and send. Only successful automatic delivery establishes a delivered episode; rejection, nearby-context failure, and send failure do not.
+7. Look up mapped location context around the representative and send. Only successful automatic delivery establishes a delivered episode; rejection, mapped-context failure, and send failure do not.
 
 Every later snapshot repeats eligibility evaluation from its complete current data for incidents that have not been startup-suppressed or delivered. A cluster rejected at startup or later because imagery is unavailable can therefore qualify after a later publication without retaining an unsent candidate. A transient send failure likewise records no delivered episode and remains retryable. Startup incidents and delivered episodes use the same configured radius, time window, episode retention, transitive extension, and 100,000-anomaly per-history cap.
 
@@ -76,17 +76,19 @@ The [land-cover policy](../../src/ThermalWatch.Core/NotificationLandCoverPolicy.
 
 These rules are heuristics, not event classification. Land cover, confidence, FRP, and imagery cannot prove whether a wildfire or visible smoke exists.
 
-## Nearby mapped context
+## Mapped location context
 
-The [nearby-feature client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs) queries named OpenStreetMap nodes, ways, and relations within 2 km through `overpass-api.de`, excluding elements with a `highway` or `railway` tag or `type=public_transport`. Elements carrying a blacklisted tag are discarded before ordering and limiting; the `route=bus` entry additionally excludes bus routes while retaining other route types. Node coordinates and Overpass-provided way/relation centers are validated and measured from the lookup observation with Haversine distance. Results are ranked by descending property count in the OSM `tags` object; equal counts use nearest distance, then OSM type and ID for deterministic ties. The shared coordinate cache retains up to 25 ranked results; Viewer diagnostics can return that complete set, while prepared automatic and manual notification candidates take only the highest-ranked five.
+The [mapped-context client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs) uses `overpass-api.de` to perform one combined coordinate lookup. It queries named OpenStreetMap nodes, ways, and relations within 2 km, excluding elements with a `highway` or `railway` tag or `type=public_transport`. Elements carrying a blacklisted tag are discarded before ordering and limiting; the `route=bus` entry additionally excludes bus routes while retaining other route types. Node coordinates and Overpass-provided way/relation centers are validated and measured from the lookup observation with Haversine distance. Results are ranked by descending property count in the OSM `tags` object; equal counts use nearest distance, then OSM type and ID for deterministic ties. The shared coordinate cache retains up to 25 ranked results; Viewer diagnostics can return that complete set, while prepared automatic and manual notification candidates take only the highest-ranked five.
 
-Nearby features are presentation context, not a notification criterion or event classification. They never change eligibility, ranking, delivery deduplication, or `/api/anomalies`. The automatic and manual paths query only the cluster representative. The Viewer path queries the specifically selected observation even when another member is the cluster representative.
+The same request asks Overpass which mapped areas contain the coordinate and accepts only named `city`, `town`, or `village` areas. It prefers an English name when present and otherwise uses the mapped name. When overlapping accepted areas exist, the most local numeric administrative level wins, followed by the more specific settlement kind and stable identity. Prepared Telegram candidates attach this single settlement for the representative coordinate; Viewer diagnostic contracts do not expose it. A point outside an accepted mapped settlement remains unnamed rather than using the nearest place.
 
-Retrieval is on demand, serialized, bounded, and cached. Provider, transport, timeout, oversized, or malformed-response failure returns no features and logs a Warning; it does not block the diagnostic or Telegram delivery. Surfaces omit the section when no features are returned and warn that mapped proximity does not establish cause. For ways and relations, distance is to the supplied center rather than the nearest geometry edge.
+Mapped location results are presentation context, not a notification criterion or event classification. They never change eligibility, ranking, delivery deduplication, or `/api/anomalies`. The automatic and manual paths query only the cluster representative and include both settlement and nearby-feature data. The Viewer path queries the specifically selected observation even when another member is the cluster representative and consumes only nearby features.
+
+Retrieval is on demand, serialized, bounded, and cached. Provider, transport, timeout, oversized, or malformed-response failure returns no mapped context and logs a Warning; it does not block the diagnostic or Telegram delivery. Surfaces omit unavailable context, and nearby-feature surfaces warn that mapped proximity does not establish cause. For ways and relations, distance is to the supplied center rather than the nearest geometry edge.
 
 ## Viewer eligibility and diagnostics
 
-The Viewer eligible-cluster query evaluates every connected component in one captured active snapshot. It applies the same metadata and land-cover rules as candidate preparation and, when configured, requires the same exact-date preview. Unavailable land cover fails open and an unavailable required preview fails closed. It returns only passing clusters, ordered by the manual-send priority, and performs no nearby-feature lookup.
+The Viewer eligible-cluster query evaluates every connected component in one captured active snapshot. It applies the same metadata and land-cover rules as candidate preparation and, when configured, requires the same exact-date preview. Unavailable land cover fails open and an unavailable required preview fails closed. It returns only passing clusters, ordered by the manual-send priority, and performs no mapped-context lookup.
 
 This list is criteria-only, not a promise that automatic delivery will send a cluster. It neither applies nor mutates startup-incident or delivered-episode suppression. Repeated Viewer evaluation can therefore continue to list a startup-suppressed or already delivered episode, and it cannot consume or extend automatic lifecycle state.
 
@@ -114,7 +116,7 @@ Every successfully composed notification preview is losslessly re-encoded as a P
 - It bypasses startup-incident and delivered-episode checks without modifying automatic state or future deduplication.
 - It obtains each preview once; a required missing preview skips the candidate.
 - It ranks eligible clusters by available/highest total FRP, then representative FRP, member count, diameter, acquisition time, and ID before selecting the requested count.
-- It looks up nearby mapped context only for those selected representatives, after ranking, so unselected eligible clusters create no Overpass traffic.
+- It looks up mapped location context only for those selected representatives, after ranking, so unselected eligible clusters create no Overpass traffic.
 - It serializes manual operations, sends an introductory status message, and continues after individual candidate-send failures.
 
 The endpoint is unauthenticated and side-effecting. Its status contract is authoritative in [Program.cs](../../src/ThermalWatch.Api/Program.cs) and the result types at the end of [TelegramNotificationService.cs](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs).

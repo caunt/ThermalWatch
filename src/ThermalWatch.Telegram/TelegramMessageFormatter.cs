@@ -45,6 +45,23 @@ public static class TelegramMessageFormatter
         GibsPreviewDimensions previewDimensions,
         double? clusterDiameterKilometers,
         string? landCoverSummary,
+        IReadOnlyList<NearbyFeature> nearbyFeatures) =>
+        FormatMessages(
+            cluster,
+            preview,
+            previewDimensions,
+            clusterDiameterKilometers,
+            landCoverSummary,
+            settlementName: null,
+            nearbyFeatures);
+
+    internal static TelegramNotificationMessages FormatMessages(
+        NotificationCluster cluster,
+        GibsPreview preview,
+        GibsPreviewDimensions previewDimensions,
+        double? clusterDiameterKilometers,
+        string? landCoverSummary,
+        string? settlementName,
         IReadOnlyList<NearbyFeature> nearbyFeatures)
     {
         TemplateData data = CreateTemplateData(
@@ -53,6 +70,7 @@ public static class TelegramMessageFormatter
             previewDimensions,
             clusterDiameterKilometers,
             landCoverSummary,
+            settlementName,
             nearbyFeatures);
 
         string mainMessage = BuildMain(data, compactLevel: 0);
@@ -77,7 +95,7 @@ public static class TelegramMessageFormatter
         };
         var observation = new List<string>
         {
-            $"📍 <b>{Html(FormatInlineList(data.Countries, compactLevel))}</b>",
+            $"📍 <b>{Html(FormatLocation(data, compactLevel))}</b>",
             $"🕓 <b>Observed:</b> {Html(FormatDateTime(data.LatestAnomaly.AcquiredAtUtc))} UTC"
         };
         if (FormatPass(data.LatestAnomaly.DayNight) is { } pass)
@@ -185,6 +203,7 @@ public static class TelegramMessageFormatter
         GibsPreviewDimensions previewDimensions,
         double? clusterDiameterKilometers,
         string? landCoverSummary,
+        string? settlementName,
         IReadOnlyList<NearbyFeature> nearbyFeatures) =>
         new(
             cluster,
@@ -204,7 +223,16 @@ public static class TelegramMessageFormatter
             previewDimensions,
             clusterDiameterKilometers,
             landCoverSummary,
+            string.IsNullOrWhiteSpace(settlementName) ? null : settlementName.Trim(),
             nearbyFeatures);
+
+    private static string FormatLocation(TemplateData data, int compactLevel)
+    {
+        string countries = FormatInlineList(data.Countries, compactLevel);
+        return data.SettlementName is { } settlementName
+            ? $"{countries}, {CompactValue(settlementName, compactLevel)}"
+            : countries;
+    }
 
     private static string? FormatNearbyFeatures(
         IReadOnlyList<NearbyFeature> nearbyFeatures,
@@ -435,5 +463,6 @@ public static class TelegramMessageFormatter
         GibsPreviewDimensions PreviewDimensions,
         double? ClusterDiameterKilometers,
         string? LandCoverSummary,
+        string? SettlementName,
         IReadOnlyList<NearbyFeature> NearbyFeatures);
 }

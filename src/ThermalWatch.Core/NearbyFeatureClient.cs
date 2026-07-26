@@ -27,6 +27,13 @@ public sealed partial class NearbyFeatureClient(
     public async Task<ImmutableArray<NearbyFeature>> FindNearbyAsync(
         Anomaly anomaly,
         int maximumResults,
+        CancellationToken cancellationToken) =>
+        (await FindContextAsync(anomaly, maximumResults, cancellationToken).ConfigureAwait(false))
+            .NearbyFeatures;
+
+    internal async Task<NearbyMappedContext> FindContextAsync(
+        Anomaly anomaly,
+        int maximumResults,
         CancellationToken cancellationToken)
     {
         if (maximumResults is < 1 or > MaximumCachedResults)
@@ -40,10 +47,10 @@ public sealed partial class NearbyFeatureClient(
         double latitude = Math.Round(anomaly.Latitude, digits: 6, MidpointRounding.AwayFromZero);
         double longitude = Math.Round(anomaly.Longitude, digits: 6, MidpointRounding.AwayFromZero);
         (string Prefix, double Latitude, double Longitude) cacheKey = (
-            Prefix: "overpass:nearby",
+            Prefix: "overpass:context",
             latitude,
             longitude);
-        if (cache.TryGetValue(cacheKey, out ImmutableArray<NearbyFeature> cached))
+        if (cache.TryGetValue(cacheKey, out NearbyMappedContext cached))
             return TakeResults(cached, maximumResults);
 
         await _requestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -52,7 +59,7 @@ public sealed partial class NearbyFeatureClient(
             if (cache.TryGetValue(cacheKey, out cached))
                 return TakeResults(cached, maximumResults);
 
-            NearbyFeatureLookup lookup;
+            NearbyMappedContextLookup lookup;
             try
             {
                 lookup = await FetchAsync(latitude, longitude, cancellationToken).ConfigureAwait(false);
@@ -63,7 +70,7 @@ public sealed partial class NearbyFeatureClient(
             }
             catch (Exception)
             {
-                lookup = NearbyFeatureLookup.Unavailable;
+                lookup = NearbyMappedContextLookup.Unavailable;
             }
 
             if (!lookup.IsAvailable)
@@ -71,15 +78,18 @@ public sealed partial class NearbyFeatureClient(
 
             cache.Set(
                 cacheKey,
-                lookup.Features,
+                lookup.Context,
                 new MemoryCacheEntryOptions
                 {
                     AbsoluteExpirationRelativeToNow = lookup.IsAvailable
                         ? s_successCacheDuration
                         : s_failureCacheDuration,
-                    Size = Math.Max(lookup.Features.Length * 256, val2: 1)
+                    Size = Math.Max(
+                        lookup.Context.NearbyFeatures.Length * 256
+                            + (lookup.Context.SettlementName?.Length ?? 0) * sizeof(char),
+                        val2: 1)
                 });
-            return TakeResults(lookup.Features, maximumResults);
+            return TakeResults(lookup.Context, maximumResults);
         }
         finally
         {
@@ -87,14 +97,14 @@ public sealed partial class NearbyFeatureClient(
         }
     }
 
-    private async Task<NearbyFeatureLookup> FetchAsync(
+    private async Task<NearbyMappedContextLookup> FetchAsync(
         double latitude,
         double longitude,
         CancellationToken cancellationToken)
     {
         string query = string.Create(
             CultureInfo.InvariantCulture,
-            handler: $"[out:json][timeout:10];nwr(around:{RadiusMeters},{latitude:0.000000},{longitude:0.000000})[\"name\"][!\"highway\"][!\"railway\"][\"type\"!=\"public_transport\"];out center;");
+            handler: $"[out:json][timeout:10];nwr(around:{RadiusMeters},{latitude:0.000000},{longitude:0.000000})[\"name\"][!\"highway\"][!\"railway\"][\"type\"!=\"public_transport\"];out center;is_in({latitude:0.000000},{longitude:0.000000})->.containing;area.containing[\"name\"][\"place\"~\"^(city|town|village)$\"];out tags;");
         using var request = new HttpRequestMessage(HttpMethod.Post, requestUri: "interpreter")
         {
             Content = new FormUrlEncodedContent([new(key: "data", value: query)])
@@ -106,7 +116,7 @@ public sealed partial class NearbyFeatureClient(
         if (!response.IsSuccessStatusCode
             || response.Content.Headers.ContentLength > MaximumResponseBytes)
         {
-            return NearbyFeatureLookup.Unavailable;
+            return NearbyMappedContextLookup.Unavailable;
         }
 
         byte[]? content = await HttpContentReader.ReadLimitedBytesAsync(
@@ -114,12 +124,12 @@ public sealed partial class NearbyFeatureClient(
             MaximumResponseBytes,
             cancellationToken).ConfigureAwait(false);
         if (content is null)
-            return NearbyFeatureLookup.Unavailable;
+            return NearbyMappedContextLookup.Unavailable;
 
         return new(IsAvailable: true, Parse(content, latitude, longitude));
     }
 
-    private static ImmutableArray<NearbyFeature> Parse(
+    private static NearbyMappedContext Parse(
         byte[] content,
         double anomalyLatitude,
         double anomalyLongitude)
@@ -132,9 +142,13 @@ public sealed partial class NearbyFeatureClient(
         }
 
         var features = new List<(NearbyFeature Feature, int TagCount)>();
+        var settlements = new List<SettlementCandidate>();
         var identities = new HashSet<(string Type, long Id)>();
         foreach (JsonElement element in elements.EnumerateArray())
         {
+            if (TryReadSettlement(element, out SettlementCandidate settlement))
+                settlements.Add(settlement);
+
             if (!TryReadIdentity(element, out string? osmType, out long osmId)
                 || HasBlacklistedTag(element)
                 || !identities.Add((osmType, osmId))
@@ -164,24 +178,92 @@ public sealed partial class NearbyFeatureClient(
                 TagCount: tagCount));
         }
 
-        return
-        [
-            .. features
-                .OrderByDescending(result => result.TagCount)
-                .ThenBy(result => result.Feature.DistanceKilometers)
-                .ThenBy(result => result.Feature.OsmType, StringComparer.Ordinal)
-                .ThenBy(result => result.Feature.OsmId)
-                .Take(MaximumCachedResults)
-                .Select(result => result.Feature)
-        ];
+        return new(SelectSettlementName(settlements), OrderNearbyFeatures(features));
     }
 
-    private static ImmutableArray<NearbyFeature> TakeResults(
-        ImmutableArray<NearbyFeature> features,
+    private static string? SelectSettlementName(IEnumerable<SettlementCandidate> settlements) =>
+        settlements
+            .OrderByDescending(settlement => settlement.AdminLevel)
+            .ThenByDescending(settlement => settlement.PlaceSpecificity)
+            .ThenBy(settlement => settlement.OsmAreaId)
+            .ThenBy(settlement => settlement.Name, StringComparer.Ordinal)
+            .Select(settlement => settlement.Name)
+            .FirstOrDefault();
+
+    private static ImmutableArray<NearbyFeature> OrderNearbyFeatures(
+        IEnumerable<(NearbyFeature Feature, int TagCount)> features) =>
+    [
+        .. features
+            .OrderByDescending(result => result.TagCount)
+            .ThenBy(result => result.Feature.DistanceKilometers)
+            .ThenBy(result => result.Feature.OsmType, StringComparer.Ordinal)
+            .ThenBy(result => result.Feature.OsmId)
+            .Take(MaximumCachedResults)
+            .Select(result => result.Feature)
+    ];
+
+    private static NearbyMappedContext TakeResults(
+        NearbyMappedContext context,
         int maximumResults) =>
-        features.Length <= maximumResults
-            ? features
-            : [.. features.Take(maximumResults)];
+        context.NearbyFeatures.Length <= maximumResults
+            ? context
+            : context with { NearbyFeatures = [.. context.NearbyFeatures.Take(maximumResults)] };
+
+    private static bool TryReadSettlement(
+        JsonElement element,
+        out SettlementCandidate settlement)
+    {
+        settlement = default;
+        if (!element.TryGetProperty(propertyName: "type", out JsonElement typeElement)
+            || typeElement.GetString() is not "area"
+            || !element.TryGetProperty(propertyName: "id", out JsonElement idElement)
+            || !idElement.TryGetInt64(out long osmAreaId)
+            || osmAreaId <= 0
+            || !element.TryGetProperty(propertyName: "tags", out JsonElement tags)
+            || tags.ValueKind != JsonValueKind.Object
+            || !TryReadTrimmedTag(tags, key: "place", out string? place)
+            || GetPlaceSpecificity(place) is not { } placeSpecificity
+            || !TryReadSettlementName(tags, out string? name))
+        {
+            return false;
+        }
+
+        int adminLevel = TryReadTrimmedTag(tags, key: "admin_level", out string? value)
+            && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int parsed)
+                ? parsed
+                : -1;
+        settlement = new(osmAreaId, name, adminLevel, placeSpecificity);
+        return true;
+    }
+
+    private static bool TryReadSettlementName(JsonElement tags, out string name) =>
+        TryReadTrimmedTag(tags, key: "name:en", out name)
+        || TryReadTrimmedTag(tags, key: "name", out name);
+
+    private static bool TryReadTrimmedTag(
+        JsonElement tags,
+        string key,
+        out string value)
+    {
+        value = string.Empty;
+        if (!tags.TryGetProperty(key, out JsonElement element)
+            || element.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(element.GetString()))
+        {
+            return false;
+        }
+
+        value = element.GetString()!.Trim();
+        return true;
+    }
+
+    private static int? GetPlaceSpecificity(string place) => place switch
+    {
+        "village" => 3,
+        "town" => 2,
+        "city" => 1,
+        _ => null
+    };
 
     private static bool HasBlacklistedTag(JsonElement element)
     {
@@ -278,18 +360,24 @@ public sealed partial class NearbyFeatureClient(
     [LoggerMessage(
         EventId = 1,
         Level = LogLevel.Warning,
-        Message = "Overpass API is temporarily unavailable for nearby-feature lookup at {Latitude}, {Longitude}")]
+        Message = "Overpass API is temporarily unavailable for mapped-context lookup at {Latitude}, {Longitude}")]
     private static partial void LogTemporarilyUnavailable(
         ILogger logger,
         double latitude,
         double longitude);
 
-    private readonly record struct NearbyFeatureLookup(
+    private readonly record struct NearbyMappedContextLookup(
         bool IsAvailable,
-        ImmutableArray<NearbyFeature> Features)
+        NearbyMappedContext Context)
     {
-        public static NearbyFeatureLookup Unavailable { get; } = new(
+        public static NearbyMappedContextLookup Unavailable { get; } = new(
             IsAvailable: false,
-            Features: []);
+            NearbyMappedContext.Empty);
     }
+
+    private readonly record struct SettlementCandidate(
+        long OsmAreaId,
+        string Name,
+        int AdminLevel,
+        int PlaceSpecificity);
 }

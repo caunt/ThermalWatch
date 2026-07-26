@@ -7,4 +7,7 @@ public sealed record PreparedNotificationCandidate(
     GibsPreview Preview,
     NotificationPreviewSelection PreviewSelection,
     string? LandCoverSummary,
-    ImmutableArray<NearbyFeature> NearbyFeatures);
+    ImmutableArray<NearbyFeature> NearbyFeatures)
+{
+    public string? SettlementName { get; init; }
+}

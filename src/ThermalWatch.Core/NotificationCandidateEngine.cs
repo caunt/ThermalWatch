@@ -141,7 +141,7 @@ public sealed class NotificationCandidateEngine(
         if (readiness is null)
             return null;
 
-        ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
+        NearbyMappedContext context = await nearbyFeatureClient.FindContextAsync(
             cluster.Representative,
             maximumResults: MaximumCandidateNearbyFeatures,
             cancellationToken).ConfigureAwait(false);
@@ -150,7 +150,10 @@ public sealed class NotificationCandidateEngine(
             readiness.Preview,
             readiness.PreviewSelection,
             readiness.LandCoverSummary,
-            nearbyFeatures);
+            context.NearbyFeatures)
+        {
+            SettlementName = context.SettlementName
+        };
     }
 
     private async Task<NotificationCandidateReadiness?> EvaluateCandidateReadinessAsync(
@@ -243,11 +246,15 @@ public sealed class NotificationCandidateEngine(
             selectedWithoutNearby.Length);
         foreach (PreparedNotificationCandidate candidate in selectedWithoutNearby)
         {
-            ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
+            NearbyMappedContext context = await nearbyFeatureClient.FindContextAsync(
                 candidate.Cluster.Representative,
                 maximumResults: MaximumCandidateNearbyFeatures,
                 cancellationToken).ConfigureAwait(false);
-            selectedCandidates.Add(candidate with { NearbyFeatures = nearbyFeatures });
+            selectedCandidates.Add(candidate with
+            {
+                NearbyFeatures = context.NearbyFeatures,
+                SettlementName = context.SettlementName
+            });
         }
 
         return new(eligibleCandidates.Count, selectedCandidates.MoveToImmutable());

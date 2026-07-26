@@ -145,6 +145,42 @@ public sealed class TelegramMessageFormatterTests
     }
 
     [Fact]
+    public void FormatMessagesAppendsEscapedRepresentativeSettlementAfterClusterCountries()
+    {
+        Anomaly representative = CreateAnomaly(
+            id: "representative",
+            satellite: "Suomi-NPP",
+            acquiredAtUtc: Utc(hour: 12),
+            dayNight: "D",
+            frpMegawatts: 100,
+            thermalContrastKelvin: 30,
+            countryCode: "UKR");
+        Anomaly russianAnomaly = CreateAnomaly(
+            id: "russian",
+            satellite: "Suomi-NPP",
+            acquiredAtUtc: Utc(hour: 13),
+            dayNight: "D",
+            frpMegawatts: 90,
+            thermalContrastKelvin: 25,
+            countryCode: "RUS");
+        var cluster = new NotificationCluster(Id: "cluster", representative, [representative, russianAnomaly]);
+
+        TelegramNotificationMessages messages = TelegramMessageFormatter.FormatMessages(
+            cluster,
+            GibsPreview.Unavailable,
+            new(WidthKilometers: 30, HeightKilometers: 20, PixelWidth: 900, PixelHeight: 600),
+            clusterDiameterKilometers: 1,
+            landCoverSummary: null,
+            settlementName: "Kyiv & <Center>",
+            nearbyFeatures: []);
+
+        Assert.Contains(
+            "📍 <b>Russia; Ukraine, Kyiv &amp; &lt;Center&gt;</b>",
+            messages.MainMessage,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void FormatMessagesBuildsMultiSatelliteComment()
     {
         Anomaly representative = CreateAnomaly(
@@ -292,6 +328,31 @@ public sealed class TelegramMessageFormatterTests
 
         Assert.InRange(caption.Length, low: 1, high: 1024);
         Assert.Equal(5, caption.Split('\n').Count(line => line.StartsWith(value: "<code>", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void FormatCompactsLongSettlementWithinPhotoCaptionLimit()
+    {
+        Anomaly representative = CreateAnomaly(
+            id: "representative",
+            satellite: "Suomi-NPP",
+            acquiredAtUtc: Utc(hour: 12),
+            dayNight: "D",
+            frpMegawatts: 100,
+            thermalContrastKelvin: 30);
+        var cluster = new NotificationCluster(Id: "cluster", representative, [representative]);
+
+        TelegramNotificationMessages messages = TelegramMessageFormatter.FormatMessages(
+            cluster,
+            GibsPreview.Unavailable,
+            new(WidthKilometers: 30, HeightKilometers: 20, PixelWidth: 900, PixelHeight: 600),
+            clusterDiameterKilometers: 1,
+            landCoverSummary: null,
+            settlementName: string.Concat(Enumerable.Repeat(element: "&", count: 2_000)),
+            nearbyFeatures: []);
+
+        Assert.InRange(messages.MainMessage.Length, low: 1, high: 1024);
+        Assert.Contains("…", messages.MainMessage, StringComparison.Ordinal);
     }
 
     private static NearbyFeature Feature(long id, string name, double distanceKilometers) =>

@@ -103,7 +103,7 @@ public sealed class NotificationCandidateEngineTests
     public async Task AutomaticAndManualCandidatesEnrichOnlyTheirSelectedRepresentatives()
     {
         var automaticGibs = new NotFoundHandler();
-        var automaticNearby = new NearbyHandler();
+        var automaticNearby = new NearbyHandler(CreateSettlementResponse(name: "Automatic City"));
         using var automaticCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         NotificationCandidateEngine automaticEngine = CreateEngine(
             automaticGibs,
@@ -113,16 +113,23 @@ public sealed class NotificationCandidateEngineTests
             CreateAnomaly(id: "lower", longitude: 30, frpMegawatts: 100),
             CreateAnomaly(id: "higher", longitude: 30.02, frpMegawatts: 200));
 
+        PreparedNotificationCandidate? automaticCandidate = null;
         await automaticEngine.ProcessAutomaticNotificationsAsync(
             automaticSnapshot,
-            (_, _) => Task.FromResult(NotificationDeliveryOutcome.Delivered),
+            (candidate, _) =>
+            {
+                automaticCandidate = candidate;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
             TestContext.Current.CancellationToken);
 
+        Assert.Equal("Automatic City", Assert.IsType<PreparedNotificationCandidate>(automaticCandidate).SettlementName);
         string automaticQuery = Assert.Single(automaticNearby.Queries);
         Assert.Contains("around:2000,50.000000,30.020000", automaticQuery, StringComparison.Ordinal);
+        Assert.Contains("is_in(50.000000,30.020000)", automaticQuery, StringComparison.Ordinal);
 
         var manualGibs = new NotFoundHandler();
-        var manualNearby = new NearbyHandler();
+        var manualNearby = new NearbyHandler(CreateSettlementResponse(name: "Manual Town"));
         using var manualCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
         NotificationCandidateEngine manualEngine = CreateEngine(manualGibs, manualCache, manualNearby);
         AnomalySnapshot manualSnapshot = Snapshot(
@@ -138,9 +145,10 @@ public sealed class NotificationCandidateEngineTests
             requestedClusterCount: 1,
             TestContext.Current.CancellationToken);
 
-        Assert.Single(manual.SelectedCandidates);
+        Assert.Equal("Manual Town", Assert.Single(manual.SelectedCandidates).SettlementName);
         string manualQuery = Assert.Single(manualNearby.Queries);
         Assert.Contains("around:2000,50.000000,32.000000", manualQuery, StringComparison.Ordinal);
+        Assert.Contains("is_in(50.000000,32.000000)", manualQuery, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -607,6 +615,25 @@ public sealed class NotificationCandidateEngineTests
                 lon = 30.02,
                 tags = new { name = $"Nearby {id}" }
             })
+        });
+
+    private static string CreateSettlementResponse(string name) =>
+        JsonSerializer.Serialize(new
+        {
+            elements = new[]
+            {
+                new
+                {
+                    type = "area",
+                    id = 3_600_000_001L,
+                    tags = new
+                    {
+                        name,
+                        place = "city",
+                        admin_level = "8"
+                    }
+                }
+            }
         });
 
     private static AnomalySnapshot Snapshot(params Anomaly[] anomalies) =>

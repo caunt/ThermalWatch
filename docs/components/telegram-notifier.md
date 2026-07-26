@@ -5,7 +5,7 @@
 > **Sources of truth:** [Notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [Telegram options](../../src/ThermalWatch.Telegram/TelegramOptions.cs), [message formatter](../../src/ThermalWatch.Telegram/TelegramMessageFormatter.cs), and [Core candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs).
 > **Update when:** Telegram startup, formatting, sending, concurrency, acknowledgement, or transport error handling changes.
 
-Read the [notification policy](../domain/notification-policy.md) for clustering, eligibility, land cover, previews, nearby mapped context, deduplication, diagnostics, and manual ranking. Those responsibilities belong to Core; this document focuses on the Telegram adapter.
+Read the [notification policy](../domain/notification-policy.md) for clustering, eligibility, land cover, previews, mapped location context, deduplication, diagnostics, and manual ranking. Those responsibilities belong to Core; this document focuses on the Telegram adapter.
 
 ## Boundary and enablement
 
@@ -33,11 +33,11 @@ Core records delivered-episode history only after `Delivered`. A transient main-
 
 ## Message construction
 
-Messages use Telegram HTML without reply markup. Every channel post uses one compact template containing the cluster countries, newest observation time and pass, optional nearby context, diameter, representative coordinates, and inline Google and Yandex Maps links; the Yandex link opens the representative coordinates in satellite view. Country labels decode ISO alpha-3 codes to deterministic common English names without depending on the host's globalization data. The formatter progressively compacts nearby names and lists to Telegram's photo-caption limit and HTML-encodes dynamic values.
+Messages use Telegram HTML without reply markup. Every channel post uses one compact template containing the cluster countries, an optional settlement, newest observation time and pass, optional nearby context, diameter, representative coordinates, and inline Google and Yandex Maps links; the Yandex link opens the representative coordinates in satellite view. Country labels decode ISO alpha-3 codes to deterministic common English names without depending on the host's globalization data. When Overpass identifies an exact city, town, or village area containing the representative, its English name when available, otherwise its mapped name, follows the country list after a comma. Missing, rural, or unavailable results leave the country-only label. The formatter progressively compacts settlement and nearby names and lists to Telegram's photo-caption limit and HTML-encodes dynamic values.
 
 The linked-discussion comment holds the sensor detail. Both variants show available total cluster FRP while retaining the existing representative or peak FRP. A single-satellite comment also uses representative satellite, source, confidence, thermal contrast, detection count, and preview detail. A multi-satellite comment also uses confirmation count, satellites, feeds, peak contrast, detection count, land-cover summary, and preview detail. Preview wording names its contextual base and representative thermal overlay rather than claiming sensor-matched imagery when Core used a fallback base. These values arrive as prepared Core data; Telegram does not recalculate eligibility or call Overpass.
 
-When Core supplies one or more nearby features, “Possible nearby sources” appears in the channel post before its diameter and preserves Core's descending OSM-tag-count order, with distance breaking equal-count ties. Every result remains a distance-first monospace line using the fixed `0.00 km` form. Empty or unavailable lookups add no section. Progressive compaction shortens names while retaining all five bounded results within the photo-caption limit.
+When Core supplies one or more nearby features, “Possible nearby sources” appears in the channel post before its diameter and preserves Core's descending OSM-tag-count order, with distance breaking equal-count ties. Every result remains a distance-first monospace line using the fixed `0.00 km` form. Empty or unavailable lookups add no section. Progressive compaction shortens names while retaining all five bounded results within the photo-caption limit. Settlement context remains a location label, not a possible-source entry.
 
 ## Manual send path
 

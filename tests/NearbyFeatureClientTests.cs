@@ -53,8 +53,82 @@ public sealed class NearbyFeatureClientTests
         Assert.Equal("https://overpass.example.test/api/interpreter", handler.RequestUri?.AbsoluteUri);
         Assert.Equal(1, handler.RequestCount);
         Assert.Equal(
-            "[out:json][timeout:10];nwr(around:2000,0.000000,0.000000)[\"name\"][!\"highway\"][!\"railway\"][\"type\"!=\"public_transport\"];out center;",
+            "[out:json][timeout:10];nwr(around:2000,0.000000,0.000000)[\"name\"][!\"highway\"][!\"railway\"][\"type\"!=\"public_transport\"];out center;is_in(0.000000,0.000000)->.containing;area.containing[\"name\"][\"place\"~\"^(city|town|village)$\"];out tags;",
             DecodeQuery(handler.RequestBody));
+    }
+
+    [Fact]
+    public async Task FindContextAsyncSelectsMostLocalContainingSettlementAndPrefersEnglishName()
+    {
+        const string responseJson = """
+            {
+              "elements": [
+                { "type": "area", "id": 1, "tags": { "name": "Місто", "name:en": "Outer City", "place": "city", "admin_level": "8" } },
+                { "type": "area", "id": 2, "tags": { "name": "Native Town", "place": "town", "admin_level": "9" } },
+                { "type": "area", "id": 3, "tags": { "name": "Native Village", "name:en": "English Village", "place": "village", "admin_level": "9" } },
+                { "type": "area", "id": 4, "tags": { "name": "Hamlet", "place": "hamlet", "admin_level": "10" } },
+                { "type": "node", "id": 5, "lat": 0, "lon": 0.001, "tags": { "name": "Nearby feature" } }
+              ]
+            }
+            """;
+        var handler = new RecordingHandler((_, _) => JsonResponse(responseJson));
+        using MemoryCache cache = CreateCache();
+        using NearbyFeatureClient client = CreateClient(handler, cache);
+
+        NearbyMappedContext context = await client.FindContextAsync(
+            CreateAnomaly(latitude: 0, longitude: 0),
+            maximumResults: 5,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("English Village", context.SettlementName);
+        Assert.Equal(5, Assert.Single(context.NearbyFeatures).OsmId);
+    }
+
+    [Fact]
+    public async Task FindContextAsyncOmitsSettlementWithoutSupportedContainingBoundary()
+    {
+        const string responseJson = """
+            {
+              "elements": [
+                { "type": "area", "id": 1, "tags": { "name": "District", "boundary": "administrative", "admin_level": "6" } },
+                { "type": "area", "id": 2, "tags": { "name": "Hamlet", "place": "hamlet", "admin_level": "10" } },
+                { "type": "node", "id": 3, "lat": 0, "lon": 0.001, "tags": { "name": "Nearby feature" } }
+              ]
+            }
+            """;
+        var handler = new RecordingHandler((_, _) => JsonResponse(responseJson));
+        using MemoryCache cache = CreateCache();
+        using NearbyFeatureClient client = CreateClient(handler, cache);
+
+        NearbyMappedContext context = await client.FindContextAsync(
+            CreateAnomaly(latitude: 0, longitude: 0),
+            maximumResults: 5,
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(context.SettlementName);
+        Assert.Single(context.NearbyFeatures);
+    }
+
+    [Fact]
+    public async Task FindContextAsyncFallsBackToNativeSettlementName()
+    {
+        const string responseJson = """
+            {
+              "elements": [
+                { "type": "area", "id": 1, "tags": { "name": "  Рідне місто  ", "name:en": " ", "place": "city", "admin_level": "8" } }
+              ]
+            }
+            """;
+        var handler = new RecordingHandler((_, _) => JsonResponse(responseJson));
+        using MemoryCache cache = CreateCache();
+        using NearbyFeatureClient client = CreateClient(handler, cache);
+
+        NearbyMappedContext context = await client.FindContextAsync(
+            CreateAnomaly(latitude: 0, longitude: 0),
+            maximumResults: 5,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("Рідне місто", context.SettlementName);
     }
 
     [Fact]

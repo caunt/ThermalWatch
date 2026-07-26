@@ -51,6 +51,7 @@ public sealed class TelegramNotificationDeliveryTests
                 Assert.Equal(expectedMainMethod, main.MethodName);
                 Assert.Contains("@cso_ukr", main.Body, StringComparison.Ordinal);
                 Assert.Contains("New thermal anomaly", main.Body, StringComparison.Ordinal);
+                Assert.Contains("Kyiv", main.Body, StringComparison.Ordinal);
                 Assert.DoesNotContain("reply_markup", main.Body, StringComparison.Ordinal);
             },
             comment =>
@@ -214,7 +215,10 @@ public sealed class TelegramNotificationDeliveryTests
                 ClusterDiameterKilometers: 1,
                 IsLargePreview: false),
             LandCoverSummary: "Built-up · 80%",
-            NearbyFeatures: []);
+            NearbyFeatures: [])
+        {
+            SettlementName = "Kyiv"
+        };
     }
 
     private sealed class RecordingTelegramHandler(int? failedRequestNumber) : HttpMessageHandler
