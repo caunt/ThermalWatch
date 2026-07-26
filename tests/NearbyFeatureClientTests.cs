@@ -132,7 +132,7 @@ public sealed class NearbyFeatureClientTests
     }
 
     [Fact]
-    public async Task FindNearbyAsyncExcludesBlacklistedBusRoutesBeforeLimit()
+    public async Task FindNearbyAsyncExcludesBlacklistedTagsBeforeLimit()
     {
         const string responseJson = """
             {
@@ -161,6 +161,8 @@ public sealed class NearbyFeatureClientTests
                 },
                 { "type": "node", "id": 3, "lat": 0, "lon": 0.003, "tags": { "name": "Bus stop", "highway": "bus_stop" } },
                 { "type": "relation", "id": 4, "center": { "lat": 0, "lon": 0.004 }, "tags": { "name": "Train route", "route": "train", "type": "route" } },
+                { "type": "way", "id": 9, "center": { "lat": 0, "lon": 0.004 }, "tags": { "name": "River", "waterway": "river" } },
+                { "type": "node", "id": 10, "lat": 0, "lon": 0.004, "tags": { "name": "Waterfall", "waterway": "waterfall", "tourism": "attraction" } },
                 { "type": "node", "id": 5, "lat": 0, "lon": 0.005, "tags": { "name": "Third retained" } },
                 { "type": "node", "id": 6, "lat": 0, "lon": 0.006, "tags": { "name": "Fourth retained" } },
                 { "type": "node", "id": 7, "lat": 0, "lon": 0.007, "tags": { "name": "Fifth retained" } },

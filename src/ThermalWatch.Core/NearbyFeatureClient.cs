@@ -16,9 +16,10 @@ public sealed partial class NearbyFeatureClient(
     private const int RadiusMeters = 2000;
     private const double RadiusKilometers = RadiusMeters / 1000d;
     private const double DistanceToleranceKilometers = 0.000001;
-    private static readonly ImmutableArray<(string Key, string Value)> s_tagBlacklist =
+    private static readonly ImmutableArray<(string Key, string? Value)> s_tagBlacklist =
     [
-        (Key: "route", Value: "bus")
+        (Key: "route", Value: "bus"),
+        (Key: "waterway", Value: null)
     ];
     private static readonly TimeSpan s_successCacheDuration = TimeSpan.FromHours(hours: 1);
     private static readonly TimeSpan s_failureCacheDuration = TimeSpan.FromMinutes(minutes: 1);
@@ -273,11 +274,11 @@ public sealed partial class NearbyFeatureClient(
             return false;
         }
 
-        foreach ((string key, string value) in s_tagBlacklist)
+        foreach ((string key, string? value) in s_tagBlacklist)
         {
             if (tags.TryGetProperty(propertyName: key, out JsonElement tagValue)
                 && tagValue.ValueKind == JsonValueKind.String
-                && tagValue.ValueEquals(value))
+                && (value is null || tagValue.ValueEquals(value)))
             {
                 return true;
             }
