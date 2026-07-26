@@ -152,7 +152,7 @@ public sealed class NotificationCandidateEngineTests
     }
 
     [Fact]
-    public async Task NearbyFeatureLimitsKeepCandidatesAtFiveAndExpandDiagnosticsToTwentyFive()
+    public async Task NearbyFeatureLimitsKeepFiveUniqueCandidateNamesAndAllDiagnosticFeatures()
     {
         var gibsHandler = new NotFoundHandler();
         var nearbyHandler = new NearbyHandler(CreateNearbyResponse(featureCount: 26));
@@ -181,12 +181,20 @@ public sealed class NotificationCandidateEngineTests
                 anomalyId: "representative",
                 TestContext.Current.CancellationToken));
 
-        Assert.Equal(5, Assert.IsType<PreparedNotificationCandidate>(delivered).NearbyFeatures.Length);
-        Assert.Equal(5, Assert.Single(manual.SelectedCandidates).NearbyFeatures.Length);
+        PreparedNotificationCandidate automaticCandidate =
+            Assert.IsType<PreparedNotificationCandidate>(delivered);
+        PreparedNotificationCandidate manualCandidate = Assert.Single(manual.SelectedCandidates);
+        Assert.Equal([1, 3, 4, 5, 6], automaticCandidate.NearbyFeatures.Select(feature => feature.OsmId));
+        Assert.Equal([1, 3, 4, 5, 6], manualCandidate.NearbyFeatures.Select(feature => feature.OsmId));
+        Assert.Equal(
+            ["Shared source", "Nearby 3", "Nearby 4", "Nearby 5", "Nearby 6"],
+            automaticCandidate.NearbyFeatures.Select(feature => feature.Name));
         Assert.Equal(25, diagnostic.NearbyFeatures.Length);
         Assert.Equal(
             Enumerable.Range(start: 1, count: 25),
             diagnostic.NearbyFeatures.Select(feature => (int)feature.OsmId));
+        Assert.Equal("Shared source", diagnostic.NearbyFeatures[0].Name);
+        Assert.Equal("SHARED SOURCE", diagnostic.NearbyFeatures[1].Name);
         Assert.Single(nearbyHandler.Queries);
     }
 
@@ -613,7 +621,15 @@ public sealed class NotificationCandidateEngineTests
                 id,
                 lat = 50,
                 lon = 30.02,
-                tags = new { name = $"Nearby {id}" }
+                tags = new
+                {
+                    name = id switch
+                    {
+                        1 => "Shared source",
+                        2 => "SHARED SOURCE",
+                        _ => $"Nearby {id}"
+                    }
+                }
             })
         });
 

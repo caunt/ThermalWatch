@@ -141,9 +141,8 @@ public sealed class NotificationCandidateEngine(
         if (readiness is null)
             return null;
 
-        NearbyMappedContext context = await nearbyFeatureClient.FindContextAsync(
+        NearbyMappedContext context = await FindCandidateContextAsync(
             cluster.Representative,
-            maximumResults: MaximumCandidateNearbyFeatures,
             cancellationToken).ConfigureAwait(false);
         return new(
             cluster,
@@ -246,9 +245,8 @@ public sealed class NotificationCandidateEngine(
             selectedWithoutNearby.Length);
         foreach (PreparedNotificationCandidate candidate in selectedWithoutNearby)
         {
-            NearbyMappedContext context = await nearbyFeatureClient.FindContextAsync(
+            NearbyMappedContext context = await FindCandidateContextAsync(
                 candidate.Cluster.Representative,
-                maximumResults: MaximumCandidateNearbyFeatures,
                 cancellationToken).ConfigureAwait(false);
             selectedCandidates.Add(candidate with
             {
@@ -258,6 +256,25 @@ public sealed class NotificationCandidateEngine(
         }
 
         return new(eligibleCandidates.Count, selectedCandidates.MoveToImmutable());
+    }
+
+    private async Task<NearbyMappedContext> FindCandidateContextAsync(
+        Anomaly anomaly,
+        CancellationToken cancellationToken)
+    {
+        NearbyMappedContext context = await nearbyFeatureClient.FindContextAsync(
+            anomaly,
+            maximumResults: MaximumDiagnosticNearbyFeatures,
+            cancellationToken).ConfigureAwait(false);
+        return context with
+        {
+            NearbyFeatures =
+            [
+                .. context.NearbyFeatures
+                    .DistinctBy(feature => feature.Name, StringComparer.OrdinalIgnoreCase)
+                    .Take(MaximumCandidateNearbyFeatures)
+            ]
+        };
     }
 
     public async Task<EligibleNotificationClusters> GetEligibleNotificationClustersAsync(
