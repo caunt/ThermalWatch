@@ -35,6 +35,7 @@ An ADR becomes accepted only when the implementation and cited validation suppor
 | [0005](0005-eligibility-based-startup-incident-suppression.md) | Accepted | Suppress only eligible startup incidents while leaving initially ineligible incidents retryable. |
 | [0006](0006-domain-explicit-public-naming.md) | Accepted | Use domain-explicit HTTP, configuration, code, and diagnostic naming without compatibility aliases. |
 | [0007](0007-rank-nearby-context-by-osm-tag-count.md) | Accepted | Rank shared nearby mapped context by OSM tag count before distance. |
-| [0008](0008-use-in-memory-daily-firms-baseline.md) | Accepted | Use an in-memory 30-day daily FIRMS baseline for historical-FRP notification filtering. |
+| [0008](0008-use-in-memory-daily-firms-baseline.md) | Superseded | Use an in-memory 30-day daily FIRMS baseline for historical-FRP notification filtering. |
+| [0009](0009-use-95th-percentile-historical-frp-threshold.md) | Accepted | Compare current total FRP with the historical 95th percentile instead of the maximum. |
 
 `0000-template.md` is a template and is not an architectural decision.

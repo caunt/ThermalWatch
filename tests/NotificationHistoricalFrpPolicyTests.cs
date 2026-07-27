@@ -18,7 +18,7 @@ public sealed class NotificationHistoricalFrpPolicyTests
     [InlineData(101, 100, NotificationCriterionOutcomes.Passed)]
     [InlineData(100, 100, NotificationCriterionOutcomes.Failed)]
     [InlineData(99, 100, NotificationCriterionOutcomes.Failed)]
-    public void ExplainRequiresCurrentTotalToBeStrictlyGreater(
+    public void ExplainRequiresCurrentTotalToBeStrictlyGreaterThan95thPercentile(
         double currentFrp,
         double historicalFrp,
         string expectedOutcome)
@@ -43,6 +43,37 @@ public sealed class NotificationHistoricalFrpPolicyTests
         Assert.Equal(!string.Equals(expectedOutcome, NotificationCriterionOutcomes.Passed, StringComparison.Ordinal), result.IsBlocking);
     }
 
+    [Theory]
+    [InlineData(93, NotificationCriterionOutcomes.Passed)]
+    [InlineData(92, NotificationCriterionOutcomes.Failed)]
+    [InlineData(91, NotificationCriterionOutcomes.Failed)]
+    public void ExplainUsesInclusiveLinearlyInterpolated95thPercentile(
+        double currentFrp,
+        string expectedOutcome)
+    {
+        NotificationCluster current = Cluster(Anomaly(
+            id: "current",
+            acquiredAtUtc: s_now,
+            longitude: 30,
+            frp: currentFrp));
+        FirmsHistory history = History(
+            isReady: true,
+            Anomaly(id: "historical-10", acquiredAtUtc: s_now.AddDays(days: -1), longitude: 30, frp: 10),
+            Anomaly(id: "historical-20", acquiredAtUtc: s_now.AddDays(days: -2), longitude: 30, frp: 20),
+            Anomaly(id: "historical-100", acquiredAtUtc: s_now.AddDays(days: -3), longitude: 30, frp: 100));
+
+        NotificationCriterionResult result = NotificationHistoricalFrpPolicy.Explain(
+            current,
+            history,
+            Options());
+
+        Assert.Equal(expectedOutcome, result.Outcome);
+        Assert.Contains(
+            expectedSubstring: "92 MW historical 95th percentile",
+            result.ActualValue,
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ExplainMatchesAnyMembersWithinClusterRadius()
     {
@@ -63,7 +94,7 @@ public sealed class NotificationHistoricalFrpPolicyTests
         NotificationCriterionResult result = NotificationHistoricalFrpPolicy.Explain(current, history, options);
 
         Assert.Equal(NotificationCriterionOutcomes.Passed, result.Outcome);
-        Assert.Contains(expectedSubstring: "250 MW historical maximum", result.ActualValue, StringComparison.Ordinal);
+        Assert.Contains(expectedSubstring: "250 MW historical 95th percentile", result.ActualValue, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -91,7 +122,7 @@ public sealed class NotificationHistoricalFrpPolicyTests
         NotificationCriterionResult result = NotificationHistoricalFrpPolicy.Explain(current, history, options);
 
         Assert.Equal(NotificationCriterionOutcomes.Passed, result.Outcome);
-        Assert.Contains(expectedSubstring: "50 MW historical maximum", result.ActualValue, StringComparison.Ordinal);
+        Assert.Contains(expectedSubstring: "50 MW historical 95th percentile", result.ActualValue, StringComparison.Ordinal);
     }
 
     [Fact]

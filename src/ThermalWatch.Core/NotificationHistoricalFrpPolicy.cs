@@ -6,9 +6,10 @@ namespace ThermalWatch.Core;
 public static class NotificationHistoricalFrpPolicy
 {
     public const string CriterionCode = "historical-cluster-frp";
+    private const double HistoricalPercentileFraction = 0.95;
     private const string CriterionLabel = "Historical location FRP";
     private const string HistoricalRequirement =
-        "Strictly greater than every matching cluster in the preceding 30 complete UTC days";
+        "Strictly greater than the 95th percentile of matching cluster total FRP in the preceding 30 complete UTC days";
 
     public static NotificationCriterionResult Explain(
         NotificationCluster cluster,
@@ -66,21 +67,37 @@ public static class NotificationHistoricalFrpPolicy
         double currentFrp,
         ImmutableArray<HistoricalMatch> matching)
     {
-        double maximumHistoricalFrp = matching.Max(item => item.Cluster.TotalFrpMegawatts!.Value);
+        double historicalPercentileFrp = CalculateHistoricalPercentile(matching);
         int matchingDayCount = matching.Select(item => item.Date).Distinct().Count();
-        bool passed = currentFrp > maximumHistoricalFrp;
-        string historicalValue = NotificationPolicy.FormatNumber(maximumHistoricalFrp);
+        bool passed = currentFrp > historicalPercentileFrp;
+        string historicalValue = NotificationPolicy.FormatNumber(historicalPercentileFrp);
         string matchSummary = $"{matching.Length.ToString(CultureInfo.InvariantCulture)} matching cluster(s) across {matchingDayCount.ToString(CultureInfo.InvariantCulture)} day(s)";
         return new(
             Code: CriterionCode,
             Label: CriterionLabel,
             Outcome: passed ? NotificationCriterionOutcomes.Passed : NotificationCriterionOutcomes.Failed,
-            ActualValue: $"{NotificationPolicy.FormatNumber(currentFrp)} MW current; {historicalValue} MW historical maximum",
-            Requirement: $"Current total FRP must be greater than {historicalValue} MW",
+            ActualValue: $"{NotificationPolicy.FormatNumber(currentFrp)} MW current; {historicalValue} MW historical 95th percentile",
+            Requirement: $"Current total FRP must be greater than the historical 95th percentile of {historicalValue} MW",
             Explanation: passed
-                ? $"The current total FRP is strictly greater than {matchSummary}."
-                : $"The current total FRP is not strictly greater than {matchSummary}.",
+                ? $"The current total FRP is strictly greater than the 95th percentile from {matchSummary}."
+                : $"The current total FRP is not strictly greater than the 95th percentile from {matchSummary}.",
             IsBlocking: !passed);
+    }
+
+    private static double CalculateHistoricalPercentile(ImmutableArray<HistoricalMatch> matching)
+    {
+        double[] orderedValues =
+        [
+            .. matching
+                .Select(item => item.Cluster.TotalFrpMegawatts!.Value)
+                .Order()
+        ];
+        double position = (orderedValues.Length - 1) * HistoricalPercentileFraction;
+        int lowerIndex = (int)Math.Floor(position);
+        int upperIndex = (int)Math.Ceiling(position);
+        double interpolationFraction = position - lowerIndex;
+        return orderedValues[lowerIndex]
+            + ((orderedValues[upperIndex] - orderedValues[lowerIndex]) * interpolationFraction);
     }
 
     private static NotificationCriterionResult HistoryUnavailable(string currentValue) =>

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded
 
 ## Context
 
@@ -68,4 +68,4 @@ For comparison, Core removes all current cluster member IDs from each historical
 ## Supersedes / Superseded by
 
 - Supersedes: None.
-- Superseded by: None.
+- Superseded by: [0009](0009-use-95th-percentile-historical-frp-threshold.md).
