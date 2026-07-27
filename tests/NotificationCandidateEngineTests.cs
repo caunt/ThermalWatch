@@ -313,6 +313,41 @@ public sealed class NotificationCandidateEngineTests
     }
 
     [Fact]
+    public async Task EligibleClusterQueryEvaluatesAtMostTwoClustersConcurrently()
+    {
+        var handler = new RecoveringPreviewHandler(
+            TimeSpan.FromMilliseconds(milliseconds: 25))
+        {
+            IsPreviewAvailable = true
+        };
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationOptions options = DefaultOptions() with
+        {
+            Visibility = DefaultOptions().Visibility with { RequirePreview = true }
+        };
+        NotificationCandidateEngine engine = CreateEngine(handler, cache, options: options);
+        AnomalySnapshot snapshot = Snapshot(
+            CreateAnomaly(id: "first-low", longitude: 30, frpMegawatts: 100),
+            CreateAnomaly(id: "second-low", longitude: 30.02, frpMegawatts: 110),
+            CreateAnomaly(id: "first-middle", longitude: 31, frpMegawatts: 200),
+            CreateAnomaly(id: "second-middle", longitude: 31.02, frpMegawatts: 210),
+            CreateAnomaly(id: "first-high", longitude: 32, frpMegawatts: 300),
+            CreateAnomaly(id: "second-high", longitude: 32.02, frpMegawatts: 310),
+            CreateAnomaly(id: "first-highest", longitude: 33, frpMegawatts: 400),
+            CreateAnomaly(id: "second-highest", longitude: 33.02, frpMegawatts: 410));
+
+        EligibleNotificationClusters result = await engine.GetEligibleNotificationClustersAsync(
+            snapshot,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, handler.MaximumConcurrentRequests);
+        Assert.Equal(
+            ["second-highest", "second-high", "second-middle", "second-low"],
+            result.Clusters.Select(cluster => cluster.RepresentativeId),
+            StringComparer.Ordinal);
+    }
+
+    [Fact]
     public async Task AutomaticReevaluatesActiveClusterUntilRequiredPreviewIsAvailable()
     {
         var handler = new RecoveringPreviewHandler();
@@ -732,51 +767,82 @@ public sealed class NotificationCandidateEngineTests
         }
     }
 
-    private sealed class RecoveringPreviewHandler : HttpMessageHandler
+    private sealed class RecoveringPreviewHandler(TimeSpan? responseDelay = null) : HttpMessageHandler
     {
+        private readonly TimeSpan _responseDelay = responseDelay ?? TimeSpan.Zero;
+        private int _activeRequestCount;
+        private int _maximumConcurrentRequests;
+
         public bool IsPreviewAvailable { get; set; }
 
-        protected override Task<HttpResponseMessage> SendAsync(
+        public int MaximumConcurrentRequests => Volatile.Read(ref _maximumConcurrentRequests);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            HttpContent content;
-            if (request.RequestUri!.AbsolutePath.EndsWith(value: ".xml", StringComparison.Ordinal))
+            int activeRequestCount = Interlocked.Increment(ref _activeRequestCount);
+            UpdateMaximum(ref _maximumConcurrentRequests, activeRequestCount);
+            try
             {
-                content = new StringContent(
-                    content: "<Domains><Domain>2026-07-23</Domain></Domains>",
-                    Encoding.UTF8,
-                    mediaType: "application/xml");
-            }
-            else
-            {
-                string layers = ReadQueryValue(request.RequestUri, name: "LAYERS");
-                bool isComposite = layers.Contains(',', StringComparison.Ordinal);
-                byte[] bytes = isComposite
-                    ? PngTestData.CreateSolidRgba(
-                        width: 900,
-                        height: 600,
-                        red: 30,
-                        green: 80,
-                        blue: 40,
-                        alpha: 255)
-                    : PngTestData.CreateSolidRgba(
-                        width: 64,
-                        height: 64,
-                        red: IsPreviewAvailable ? (byte)30 : (byte)0,
-                        green: IsPreviewAvailable ? (byte)80 : (byte)0,
-                        blue: IsPreviewAvailable ? (byte)40 : (byte)0,
-                        alpha: 255);
-                content = new ByteArrayContent(bytes);
-                content.Headers.ContentType = new MediaTypeHeaderValue(mediaType: "image/png");
-            }
+                if (_responseDelay > TimeSpan.Zero)
+                    await Task.Delay(_responseDelay, cancellationToken).ConfigureAwait(false);
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                HttpContent content;
+                if (request.RequestUri!.AbsolutePath.EndsWith(value: ".xml", StringComparison.Ordinal))
+                {
+                    content = new StringContent(
+                        content: "<Domains><Domain>2026-07-23</Domain></Domains>",
+                        Encoding.UTF8,
+                        mediaType: "application/xml");
+                }
+                else
+                {
+                    string layers = ReadQueryValue(request.RequestUri, name: "LAYERS");
+                    bool isComposite = layers.Contains(',', StringComparison.Ordinal);
+                    byte[] bytes = isComposite
+                        ? PngTestData.CreateSolidRgba(
+                            width: 900,
+                            height: 600,
+                            red: 30,
+                            green: 80,
+                            blue: 40,
+                            alpha: 255)
+                        : PngTestData.CreateSolidRgba(
+                            width: 64,
+                            height: 64,
+                            red: IsPreviewAvailable ? (byte)30 : (byte)0,
+                            green: IsPreviewAvailable ? (byte)80 : (byte)0,
+                            blue: IsPreviewAvailable ? (byte)40 : (byte)0,
+                            alpha: 255);
+                    content = new ByteArrayContent(bytes);
+                    content.Headers.ContentType = new MediaTypeHeaderValue(mediaType: "image/png");
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = content,
+                    RequestMessage = request
+                };
+            }
+            finally
             {
-                Content = content,
-                RequestMessage = request
-            });
+                Interlocked.Decrement(ref _activeRequestCount);
+            }
+        }
+
+        private static void UpdateMaximum(ref int maximum, int candidate)
+        {
+            int current = Volatile.Read(ref maximum);
+            while (candidate > current)
+            {
+                int observed = Interlocked.CompareExchange(ref maximum, candidate, current);
+                if (observed == current)
+                    return;
+
+                current = observed;
+            }
         }
 
         private static string ReadQueryValue(Uri uri, string name)

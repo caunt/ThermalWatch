@@ -10,6 +10,7 @@ public sealed class NotificationCandidateEngine(
     TimeProvider timeProvider)
 {
     private const int MaximumCandidateNearbyFeatures = 5;
+    private const int MaximumConcurrentEligibleClusterEvaluations = 2;
     private const int MaximumDiagnosticNearbyFeatures = 25;
     private readonly NotificationEpisodeHistory _startupIncidentHistory = new(
         options.ClusterRadiusKilometers,
@@ -285,48 +286,22 @@ public sealed class NotificationCandidateEngine(
             snapshot.Anomalies,
             options.ClusterRadiusKilometers,
             options.ClusterTimeWindow);
-        ImmutableArray<EligibleNotificationCluster>.Builder eligible =
-            ImmutableArray.CreateBuilder<EligibleNotificationCluster>();
-        foreach (NotificationCluster cluster in clusters)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            NotificationClusterEvaluation evaluation = await EvaluateClusterAsync(
-                cluster,
-                cancellationToken).ConfigureAwait(false);
-            if (!evaluation.IsEligible)
-                continue;
-
-            NotificationPreviewSelection previewSelection = SelectPreview(cluster);
-            if (IsPreviewRequired)
+        var eligible = new EligibleNotificationCluster?[clusters.Length];
+        await Parallel.ForEachAsync(
+            Enumerable.Range(start: 0, clusters.Length),
+            new ParallelOptions
             {
-                GibsPreview preview = await gibsClient.GetPreviewAsync(
-                    cluster.Representative,
-                    previewSelection.Dimensions,
-                    cancellationToken).ConfigureAwait(false);
-                if (!preview.IsAvailable)
-                    continue;
-            }
-
-            Anomaly representative = cluster.Representative;
-            eligible.Add(new(
-                cluster.Id,
-                representative.Id,
-                representative.CountryCode,
-                representative.Source,
-                representative.Satellite,
-                representative.Latitude,
-                representative.Longitude,
-                representative.AcquiredAtUtc,
-                representative.FrpMegawatts,
-                cluster.TotalFrpMegawatts,
-                cluster.Members.Length,
-                previewSelection.ClusterDiameterKilometers));
-        }
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = MaximumConcurrentEligibleClusterEvaluations
+            },
+            async (index, token) => eligible[index] = await EvaluateEligibleClusterAsync(
+                clusters[index],
+                token).ConfigureAwait(false)).ConfigureAwait(false);
 
         ImmutableArray<EligibleNotificationCluster> ordered =
         [
             .. OrderByNotificationPriority(
-                candidates: eligible,
+                candidates: eligible.OfType<EligibleNotificationCluster>(),
                 totalFrpSelector: static candidate => candidate.TotalFrpMegawatts,
                 peakFrpSelector: static candidate => candidate.FrpMegawatts,
                 detectionCountSelector: static candidate => candidate.DetectionCount,
@@ -339,6 +314,43 @@ public sealed class NotificationCandidateEngine(
             clusters.Length,
             ordered.Length,
             ordered);
+    }
+
+    private async ValueTask<EligibleNotificationCluster?> EvaluateEligibleClusterAsync(
+        NotificationCluster cluster,
+        CancellationToken cancellationToken)
+    {
+        NotificationClusterEvaluation evaluation = await EvaluateClusterAsync(
+            cluster,
+            cancellationToken).ConfigureAwait(false);
+        if (!evaluation.IsEligible)
+            return null;
+
+        NotificationPreviewSelection previewSelection = SelectPreview(cluster);
+        if (IsPreviewRequired)
+        {
+            GibsPreview preview = await gibsClient.GetPreviewAsync(
+                cluster.Representative,
+                previewSelection.Dimensions,
+                cancellationToken).ConfigureAwait(false);
+            if (!preview.IsAvailable)
+                return null;
+        }
+
+        Anomaly representative = cluster.Representative;
+        return new(
+            cluster.Id,
+            representative.Id,
+            representative.CountryCode,
+            representative.Source,
+            representative.Satellite,
+            representative.Latitude,
+            representative.Longitude,
+            representative.AcquiredAtUtc,
+            representative.FrpMegawatts,
+            cluster.TotalFrpMegawatts,
+            cluster.Members.Length,
+            previewSelection.ClusterDiameterKilometers);
     }
 
     public async Task<NotificationDiagnostic?> GetNotificationDiagnosticAsync(

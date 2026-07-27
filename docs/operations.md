@@ -104,7 +104,7 @@ There is no health/readiness route, metrics endpoint, tracing, external log sink
 
 All current HTTP endpoints are unauthenticated. Cross-origin `GET` is allowed:
 
-- `/api/anomalies`, `/api/viewer/config`, `/api/viewer/imagery/gibs/{z}/{x}/{y}.png`, `/api/viewer/eligible-notification-clusters`, and `/api/viewer/notification-diagnostics/{anomalyId}` are read-only. The imagery, eligible-cluster, and diagnostic routes can cause bounded backend GIBS requests for uncached data; evaluating every active cluster can remain in progress for several seconds on a large snapshot, while every valid selected-anomaly diagnostic can also cause a serialized, cached Overpass request.
+- `/api/anomalies`, `/api/viewer/config`, `/api/viewer/imagery/gibs/{z}/{x}/{y}.png`, `/api/viewer/eligible-notification-clusters`, and `/api/viewer/notification-diagnostics/{anomalyId}` are read-only. The imagery, eligible-cluster, and diagnostic routes can cause bounded backend GIBS requests for uncached data. Eligible-cluster evaluation admits at most two clusters concurrently and can still remain in progress for several seconds on a large or cold-cache snapshot, while every valid selected-anomaly diagnostic can also cause a serialized, cached Overpass request.
 - `/api/viewer/config` intentionally exposes a browser API key when configured.
 - `/api/telegram/send-top` sends Telegram messages and must sit behind an appropriate network access boundary. Its use is not safe as a health check.
 
