@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using StbImageSharp;
 using StbImageWriteSharp;
 using ThermalWatch.Core;
@@ -10,6 +11,15 @@ namespace ThermalWatch.Tests;
 
 public sealed class GibsMapTileClientTests
 {
+    private static readonly DateTimeOffset s_now = new(
+        year: 2026,
+        month: 7,
+        day: 27,
+        hour: 12,
+        minute: 0,
+        second: 0,
+        offset: TimeSpan.Zero);
+
     [Theory]
     [InlineData(0, 0, 0, true)]
     [InlineData(9, 511, 511, true)]
@@ -38,7 +48,7 @@ public sealed class GibsMapTileClientTests
         Assert.Equal(GibsMapTileCoverage.Complete, tile.Coverage);
         Assert.Equal(
             "https://gibs.example.test/wmts/epsg3857/best/"
-            + "MODIS_Terra_CorrectedReflectance_TrueColor/default/default/"
+            + "MODIS_Terra_CorrectedReflectance_TrueColor/default/2026-07-27/"
             + "GoogleMapsCompatible_Level9/6/21/37.jpeg",
             Assert.Single(handler.Requests).AbsoluteUri);
         AssertPixelNear(tile.PngBytes, x: 0, red: 42, green: 72, blue: 112, byte.MaxValue);
@@ -65,6 +75,60 @@ public sealed class GibsMapTileClientTests
         Assert.Contains("MODIS_Aqua", handler.Requests[1].AbsoluteUri, StringComparison.Ordinal);
         AssertPixelNear(tile.PngBytes, x: 20, red: 82, green: 46, blue: 34, byte.MaxValue);
         AssertPixelNear(tile.PngBytes, x: 230, red: 31, green: 91, blue: 43, byte.MaxValue);
+    }
+
+    [Fact]
+    public async Task GetMapTileAsyncFallsBackToAllProductsFromPreviousUtcDay()
+    {
+        byte[] black = SolidJpeg(red: 0, green: 0, blue: 0);
+        byte[] yesterday = SolidJpeg(red: 52, green: 82, blue: 112);
+        var handler = new TileHandler(index => JpegResponse(index == 9 ? yesterday : black));
+        using MemoryCache cache = CreateCache();
+        using GibsMapTileClient client = CreateClient(handler, cache);
+
+        GibsMapTileResult tile = await client.GetMapTileAsync(
+            Coordinates(zoom: 3, x: 1, y: 2),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(GibsMapTileCoverage.Complete, tile.Coverage);
+        Assert.Equal(10, handler.Requests.Count);
+        Assert.All(
+            handler.Requests.Take(count: 5),
+            request => Assert.Contains("/2026-07-27/", request.AbsoluteUri, StringComparison.Ordinal));
+        Assert.All(
+            handler.Requests.Skip(count: 5),
+            request => Assert.Contains("/2026-07-26/", request.AbsoluteUri, StringComparison.Ordinal));
+        Assert.Contains("MODIS_Terra", handler.Requests[5].AbsoluteUri, StringComparison.Ordinal);
+        Assert.Contains("VIIRS_SNPP", handler.Requests[9].AbsoluteUri, StringComparison.Ordinal);
+        AssertPixelNear(tile.PngBytes, x: 20, red: 52, green: 82, blue: 112, byte.MaxValue);
+    }
+
+    [Fact]
+    public async Task GetMapTileAsyncFillsRemainingTodayHolesWithoutReplacingTodayPixels()
+    {
+        byte[] today = CreateJpeg((x, _) => x < 128
+            ? ((byte)72, (byte)42, (byte)32)
+            : ((byte)0, (byte)0, (byte)0));
+        byte[] black = SolidJpeg(red: 0, green: 0, blue: 0);
+        byte[] yesterday = SolidJpeg(red: 32, green: 92, blue: 62);
+        var handler = new TileHandler(index => JpegResponse(index switch
+        {
+            0 => today,
+            5 => yesterday,
+            _ => black
+        }));
+        using MemoryCache cache = CreateCache();
+        using GibsMapTileClient client = CreateClient(handler, cache);
+
+        GibsMapTileResult tile = await client.GetMapTileAsync(
+            Coordinates(zoom: 3, x: 1, y: 2),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(GibsMapTileCoverage.Complete, tile.Coverage);
+        Assert.Equal(6, handler.Requests.Count);
+        Assert.Contains("/2026-07-26/", handler.Requests[5].AbsoluteUri, StringComparison.Ordinal);
+        AssertPixelNear(tile.PngBytes, x: 20, red: 72, green: 42, blue: 32, byte.MaxValue);
+        AssertPixelNear(tile.PngBytes, x: 230, red: 32, green: 92, blue: 62, byte.MaxValue);
     }
 
     [Fact]
@@ -149,7 +213,7 @@ public sealed class GibsMapTileClientTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(GibsMapTileCoverage.None, tile.Coverage);
-        Assert.Equal(5, handler.Requests.Count);
+        Assert.Equal(10, handler.Requests.Count);
         AssertPixelNear(tile.PngBytes, x: 0, red: 0, green: 0, blue: 0, alpha: 0);
     }
 
@@ -169,7 +233,7 @@ public sealed class GibsMapTileClientTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(GibsMapTileCoverage.Partial, tile.Coverage);
-        Assert.Equal(5, handler.Requests.Count);
+        Assert.Equal(10, handler.Requests.Count);
         AssertPixelNear(tile.PngBytes, x: 20, red: 65, green: 95, blue: 125, byte.MaxValue);
         AssertPixelNear(tile.PngBytes, x: 230, red: 0, green: 0, blue: 0, alpha: 0);
     }
@@ -198,7 +262,7 @@ public sealed class GibsMapTileClientTests
         await emptyClient.GetMapTileAsync(coordinates, TestContext.Current.CancellationToken);
         await emptyClient.GetMapTileAsync(coordinates, TestContext.Current.CancellationToken);
 
-        Assert.Equal(10, emptyHandler.Requests.Count);
+        Assert.Equal(20, emptyHandler.Requests.Count);
     }
 
     [Fact]
@@ -225,6 +289,7 @@ public sealed class GibsMapTileClientTests
                 BaseAddress = new(uriString: "https://gibs.example.test/")
             },
             cache,
+            new FakeTimeProvider(s_now),
             NullLogger<GibsMapTileClient>.Instance);
 
     private static MemoryCache CreateCache() =>

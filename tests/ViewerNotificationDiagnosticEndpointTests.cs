@@ -154,6 +154,7 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
         builder.Services.AddSingleton(serviceProvider => new GibsMapTileClient(
             new HttpClient(noRequests) { BaseAddress = new(uriString: "https://gibs.example.test/") },
             serviceProvider.GetRequiredService<IMemoryCache>(),
+            serviceProvider.GetRequiredService<TimeProvider>(),
             NullLogger<GibsMapTileClient>.Instance));
 
         WebApplication app = builder.Build();

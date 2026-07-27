@@ -104,6 +104,7 @@ try
     builder.Services.AddSingleton(serviceProvider => new GibsMapTileClient(
         serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient(name: "GibsMapTiles"),
         serviceProvider.GetRequiredService<IMemoryCache>(),
+        serviceProvider.GetRequiredService<TimeProvider>(),
         serviceProvider.GetRequiredService<ILogger<GibsMapTileClient>>()));
     builder.Services.AddSingleton<NotificationCandidateEngine>();
 

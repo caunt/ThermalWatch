@@ -9,6 +9,7 @@ namespace ThermalWatch.Core;
 public sealed partial class GibsMapTileClient(
     HttpClient httpClient,
     IMemoryCache cache,
+    TimeProvider timeProvider,
     ILogger<GibsMapTileClient> logger) : IDisposable
 {
     public const int MaximumZoom = 9;
@@ -66,23 +67,21 @@ public sealed partial class GibsMapTileClient(
     {
         byte[] pixels = new byte[TileSize * TileSize * 4];
         int remainingPixels = TileSize * TileSize;
+        var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
 
-        foreach (string layer in GibsLayers.MapBaseLayers)
+        foreach (DateOnly date in new[] { today, today.AddDays(value: -1) })
         {
-            byte[]? source = await GetTilePixelsAsync(layer, coordinates, cancellationToken).ConfigureAwait(false);
-            if (source is null)
-                continue;
-
-            for (int offset = 0; offset < pixels.Length; offset += 4)
+            foreach (string layer in GibsLayers.MapBaseLayers)
             {
-                if (pixels[offset + 3] != 0 || IsNoData(source, offset))
+                byte[]? source = await GetTilePixelsAsync(layer, date, coordinates, cancellationToken)
+                    .ConfigureAwait(false);
+                if (source is null)
                     continue;
 
-                pixels[offset] = source[offset];
-                pixels[offset + 1] = source[offset + 1];
-                pixels[offset + 2] = source[offset + 2];
-                pixels[offset + 3] = source[offset + 3];
-                remainingPixels--;
+                remainingPixels = FillUnresolvedPixels(pixels, source, remainingPixels);
+
+                if (remainingPixels == 0)
+                    break;
             }
 
             if (remainingPixels == 0)
@@ -118,14 +117,32 @@ public sealed partial class GibsMapTileClient(
         return new(stream.ToArray(), coverage);
     }
 
+    private static int FillUnresolvedPixels(byte[] pixels, byte[] source, int remainingPixels)
+    {
+        for (int offset = 0; offset < pixels.Length; offset += 4)
+        {
+            if (pixels[offset + 3] != 0 || IsNoData(source, offset))
+                continue;
+
+            pixels[offset] = source[offset];
+            pixels[offset + 1] = source[offset + 1];
+            pixels[offset + 2] = source[offset + 2];
+            pixels[offset + 3] = source[offset + 3];
+            remainingPixels--;
+        }
+
+        return remainingPixels;
+    }
+
     private async Task<byte[]?> GetTilePixelsAsync(
         string layer,
+        DateOnly date,
         GibsMapTileCoordinates coordinates,
         CancellationToken cancellationToken)
     {
         try
         {
-            Uri requestUri = BuildTileUri(layer, coordinates);
+            Uri requestUri = BuildTileUri(layer, date, coordinates);
             using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
             using HttpResponseMessage response = await httpClient.SendAsync(
                 request,
@@ -174,13 +191,16 @@ public sealed partial class GibsMapTileClient(
         }
     }
 
-    private Uri BuildTileUri(string layer, GibsMapTileCoordinates coordinates)
+    private Uri BuildTileUri(
+        string layer,
+        DateOnly date,
+        GibsMapTileCoordinates coordinates)
     {
         Uri baseAddress = httpClient.BaseAddress
             ?? throw new InvalidOperationException(message: "The GIBS HTTP client requires a base address.");
         string path = string.Create(
             CultureInfo.InvariantCulture,
-            handler: $"wmts/epsg3857/best/{layer}/default/default/GoogleMapsCompatible_Level9/{coordinates.Zoom}/{coordinates.Y}/{coordinates.X}.jpeg");
+            handler: $"wmts/epsg3857/best/{layer}/default/{date:yyyy-MM-dd}/GoogleMapsCompatible_Level9/{coordinates.Zoom}/{coordinates.Y}/{coordinates.X}.jpeg");
         return new(baseAddress, path);
     }
 

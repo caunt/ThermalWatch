@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using StbImageWriteSharp;
 using ThermalWatch.Core;
 using ThermalWatch.Viewer;
@@ -53,7 +54,7 @@ public sealed class ViewerImageryEndpointTests
             "none",
             Assert.Single(response.Headers.GetValues(ViewerEndpoints.ImageryCoverageHeader)));
         Assert.True(response.Headers.CacheControl?.NoStore);
-        Assert.Equal(5, handler.RequestCount);
+        Assert.Equal(10, handler.RequestCount);
     }
 
     [Fact]
@@ -86,6 +87,14 @@ public sealed class ViewerImageryEndpointTests
                 BaseAddress = new(uriString: "https://gibs.example.test/")
             },
             serviceProvider.GetRequiredService<IMemoryCache>(),
+            new FakeTimeProvider(new DateTimeOffset(
+                year: 2026,
+                month: 7,
+                day: 27,
+                hour: 12,
+                minute: 0,
+                second: 0,
+                offset: TimeSpan.Zero)),
             NullLogger<GibsMapTileClient>.Instance));
 
         WebApplication app = builder.Build();
