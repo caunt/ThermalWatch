@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Runtime.InteropServices;
 
 namespace ThermalWatch.Core;
 
@@ -43,24 +44,63 @@ public static class NotificationHistoricalFrpPolicy
         ImmutableArray<HistoricalMatch>.Builder matching = ImmutableArray.CreateBuilder<HistoricalMatch>();
         foreach (FirmsHistoryDay day in history.Days.Where(day => day.Date < history.RetainedThroughDate))
         {
-            Anomaly[] historicalAnomalies =
-            [
-                .. day.Anomalies.Where(anomaly => !currentMemberIds.Contains(anomaly.Id))
-            ];
-            foreach (NotificationCluster historicalCluster in NotificationClustering.Create(
-                historicalAnomalies,
-                options.ClusterRadiusKilometers,
-                options.ClusterTimeWindow))
+            if (day.Anomalies.Any(anomaly => currentMemberIds.Contains(anomaly.Id))
+                || day.ClusterCount != day.Clusters.Length)
             {
-                if (historicalCluster.TotalFrpMegawatts is not null
-                    && SpatiallyMatches(cluster, historicalCluster, options.ClusterRadiusKilometers))
-                {
-                    matching.Add(new(day.Date, historicalCluster));
-                }
+                AddReclusteredMatches(cluster, day, currentMemberIds, options, matching);
+                continue;
             }
+
+            AddRetainedMatches(cluster, day, options.ClusterRadiusKilometers, matching);
         }
 
         return matching.ToImmutable();
+    }
+
+    private static void AddReclusteredMatches(
+        NotificationCluster current,
+        FirmsHistoryDay day,
+        ImmutableHashSet<string> currentMemberIds,
+        NotificationOptions options,
+        ImmutableArray<HistoricalMatch>.Builder matching)
+    {
+        Anomaly[] historicalAnomalies =
+        [
+            .. day.Anomalies.Where(anomaly => !currentMemberIds.Contains(anomaly.Id))
+        ];
+        foreach (NotificationCluster historicalCluster in NotificationClustering.Create(
+            historicalAnomalies,
+            options.ClusterRadiusKilometers,
+            options.ClusterTimeWindow))
+        {
+            if (historicalCluster.TotalFrpMegawatts is { } totalFrp
+                && SpatiallyMatches(current, historicalCluster.Members, options.ClusterRadiusKilometers))
+            {
+                matching.Add(new(day.Date, totalFrp));
+            }
+        }
+    }
+
+    private static void AddRetainedMatches(
+        NotificationCluster current,
+        FirmsHistoryDay day,
+        double radiusKilometers,
+        ImmutableArray<HistoricalMatch>.Builder matching)
+    {
+        var anomaliesById = day.Anomalies.ToDictionary(
+            anomaly => anomaly.Id,
+            StringComparer.Ordinal);
+        foreach (NotificationClusterSummary historicalCluster in day.Clusters)
+        {
+            if (historicalCluster.TotalFrpMegawatts is not { } totalFrp)
+                continue;
+
+            IEnumerable<Anomaly> historicalMembers = historicalCluster.MemberIds
+                .Select(memberId => anomaliesById.GetValueOrDefault(memberId))
+                .OfType<Anomaly>();
+            if (SpatiallyMatches(current, historicalMembers, radiusKilometers))
+                matching.Add(new(day.Date, totalFrp));
+        }
     }
 
     private static NotificationCriterionResult Compare(
@@ -89,7 +129,7 @@ public static class NotificationHistoricalFrpPolicy
         double[] orderedValues =
         [
             .. matching
-                .Select(item => item.Cluster.TotalFrpMegawatts!.Value)
+                .Select(item => item.TotalFrpMegawatts)
                 .Order()
         ];
         double position = (orderedValues.Length - 1) * HistoricalPercentileFraction;
@@ -137,12 +177,13 @@ public static class NotificationHistoricalFrpPolicy
 
     private static bool SpatiallyMatches(
         NotificationCluster current,
-        NotificationCluster historical,
+        IEnumerable<Anomaly> historicalMembers,
         double radiusKilometers) =>
-        current.Members.Any(currentAnomaly => historical.Members.Any(historicalAnomaly =>
+        current.Members.Any(currentAnomaly => historicalMembers.Any(historicalAnomaly =>
             Geography.HaversineKilometers(currentAnomaly, historicalAnomaly) <= radiusKilometers));
 
+    [StructLayout(LayoutKind.Auto)]
     private readonly record struct HistoricalMatch(
         DateOnly Date,
-        NotificationCluster Cluster);
+        double TotalFrpMegawatts);
 }

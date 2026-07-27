@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Runtime.InteropServices;
 
 namespace ThermalWatch.Core;
 
@@ -12,29 +13,126 @@ public static class NotificationClustering
         if (anomalies.Count == 0)
             return [];
 
-        int[] parents = [.. Enumerable.Range(start: 0, anomalies.Count)];
-
-        for (int first = 0; first < anomalies.Count; first++)
+        Anomaly[] orderedAnomalies =
+        [
+            .. anomalies
+                .OrderBy(anomaly => anomaly.AcquiredAtUtc)
+                .ThenBy(anomaly => anomaly.Id, StringComparer.Ordinal)
+        ];
+        int[] parents = [.. Enumerable.Range(start: 0, orderedAnomalies.Length)];
+        double cellSize = ChordLength(radiusKilometers);
+        if (!(cellSize > 0) || !double.IsFinite(cellSize))
         {
-            for (int second = first + 1; second < anomalies.Count; second++)
-            {
-                if ((anomalies[first].AcquiredAtUtc - anomalies[second].AcquiredAtUtc).Duration() > timeWindow)
-                    continue;
-
-                if (Geography.HaversineKilometers(anomalies[first], anomalies[second]) <= radiusKilometers)
-                    Union(parents, first, second);
-            }
+            JoinTimeBoundedPairs(
+                orderedAnomalies,
+                parents,
+                radiusKilometers,
+                timeWindow);
+        }
+        else
+        {
+            JoinSpatiotemporallyBoundedPairs(
+                orderedAnomalies,
+                parents,
+                radiusKilometers,
+                timeWindow,
+                cellSize);
         }
 
         return
         [
-            .. anomalies
+            .. orderedAnomalies
                 .Select((anomaly, index) => (Anomaly: anomaly, Root: Find(parents, index)))
                 .GroupBy(item => item.Root)
                 .Select(group => BuildCluster(group.Select(item => item.Anomaly)))
                 .OrderByDescending(cluster => cluster.Representative.AcquiredAtUtc)
                 .ThenBy(cluster => cluster.Id, StringComparer.Ordinal)
         ];
+    }
+
+    private static void JoinTimeBoundedPairs(
+        Anomaly[] orderedAnomalies,
+        int[] parents,
+        double radiusKilometers,
+        TimeSpan timeWindow)
+    {
+        for (int first = 0; first < orderedAnomalies.Length; first++)
+        {
+            for (int second = first + 1; second < orderedAnomalies.Length; second++)
+            {
+                if (orderedAnomalies[second].AcquiredAtUtc - orderedAnomalies[first].AcquiredAtUtc > timeWindow)
+                    break;
+
+                if (Geography.HaversineKilometers(orderedAnomalies[first], orderedAnomalies[second]) <= radiusKilometers)
+                    Union(parents, first, second);
+            }
+        }
+    }
+
+    private static void JoinSpatiotemporallyBoundedPairs(
+        Anomaly[] orderedAnomalies,
+        int[] parents,
+        double radiusKilometers,
+        TimeSpan timeWindow,
+        double cellSize)
+    {
+        var activeByCell = new Dictionary<SpatialCell, Queue<int>>();
+        var activeInTimeOrder = new Queue<(int Index, SpatialCell Cell)>();
+        for (int current = 0; current < orderedAnomalies.Length; current++)
+        {
+            Anomaly currentAnomaly = orderedAnomalies[current];
+            while (activeInTimeOrder.TryPeek(out (int Index, SpatialCell Cell) oldest)
+                && currentAnomaly.AcquiredAtUtc - orderedAnomalies[oldest.Index].AcquiredAtUtc > timeWindow)
+            {
+                activeInTimeOrder.Dequeue();
+                Queue<int> occupants = activeByCell[oldest.Cell];
+                occupants.Dequeue();
+                if (occupants.Count == 0)
+                    activeByCell.Remove(oldest.Cell);
+            }
+
+            SpatialCell cell = GetSpatialCell(currentAnomaly, cellSize);
+            for (long x = cell.X - 1; x <= cell.X + 1; x++)
+            {
+                for (long y = cell.Y - 1; y <= cell.Y + 1; y++)
+                {
+                    for (long z = cell.Z - 1; z <= cell.Z + 1; z++)
+                    {
+                        if (!activeByCell.TryGetValue(new(x, y, z), out Queue<int>? candidates))
+                            continue;
+
+                        foreach (int candidate in candidates)
+                        {
+                            if (Geography.HaversineKilometers(orderedAnomalies[candidate], currentAnomaly) <= radiusKilometers)
+                                Union(parents, candidate, current);
+                        }
+                    }
+                }
+            }
+
+            if (!activeByCell.TryGetValue(cell, out Queue<int>? currentCell))
+            {
+                currentCell = new();
+                activeByCell.Add(cell, currentCell);
+            }
+
+            currentCell.Enqueue(current);
+            activeInTimeOrder.Enqueue((current, cell));
+        }
+    }
+
+    private static double ChordLength(double radiusKilometers) =>
+        2 * Math.Sin(radiusKilometers / (2 * Geography.EarthRadiusKilometers));
+
+    private static SpatialCell GetSpatialCell(Anomaly anomaly, double cellSize)
+    {
+        double latitudeRadians = anomaly.Latitude * Math.PI / 180;
+        double longitudeRadians = anomaly.Longitude * Math.PI / 180;
+        double latitudeCosine = Math.Cos(latitudeRadians);
+        return new(
+            X: (long)Math.Floor(latitudeCosine * Math.Cos(longitudeRadians) / cellSize),
+            Y: (long)Math.Floor(latitudeCosine * Math.Sin(longitudeRadians) / cellSize),
+            Z: (long)Math.Floor(Math.Sin(latitudeRadians) / cellSize));
     }
 
     public static bool AreRelated(
@@ -80,4 +178,7 @@ public static class NotificationClustering
         if (firstRoot != secondRoot)
             parents[secondRoot] = firstRoot;
     }
+
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct SpatialCell(long X, long Y, long Z);
 }

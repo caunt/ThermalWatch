@@ -126,6 +126,44 @@ public sealed class NotificationHistoricalFrpPolicyTests
     }
 
     [Fact]
+    public void ExplainUsesRetainedClusterTotalsForNonOverlappingHistoricalDays()
+    {
+        NotificationCluster current = Cluster(Anomaly(
+            id: "current",
+            acquiredAtUtc: s_now,
+            longitude: 30,
+            frp: 101));
+        Anomaly historical = Anomaly(
+            id: "historical",
+            acquiredAtUtc: s_now.AddDays(days: -1),
+            longitude: 30,
+            frp: 100);
+        FirmsHistory history = History(isReady: true, anomalies: [historical]);
+        NotificationClusterSummary retainedSummary = Assert.Single(history.Days).Clusters.Single() with
+        {
+            TotalFrpMegawatts = 200
+        };
+        history = history with
+        {
+            Days =
+            [
+                history.Days.Single() with
+                {
+                    Clusters = [retainedSummary]
+                }
+            ]
+        };
+
+        NotificationCriterionResult result = NotificationHistoricalFrpPolicy.Explain(
+            current,
+            history,
+            Options());
+
+        Assert.Equal(NotificationCriterionOutcomes.Failed, result.Outcome);
+        Assert.Contains(expectedSubstring: "200 MW historical 95th percentile", result.ActualValue, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ExplainPassesWithoutComparableHistoricalFrp()
     {
         NotificationOptions options = Options();
@@ -212,20 +250,33 @@ public sealed class NotificationHistoricalFrpPolicyTests
 
     private static FirmsHistory History(bool isReady, params Anomaly[] anomalies)
     {
+        NotificationOptions options = Options();
         var today = DateOnly.FromDateTime(s_now.UtcDateTime);
         FirmsHistoryDay[] days =
         [
             .. anomalies
                 .GroupBy(anomaly => DateOnly.FromDateTime(anomaly.AcquiredAtUtc.UtcDateTime))
-                .Select(group => new FirmsHistoryDay(
-                    group.Key,
-                    IsComplete: true,
-                    IsPartiallyStale: false,
-                    Segments: [],
-                    AnomalyCount: group.Count(),
-                    Anomalies: [.. group],
-                    ClusterCount: 0,
-                    Clusters: []))
+                .Select(group =>
+                {
+                    Anomaly[] dayAnomalies = [.. group];
+                    NotificationClusterSummary[] clusters =
+                    [
+                        .. NotificationClustering.Create(
+                                dayAnomalies,
+                                options.ClusterRadiusKilometers,
+                                options.ClusterTimeWindow)
+                            .Select(NotificationClusterSummary.FromCluster)
+                    ];
+                    return new FirmsHistoryDay(
+                        group.Key,
+                        IsComplete: true,
+                        IsPartiallyStale: false,
+                        Segments: [],
+                        AnomalyCount: dayAnomalies.Length,
+                        Anomalies: [.. dayAnomalies],
+                        ClusterCount: clusters.Length,
+                        Clusters: [.. clusters]);
+                })
         ];
         return new(
             s_now,

@@ -192,6 +192,80 @@ public sealed class NotificationClusteringTests
     }
 
     [Fact]
+    public void CreatePreservesTransitiveLinkageForUnorderedInputAcrossTimeWindowBoundary()
+    {
+        Anomaly first = CreateAnomaly(
+            id: "first",
+            s_observedAt,
+            latitude: 50,
+            longitude: 30);
+        Anomaly bridge = CreateAnomaly(
+            id: "bridge",
+            s_observedAt.AddMinutes(minutes: 60),
+            latitude: 50,
+            longitude: 30);
+        Anomaly last = CreateAnomaly(
+            id: "last",
+            s_observedAt.AddMinutes(minutes: 120),
+            latitude: 50,
+            longitude: 30);
+
+        NotificationCluster cluster = Assert.Single(NotificationClustering.Create(
+            [last, first, bridge],
+            radiusKilometers: 5,
+            timeWindow: TimeSpan.FromMinutes(minutes: 90)));
+
+        Assert.Equal(3, cluster.Members.Length);
+        Assert.False(NotificationClustering.AreRelated(
+            first,
+            last,
+            radiusKilometers: 5,
+            timeWindow: TimeSpan.FromMinutes(minutes: 90)));
+    }
+
+    [Fact]
+    public void CreateLinksNearbyDetectionsAcrossAntimeridian()
+    {
+        Anomaly west = CreateAnomaly(
+            id: "west",
+            s_observedAt,
+            latitude: 70,
+            longitude: -179.99);
+        Anomaly east = CreateAnomaly(
+            id: "east",
+            s_observedAt,
+            latitude: 70,
+            longitude: 179.99);
+
+        NotificationCluster cluster = Assert.Single(NotificationClustering.Create(
+            [west, east],
+            radiusKilometers: 5,
+            timeWindow: TimeSpan.FromMinutes(minutes: 90)));
+
+        Assert.Equal(2, cluster.Members.Length);
+    }
+
+    [Fact(Timeout = 10_000)]
+    public void CreateScalesToLargeSpatiallyDistributedSnapshot()
+    {
+        Anomaly[] anomalies =
+        [
+            .. Enumerable.Range(start: 0, count: 17_000).Select(index => CreateAnomaly(
+                id: $"anomaly-{index}",
+                s_observedAt,
+                latitude: -80 + ((index / 100) * 0.8),
+                longitude: -170 + ((index % 100) * 3.4)))
+        ];
+
+        ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
+            anomalies,
+            radiusKilometers: 5,
+            timeWindow: TimeSpan.FromMinutes(minutes: 90));
+
+        Assert.Equal(anomalies.Length, clusters.Length);
+    }
+
+    [Fact]
     public void CreateReturnsNoClustersWithoutActiveDetections()
     {
         ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
