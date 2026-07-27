@@ -7,6 +7,7 @@ internal sealed class FirmsRefreshCycle(
     FirmsClient firmsClient,
     FirmsOptions options,
     AnomalySnapshotStore snapshotStore,
+    FirmsHistoryStore historyStore,
     TimeProvider timeProvider,
     ILogger logger) : IFirmsRefreshCycle
 {
@@ -14,6 +15,9 @@ internal sealed class FirmsRefreshCycle(
 
     public async Task<FirmsRefreshCycleResult> RefreshAsync(CancellationToken cancellationToken)
     {
+        var endDate = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+        int dayCount = checked((int)Math.Ceiling(options.ActiveWindow.TotalDays) + 1);
+        DateOnly startDate = endDate.AddDays(1 - dayCount);
         SegmentKey[] keys = [.. options.CountryCodes.SelectMany(countryCode => FirmsSources.All.Select(source => new SegmentKey(countryCode, source)))];
         var results = new SegmentRefreshResult[keys.Length];
 
@@ -31,6 +35,7 @@ internal sealed class FirmsRefreshCycle(
                 index,
                 token).ConfigureAwait(false)).ConfigureAwait(false);
 
+        historyStore.Publish(startDate, dayCount, results);
         AnomalySnapshot snapshot = snapshotStore.Publish(results);
         FirmsPollingLog.SnapshotPublished(
             logger,

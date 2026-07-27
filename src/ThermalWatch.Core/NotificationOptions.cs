@@ -5,6 +5,7 @@ public sealed record NotificationOptions(
     double ClusterRadiusKilometers,
     TimeSpan ClusterTimeWindow,
     TimeSpan EpisodeRetention,
+    bool HistoricalFrpFilterEnabled,
     NotificationPreviewOptions Preview,
     NotificationLandCoverOptions LandCover,
     NotificationVisibilityOptions Visibility);

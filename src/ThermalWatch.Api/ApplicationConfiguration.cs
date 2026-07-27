@@ -64,6 +64,7 @@ public sealed record ApplicationConfiguration(
             ParseDouble(get, name: "NOTIFICATION_CLUSTER_RADIUS_KM", defaultValue: 5, minimum: 0.01, maximum: 100),
             ParseTimeSpan(get, name: "NOTIFICATION_CLUSTER_TIME_WINDOW", TimeSpan.FromMinutes(minutes: 90), TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 1)),
             ParseTimeSpan(get, name: "NOTIFICATION_EPISODE_RETENTION", defaultEpisodeRetention, TimeSpan.FromMinutes(minutes: 1), TimeSpan.FromDays(days: 30)),
+            ParseBool(get, name: "NOTIFICATION_HISTORICAL_FRP_FILTER_ENABLED", defaultValue: true),
             new(
                 new(
                     ParsePositiveDouble(get, name: "NOTIFICATION_PREVIEW_WIDTH_KM", defaultValue: 48),

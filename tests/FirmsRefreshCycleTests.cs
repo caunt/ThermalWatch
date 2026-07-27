@@ -57,10 +57,12 @@ public sealed class FirmsRefreshCycleTests
             timeProvider,
             NullLogger<FirmsClient>.Instance);
         var snapshotStore = new AnomalySnapshotStore(options, timeProvider);
+        FirmsHistoryStore historyStore = CreateHistoryStore(options, timeProvider);
         var cycle = new FirmsRefreshCycle(
             firmsClient,
             options,
             snapshotStore,
+            historyStore,
             timeProvider,
             NullLogger<FirmsRefreshCycle>.Instance);
 
@@ -122,10 +124,12 @@ public sealed class FirmsRefreshCycleTests
             timeProvider,
             NullLogger<FirmsClient>.Instance);
         var snapshotStore = new AnomalySnapshotStore(options, timeProvider);
+        FirmsHistoryStore historyStore = CreateHistoryStore(options, timeProvider);
         var cycle = new FirmsRefreshCycle(
             firmsClient,
             options,
             snapshotStore,
+            historyStore,
             timeProvider,
             NullLogger<FirmsRefreshCycle>.Instance);
 
@@ -143,6 +147,14 @@ public sealed class FirmsRefreshCycleTests
         Assert.False(snapshotStore.Current.IsPartiallyStale);
         Assert.Equal(2, handler.MaximumConcurrency);
     }
+
+    private static FirmsHistoryStore CreateHistoryStore(
+        FirmsOptions options,
+        TimeProvider timeProvider) =>
+        new(
+            options,
+            ApplicationConfiguration.ParseNotificationOptions(_ => null),
+            timeProvider);
 
     private static HttpResponseMessage CsvResponse(string path) =>
         new(HttpStatusCode.OK)

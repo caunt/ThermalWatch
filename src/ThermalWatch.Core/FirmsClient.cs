@@ -17,6 +17,8 @@ public sealed partial class FirmsClient(
     TimeProvider timeProvider,
     ILogger<FirmsClient> logger) : IDisposable
 {
+    public const int MaximumDayRange = 5;
+
     private const int MaximumResponseCharacters = 50_000_000;
     private const int MaximumErrorBodyCharacters = 4096;
     private static readonly TimeSpan s_countryProbeInterval = TimeSpan.FromHours(hours: 1);
@@ -30,22 +32,49 @@ public sealed partial class FirmsClient(
     public async Task<FirmsSegmentResult> GetSegmentAsync(
         string countryCode,
         string source,
+        CancellationToken cancellationToken) =>
+        await GetSegmentAsync(
+            countryCode,
+            source,
+            _requestDayRange,
+            startDate: null,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<FirmsSegmentResult> GetSegmentAsync(
+        string countryCode,
+        string source,
+        DateOnly startDate,
+        int dayRange,
+        CancellationToken cancellationToken) =>
+        await GetSegmentAsync(
+            countryCode,
+            source,
+            dayRange,
+            startDate,
+            cancellationToken).ConfigureAwait(false);
+
+    private async Task<FirmsSegmentResult> GetSegmentAsync(
+        string countryCode,
+        string source,
+        int dayRange,
+        DateOnly? startDate,
         CancellationToken cancellationToken)
     {
         if (!options.CountryCodes.Contains(countryCode, StringComparer.Ordinal)
-            || !FirmsSources.All.Contains(source, StringComparer.Ordinal))
+            || !FirmsSources.All.Contains(source, StringComparer.Ordinal)
+            || dayRange is < 1 or > MaximumDayRange)
         {
             throw new FirmsRequestException(safeMessage: "FIRMS request parameters are invalid.");
         }
 
         CountryApiCapability capability = GetCountryCapability();
         if (capability == CountryApiCapability.Available)
-            return await GetUsingCountryAsync(countryCode, source, cancellationToken).ConfigureAwait(false);
+            return await GetUsingCountryAsync(countryCode, source, dayRange, startDate, cancellationToken).ConfigureAwait(false);
 
         if (capability == CountryApiCapability.TemporarilyUnavailable
             && timeProvider.GetUtcNow() < GetNextCountryProbeUtc())
         {
-            return await GetUsingAreaAsync(countryCode, source, cancellationToken).ConfigureAwait(false);
+            return await GetUsingAreaAsync(countryCode, source, dayRange, startDate, cancellationToken).ConfigureAwait(false);
         }
 
         await _capabilityGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -53,12 +82,12 @@ public sealed partial class FirmsClient(
         {
             capability = GetCountryCapability();
             if (capability == CountryApiCapability.Available)
-                return await GetUsingCountryAsync(countryCode, source, cancellationToken).ConfigureAwait(false);
+                return await GetUsingCountryAsync(countryCode, source, dayRange, startDate, cancellationToken).ConfigureAwait(false);
 
             if (capability == CountryApiCapability.TemporarilyUnavailable
                 && timeProvider.GetUtcNow() < GetNextCountryProbeUtc())
             {
-                return await GetUsingAreaAsync(countryCode, source, cancellationToken).ConfigureAwait(false);
+                return await GetUsingAreaAsync(countryCode, source, dayRange, startDate, cancellationToken).ConfigureAwait(false);
             }
 
             try
@@ -66,6 +95,8 @@ public sealed partial class FirmsClient(
                 ImmutableArray<Anomaly> anomalies = await GetCountryAnomaliesAsync(
                     countryCode,
                     source,
+                    dayRange,
+                    startDate,
                     cancellationToken).ConfigureAwait(false);
                 MarkCountryAvailable(capability);
                 return new(anomalies, IngestionModes.Country);
@@ -73,14 +104,14 @@ public sealed partial class FirmsClient(
             catch (CountryFeatureUnavailableException)
             {
                 MarkCountryUnavailable();
-                return await GetUsingAreaAsync(countryCode, source, cancellationToken).ConfigureAwait(false);
+                return await GetUsingAreaAsync(countryCode, source, dayRange, startDate, cancellationToken).ConfigureAwait(false);
             }
             catch (FirmsRequestException exception)
                 when (capability == CountryApiCapability.TemporarilyUnavailable)
             {
                 ScheduleNextCountryProbe();
                 LogCountryProbeFailure(logger, exception.SafeMessage);
-                return await GetUsingAreaAsync(countryCode, source, cancellationToken).ConfigureAwait(false);
+                return await GetUsingAreaAsync(countryCode, source, dayRange, startDate, cancellationToken).ConfigureAwait(false);
             }
         }
         finally
@@ -92,23 +123,32 @@ public sealed partial class FirmsClient(
     private async Task<FirmsSegmentResult> GetUsingCountryAsync(
         string countryCode,
         string source,
+        int dayRange,
+        DateOnly? startDate,
         CancellationToken cancellationToken)
     {
         try
         {
-            ImmutableArray<Anomaly> anomalies = await GetCountryAnomaliesAsync(countryCode, source, cancellationToken).ConfigureAwait(false);
+            ImmutableArray<Anomaly> anomalies = await GetCountryAnomaliesAsync(
+                countryCode,
+                source,
+                dayRange,
+                startDate,
+                cancellationToken).ConfigureAwait(false);
             return new(anomalies, IngestionModes.Country);
         }
         catch (CountryFeatureUnavailableException)
         {
             MarkCountryUnavailable();
-            return await GetUsingAreaAsync(countryCode, source, cancellationToken).ConfigureAwait(false);
+            return await GetUsingAreaAsync(countryCode, source, dayRange, startDate, cancellationToken).ConfigureAwait(false);
         }
     }
 
     private async Task<FirmsSegmentResult> GetUsingAreaAsync(
         string countryCode,
         string source,
+        int dayRange,
+        DateOnly? startDate,
         CancellationToken cancellationToken)
     {
         CountryBoundary boundary = boundaries.Get(countryCode);
@@ -127,6 +167,8 @@ public sealed partial class FirmsClient(
             countryCode,
             source,
             bounds,
+            dayRange,
+            startDate,
             startedTimestamp,
             cancellationToken).ConfigureAwait(false);
 
@@ -143,6 +185,8 @@ public sealed partial class FirmsClient(
         string countryCode,
         string source,
         GeographicBounds bounds,
+        int dayRange,
+        DateOnly? startDate,
         long startedTimestamp,
         CancellationToken cancellationToken)
     {
@@ -152,6 +196,8 @@ public sealed partial class FirmsClient(
                 countryCode,
                 source,
                 bounds,
+                dayRange,
+                startDate,
                 cancellationToken).ConfigureAwait(false);
             LogAreaRequestSucceeded(countryCode, source, bounds, startedTimestamp);
             return anomalies;
@@ -215,13 +261,15 @@ public sealed partial class FirmsClient(
     private async Task<ImmutableArray<Anomaly>> GetCountryAnomaliesAsync(
         string countryCode,
         string source,
+        int dayRange,
+        DateOnly? startDate,
         CancellationToken cancellationToken) =>
         await ExecuteRequestAsync(
             async requestToken =>
             {
                 using var request = new HttpRequestMessage(
                     HttpMethod.Get,
-                    requestUri: $"api/country/csv/{Uri.EscapeDataString(options.MapKey)}/{source}/{countryCode}/{_requestDayRange}");
+                    requestUri: $"api/country/csv/{Uri.EscapeDataString(options.MapKey)}/{source}/{countryCode}/{dayRange}{FormatStartDate(startDate)}");
                 using HttpResponseMessage response = await SendAsync(request, requestToken).ConfigureAwait(false);
 
                 if (!response.IsSuccessStatusCode
@@ -238,17 +286,24 @@ public sealed partial class FirmsClient(
         string countryCode,
         string source,
         GeographicBounds bounds,
+        int dayRange,
+        DateOnly? startDate,
         CancellationToken cancellationToken) =>
         await ExecuteRequestAsync(
             async requestToken =>
             {
                 using var request = new HttpRequestMessage(
                     HttpMethod.Get,
-                    requestUri: $"api/area/csv/{Uri.EscapeDataString(options.MapKey)}/{source}/{bounds.ToInvariantString()}/{_requestDayRange}");
+                    requestUri: $"api/area/csv/{Uri.EscapeDataString(options.MapKey)}/{source}/{bounds.ToInvariantString()}/{dayRange}{FormatStartDate(startDate)}");
                 using HttpResponseMessage response = await SendAsync(request, requestToken).ConfigureAwait(false);
                 return await ReadCsvResponseAsync(response, countryCode, source, requestToken).ConfigureAwait(false);
             },
             cancellationToken).ConfigureAwait(false);
+
+    private static string FormatStartDate(DateOnly? startDate) =>
+        startDate is { } date
+            ? $"/{date.ToString(format: "yyyy-MM-dd", CultureInfo.InvariantCulture)}"
+            : string.Empty;
 
     private async Task<tResult> ExecuteRequestAsync<tResult>(
         Func<CancellationToken, Task<tResult>> operation,

@@ -8,6 +8,8 @@ public enum NotificationRejectionReason
     LowFrp,
     LowClusterTotalFrp,
     LowThermalContrast,
+    HistoricalFrpNotHigher,
+    HistoryUnavailable,
     MissingRequiredValue,
     PreviewUnavailable
 }

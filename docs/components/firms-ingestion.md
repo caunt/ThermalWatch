@@ -1,23 +1,25 @@
 # FIRMS ingestion
 
 > **Purpose:** Explain how ThermalWatch obtains, validates, falls back, and publishes FIRMS observations.
-> **Scope:** Poll scheduling, country/source segments, country capability, area fallback, CSV parsing, boundaries, and snapshot staleness.
-> **Sources of truth:** [Poller](../../src/ThermalWatch.Api/FirmsPollingService.cs), [FIRMS client](../../src/ThermalWatch.Core/FirmsClient.cs), [boundary catalog](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs), and [snapshot store](../../src/ThermalWatch.Core/AnomalySnapshotStore.cs).
-> **Update when:** Polling, concurrency, FIRMS routes, fallback detection, boundary envelopes, CSV parsing, or segment publication changes.
+> **Scope:** Poll scheduling, current and historical country/source segments, country capability, area fallback, CSV parsing, boundaries, snapshot/history publication, and staleness.
+> **Sources of truth:** [Poller](../../src/ThermalWatch.Api/FirmsPollingService.cs), [history backfill](../../src/ThermalWatch.Api/FirmsHistoryBackfill.cs), [FIRMS client](../../src/ThermalWatch.Core/FirmsClient.cs), [boundary catalog](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs), [snapshot store](../../src/ThermalWatch.Core/AnomalySnapshotStore.cs), and [history store](../../src/ThermalWatch.Core/FirmsHistoryStore.cs).
+> **Update when:** Polling, backfill, concurrency, FIRMS routes, fallback detection, boundary envelopes, CSV parsing, segment publication, history retention, or history readiness changes.
 
 ## Segment model and polling
 
 Each configured country is crossed with the four source IDs in `FirmsSources.All`: MODIS NRT and Suomi-NPP, NOAA-20, and NOAA-21 VIIRS NRT. Sources remain separate through ingestion and the API.
 
-The background poller refreshes once immediately. After every completed cycle it waits at least one configured interval plus up to 10 percent positive jitter, so cycles neither overlap nor shorten the post-cycle pause. A cycle where no segment succeeds doubles the next base delay for each consecutive total failure, capped at the greater of one hour or the configured interval; any successful segment resets that backoff.
+The background poller refreshes the active range once immediately and publishes it before attempting history backfill. After the current refresh and backfill attempt complete, it waits at least one configured interval plus up to 10 percent positive jitter, so cycles neither overlap nor shorten the post-cycle pause. A current cycle where no segment succeeds doubles the next base delay for each consecutive total failure, capped at the greater of one hour or the configured interval; any current segment success resets that backoff. Historical failures do not contribute to this active-cycle backoff.
 
 The first segment is refreshed before the remaining parallel work so the process-wide country-API capability is established before concurrent requests. At most two remaining segments refresh concurrently. `FIRMS_MAX_CONCURRENCY` independently bounds admitted FIRMS HTTP operations across those segments.
 
-Every result is a complete segment success or failure. The store atomically publishes one immutable snapshot only after the cycle finishes.
+Every current result is a complete segment success or failure. Current results update their covered history dates first, and the snapshot store atomically publishes one immutable active snapshot only after all current segments finish. Backfill follows as a separate bounded batch.
 
 ## Country-first acquisition
 
-The preferred request is FIRMS country CSV for the configured country and source. FIRMS day ranges are UTC-calendar-based, so country and area requests derive their range as the configured active window rounded up to whole days, plus the current calendar day. The default 24-hour window therefore fetches two calendar days, while a 72-hour window fetches four. Snapshot construction still applies the exact configured rolling window locally.
+The preferred request is FIRMS country CSV for the configured country and source. FIRMS day ranges are UTC-calendar-based, so current country and area requests derive their range as the configured active window rounded up to whole days, plus the current calendar day. The default 24-hour window therefore fetches two calendar days, while a 72-hour window fetches four. Snapshot construction still applies the exact configured rolling window locally.
+
+The same client supports explicit dated ranges of one through five inclusive UTC dates. Startup history uses six consecutive five-day requests for each configured country/source, covering the 30 completed dates before today. Dated requests retain the same country-first capability checks, verified area fallback, parsing, clipping, timeout, and complete-segment semantics as current requests.
 
 Country-API capability is process-wide:
 
@@ -65,12 +67,25 @@ Snapshot construction removes observations outside `now - active window` through
 
 The current snapshot is swapped atomically. A bounded one-item, drop-oldest channel notifies the single Telegram consumer; HTTP reads do not consume that channel.
 
+## Daily history, backfill, and API
+
+The in-memory history retains 31 UTC dates: the preceding 30 completed dates plus today's live bucket. Each date has one slice for every configured country crossed with the four existing NRT sources. A successful current or dated response replaces every covered date/source/country slice, including with an empty anomaly array; a failure retains the last complete slice where one exists, updates its attempt status, and marks it stale. Successful range responses are split by each anomaly's UTC acquisition date before publication.
+
+After every current snapshot publication, [FirmsHistoryBackfill.cs](../../src/ThermalWatch.Api/FirmsHistoryBackfill.cs) considers six five-day windows for every country/source and requests only windows containing a missing or stale completed-date slice. It admits at most two backfill requests concurrently and commits the completed batch to the history store in one publication. A later polling cycle retries incomplete windows. Active refreshes continue updating all UTC dates covered by their latest request, including today, so history remains live after startup.
+
+Each history day combines and ID-deduplicates raw anomalies across configured countries and all existing NRT sources, including every satellite returned by those feeds. It creates raw connected clusters with the configured notification radius and time window but does not apply notification eligibility filters. History and current eligible-cluster summaries share [NotificationClusterSummary.cs](../../src/ThermalWatch.Core/NotificationClusterSummary.cs), including cluster/representative properties, aggregate FRP, detection count, diameter, and member IDs. The separately exposed anomaly array remains the source for complete member measurements.
+
+History `IsReady` requires a successful, non-stale slice for every configured country/source on all 30 completed dates. Today's bucket does not participate in baseline readiness. At UTC rollover the store discards the expired oldest date, adds the new today bucket, and reevaluates the completed baseline. History state is process-local and is rebuilt after restart.
+
+`GET /api/history` reads this immutable state without calling NASA. It defaults to all retained dates in chronological order and accepts optional inclusive `from` and `to` dates in exact `YYYY-MM-DD` form; dates must be within retention and the range cannot exceed 31 dates. Incomplete backfill remains HTTP `200`, with top-level readiness/staleness and per-day completeness, staleness, and segment diagnostics. Reads never initiate or retry acquisition.
+
 ## Failure boundaries
 
 - Invalid startup configuration or unusable requested boundary data terminates the process.
 - A segment failure does not block successful countries or sources.
 - Unexpected client exceptions become a generic safe segment error.
 - API clients receive the retained snapshot and source diagnostics with HTTP `200`; they do not trigger recovery.
-- Later polling cycles retry failed FIRMS work automatically; only a cycle with zero successful segments activates exponential cycle backoff.
+- API clients also receive partial retained history with HTTP `200`; incomplete history causes the enabled notification baseline criterion to fail closed but does not remove current anomalies.
+- Later polling cycles retry failed current and historical FIRMS work automatically; only a current cycle with zero successful segments activates exponential cycle backoff.
 
 Focused FIRMS client and scheduler tests use fake `HttpMessageHandler` responses, embedded boundary fixtures, and fake time. There is no direct live-service integration test; provider checks must remain bounded and cannot replace deterministic tests.

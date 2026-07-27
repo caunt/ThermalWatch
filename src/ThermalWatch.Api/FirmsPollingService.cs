@@ -8,6 +8,7 @@ public sealed class FirmsPollingService : BackgroundService
 {
     private readonly ILogger<FirmsPollingService> _logger;
     private readonly FirmsOptions _options;
+    private readonly IFirmsHistoryBackfill _historyBackfill;
     private readonly IFirmsRefreshCycle _refreshCycle;
     private readonly FirmsPollingSchedule _schedule;
     private readonly TimeProvider _timeProvider;
@@ -16,9 +17,11 @@ public sealed class FirmsPollingService : BackgroundService
         FirmsClient firmsClient,
         FirmsOptions options,
         AnomalySnapshotStore snapshotStore,
+        FirmsHistoryStore historyStore,
         TimeProvider timeProvider,
         ILogger<FirmsPollingService> logger) : this(
-            new FirmsRefreshCycle(firmsClient, options, snapshotStore, timeProvider, logger),
+            new FirmsRefreshCycle(firmsClient, options, snapshotStore, historyStore, timeProvider, logger),
+            new FirmsHistoryBackfill(firmsClient, options, historyStore, timeProvider, logger),
             options,
             new FirmsPollingSchedule(),
             timeProvider,
@@ -31,9 +34,26 @@ public sealed class FirmsPollingService : BackgroundService
         FirmsOptions options,
         FirmsPollingSchedule schedule,
         TimeProvider timeProvider,
+        ILogger<FirmsPollingService> logger) : this(
+            refreshCycle,
+            NoOpHistoryBackfill.Instance,
+            options,
+            schedule,
+            timeProvider,
+            logger)
+    {
+    }
+
+    internal FirmsPollingService(
+        IFirmsRefreshCycle refreshCycle,
+        IFirmsHistoryBackfill historyBackfill,
+        FirmsOptions options,
+        FirmsPollingSchedule schedule,
+        TimeProvider timeProvider,
         ILogger<FirmsPollingService> logger)
     {
         _refreshCycle = refreshCycle;
+        _historyBackfill = historyBackfill;
         _options = options;
         _schedule = schedule;
         _timeProvider = timeProvider;
@@ -48,6 +68,14 @@ public sealed class FirmsPollingService : BackgroundService
         {
             long startedTimestamp = _timeProvider.GetTimestamp();
             FirmsRefreshCycleResult result = await _refreshCycle.RefreshAsync(stoppingToken).ConfigureAwait(false);
+            FirmsHistoryBackfillResult historyResult = await _historyBackfill.RefreshAsync(stoppingToken).ConfigureAwait(false);
+            if (historyResult.AttemptedRequestCount > 0)
+            {
+                FirmsPollingLog.HistoryBackfillCompleted(
+                    _logger,
+                    historyResult.SuccessfulRequestCount,
+                    historyResult.FailedRequestCount);
+            }
             consecutiveTotalFailures = result.SuccessfulSegmentCount == 0
                 ? consecutiveTotalFailures + 1
                 : 0;
@@ -63,6 +91,19 @@ public sealed class FirmsPollingService : BackgroundService
                 isTotalFailureBackoffActive: consecutiveTotalFailures > 0);
 
             await Task.Delay(delay, _timeProvider, stoppingToken).ConfigureAwait(false);
+        }
+    }
+
+    private sealed class NoOpHistoryBackfill : IFirmsHistoryBackfill
+    {
+        public static NoOpHistoryBackfill Instance { get; } = new();
+
+        public Task<FirmsHistoryBackfillResult> RefreshAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new FirmsHistoryBackfillResult(
+                SuccessfulRequestCount: 0,
+                FailedRequestCount: 0));
         }
     }
 }

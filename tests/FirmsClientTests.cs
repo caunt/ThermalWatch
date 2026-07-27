@@ -84,6 +84,75 @@ public sealed class FirmsClientTests
     }
 
     [Fact]
+    public async Task GetSegmentAsyncUsesExplicitDateForHistoricalCountryRequest()
+    {
+        var handler = new RecordingHandler((request, _) =>
+        {
+            Assert.EndsWith(
+                expectedEndString: "/5/2026-06-01",
+                request.RequestUri!.AbsolutePath,
+                StringComparison.Ordinal);
+            return Task.FromResult(CsvResponse());
+        });
+        using FirmsClient client = CreateClient(handler, countryCode: "UKR");
+
+        FirmsSegmentResult result = await client.GetSegmentAsync(
+            countryCode: "UKR",
+            source: "MODIS_NRT",
+            startDate: new(year: 2026, month: 6, day: 1),
+            dayRange: 5,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IngestionModes.Country, result.IngestionMode);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task GetSegmentAsyncPreservesExplicitDateInAreaFallback()
+    {
+        var handler = new RecordingHandler((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (IsCountryRequest(path))
+                return Task.FromResult(CountryUnavailableResponse());
+            if (IsMapKeyStatusRequest(path))
+                return Task.FromResult(MapKeyStatusResponse());
+
+            Assert.EndsWith(expectedEndString: "/5/2026-06-01", path, StringComparison.Ordinal);
+            return Task.FromResult(CsvResponse(FallbackCsv));
+        });
+        using FirmsClient client = CreateClient(handler, countryCode: "UKR");
+
+        FirmsSegmentResult result = await client.GetSegmentAsync(
+            countryCode: "UKR",
+            source: "MODIS_NRT",
+            startDate: new(year: 2026, month: 6, day: 1),
+            dayRange: 5,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IngestionModes.AreaFallback, result.IngestionMode);
+        Assert.Equal(1, handler.AreaRequestCount);
+    }
+
+    [Fact]
+    public async Task GetSegmentAsyncRejectsHistoricalRangeLongerThanFiveDays()
+    {
+        var handler = new RecordingHandler(static (_, _) => Task.FromResult(CsvResponse()));
+        using FirmsClient client = CreateClient(handler, countryCode: "UKR");
+
+        FirmsRequestException exception = await Assert.ThrowsAsync<FirmsRequestException>(() =>
+            client.GetSegmentAsync(
+                countryCode: "UKR",
+                source: "MODIS_NRT",
+                startDate: new(year: 2026, month: 6, day: 1),
+                dayRange: 6,
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal("FIRMS request parameters are invalid.", exception.SafeMessage);
+        Assert.Equal(0, handler.RequestCount);
+    }
+
+    [Fact]
     public async Task GetSegmentAsyncUsesOneFallbackEnvelopeAndPublishesOnlyClippedDistinctData()
     {
         var handler = new RecordingHandler((request, _) =>

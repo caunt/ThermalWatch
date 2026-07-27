@@ -9,13 +9,14 @@ ThermalWatch is a small .NET 10 service that polls NASA FIRMS near-real-time the
 
 - Polls the MODIS, Suomi-NPP VIIRS, NOAA-20 VIIRS, and NOAA-21 VIIRS FIRMS feeds for each configured country.
 - Isolates failures by country and source, retains the last complete segment as stale data, and reports segment diagnostics with every snapshot.
+- Builds an immutable in-memory history for the preceding 30 complete UTC days plus today, exposing each day's raw observations, raw clusters, and segment completeness through `/api/history`.
 - Serves all valid active observations and backend-composed NASA map imagery through an unauthenticated, CORS-enabled API and a framework-free browser viewer.
-- Lists every active cluster that passes all enabled notification content criteria, ordered by total cluster FRP, and can search a chosen representative directly from the viewer.
+- Lists every active cluster that passes all enabled notification content criteria, including a default historical-FRP anomaly check, ordered by total cluster FRP, and can search a chosen representative directly from the viewer.
 - Explains the shared notification policy for a selected anomaly and highlights its complete active-snapshot cluster in the viewer.
 - Adds OpenStreetMap context when available: named features within 2 km, ranked by descending OSM tag count and then distance, plus the exact city, town, or village containing a prepared Telegram notification's representative coordinate.
 - Optionally clusters and filters observations for outbound Telegram notifications with sensor-matched NASA GIBS imagery and mapped location context. Unmapped or rural coordinates keep the country-only location label.
 
-All runtime state is in memory. Restarting clears the current snapshot, imagery caches, startup-incident suppression, and delivery-deduplication state, then starts a fresh FIRMS poll. Unsent notification candidates are not retained.
+All runtime state is in memory. Restarting clears the current snapshot, 30-day FIRMS history, imagery caches, startup-incident suppression, and delivery-deduplication state. The service publishes a fresh current snapshot first and then rebuilds the daily history from FIRMS. Unsent notification candidates are not retained.
 
 ## Quickstart
 
@@ -35,7 +36,7 @@ Open [http://localhost:8080/](http://localhost:8080/) to inspect the current sna
 
 The coordinate search accepts common decimal, labeled, degrees/minutes, and degrees/minutes/seconds forms, plus coordinate-bearing Google Maps and other major map links. A successful search marks and centers the exact location, selects the nearest current anomaly for inspection, and saves canonical `lat` and `lon` values in the viewer URL so the location survives reloads and can be shared.
 
-The viewer reads the current APIs only. Its Refresh action does not trigger a FIRMS poll, and its map imagery is contextual rather than proof of what caused a detection.
+The viewer does not visualize the history endpoint. Its eligible-cluster list and diagnostics do apply the server's current historical-FRP criterion, but Refresh only rereads in-memory APIs and does not trigger a FIRMS poll. Map imagery is contextual rather than proof of what caused a detection.
 
 ## HTTP endpoints
 
@@ -45,6 +46,7 @@ All current routes are unauthenticated. Cross-origin `GET` requests are allowed.
 | --- | --- |
 | `GET /` | Serves the interactive viewer. |
 | `GET /api/anomalies` | Returns the current in-memory anomaly snapshot and per-segment diagnostics without calling NASA. |
+| `GET /api/history` | Returns the retained UTC-day history with raw observations, raw cluster summaries, and readiness/staleness diagnostics without calling NASA. |
 | `GET /api/viewer/config` | Reports optional browser map configuration and exposes the Google browser key when configured. |
 | `GET /api/viewer/imagery/gibs/{z}/{x}/{y}.png` | Returns a backend-composed latest NASA GIBS map tile and coverage metadata. |
 | `GET /api/viewer/eligible-notification-clusters` | Returns notification-priority-ordered summaries of active clusters that pass every enabled content criterion. |
@@ -57,7 +59,7 @@ All current routes are unauthenticated. Cross-origin `GET` requests are allowed.
 curl "http://localhost:8080/api/anomalies?country=UKR,RUS&dayNight=D"
 ```
 
-Partial upstream failures remain HTTP `200` responses; inspect `isPartiallyStale` and the `segments` collection in the response. The complete contracts and failure boundaries are routed from the documentation index rather than duplicated here.
+`/api/history` accepts optional inclusive `from` and `to` values in `YYYY-MM-DD` form. Both dates must stay within its 31-date retained range. The response remains HTTP `200` while backfill is partial; inspect `isReady`, `isPartiallyStale`, each day's `isComplete`, and its `segments` collection. Partial active-snapshot failures likewise remain HTTP `200` on `/api/anomalies`. The complete contracts and failure boundaries are routed from the documentation index rather than duplicated here.
 
 ## Documentation
 

@@ -44,7 +44,7 @@ public sealed class NotificationCandidateEngineTests
             ["bridge", "first", "last"],
             diagnostic.MemberIds.Order(StringComparer.Ordinal),
             StringComparer.Ordinal);
-        Assert.Equal(8, diagnostic.Criteria.Length);
+        Assert.Equal(9, diagnostic.Criteria.Length);
         Assert.True(diagnostic.IsEligible);
         Assert.Equal(0, handler.RequestCount);
 
@@ -234,7 +234,7 @@ public sealed class NotificationCandidateEngineTests
             ["middle", "highest", "low"],
             result.Clusters.Select(cluster => cluster.RepresentativeId),
             StringComparer.Ordinal);
-        EligibleNotificationCluster first = result.Clusters[0];
+        NotificationClusterSummary first = result.Clusters[0];
         Assert.Equal("RUS", first.CountryCode);
         Assert.Equal("VIIRS_SNPP_NRT", first.Source);
         Assert.Equal("N", first.Satellite);
@@ -261,6 +261,103 @@ public sealed class NotificationCandidateEngineTests
         Assert.Equal(3, processing.Summary.StartupSuppressedIncidentCount);
         Assert.Equal(1, processing.Summary.RejectedClusterCount);
         Assert.Equal(0, gibsHandler.RequestCount);
+        Assert.Equal(0, deliveryCount);
+    }
+
+    [Fact]
+    public async Task HistoricalFrpCriterionBlocksAutomaticManualEligibleAndDiagnosticPaths()
+    {
+        var handler = new NotFoundHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationOptions options = DefaultOptions() with { HistoricalFrpFilterEnabled = true };
+        Anomaly historical = CreateAnomaly(id: "historical", longitude: 30, frpMegawatts: 400) with
+        {
+            AcquiredAtUtc = s_observedAt.AddDays(days: -1)
+        };
+        FirmsHistoryStore historyStore = CreateHistoryStore(options, historical);
+        NotificationCandidateEngine engine = CreateEngine(
+            handler,
+            cache,
+            options: options,
+            historyStore: historyStore);
+        AnomalySnapshot snapshot = Snapshot(
+            CreateAnomaly(id: "current", longitude: 30, frpMegawatts: 200),
+            CreateAnomaly(id: "current-context", longitude: 30.01, frpMegawatts: 100));
+        int deliveryCount = 0;
+
+        EligibleNotificationClusters eligible = await engine.GetEligibleNotificationClustersAsync(
+            snapshot,
+            TestContext.Current.CancellationToken);
+        ManualNotificationCandidateSelection manual = await engine.PrepareManualCandidatesAsync(
+            snapshot,
+            requestedClusterCount: 1,
+            TestContext.Current.CancellationToken);
+        NotificationDiagnostic diagnostic = Assert.IsType<NotificationDiagnostic>(
+            await engine.GetNotificationDiagnosticAsync(
+                snapshot,
+                anomalyId: "current",
+                TestContext.Current.CancellationToken));
+        AutomaticNotificationProcessingResult automatic = await engine.ProcessAutomaticNotificationsAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(eligible.Clusters);
+        Assert.Equal(0, manual.EligibleClusterCount);
+        NotificationCriterionResult criterion = Assert.Single(
+            diagnostic.Criteria,
+            result => result.Code.Equals(NotificationHistoricalFrpPolicy.CriterionCode, StringComparison.Ordinal));
+        Assert.Equal(NotificationCriterionOutcomes.Failed, criterion.Outcome);
+        Assert.False(diagnostic.IsEligible);
+        Assert.Equal(1, automatic.Summary.RejectionCount(NotificationRejectionReason.HistoricalFrpNotHigher));
+        Assert.Equal(0, deliveryCount);
+    }
+
+    [Fact]
+    public async Task IncompleteHistoryDoesNotConsumeFirstReadyStartupSuppression()
+    {
+        var handler = new NotFoundHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationOptions options = DefaultOptions() with
+        {
+            SendExistingOnStartup = false,
+            HistoricalFrpFilterEnabled = true
+        };
+        FirmsHistoryStore historyStore = CreateIncompleteHistoryStore(options);
+        NotificationCandidateEngine engine = CreateEngine(
+            handler,
+            cache,
+            options: options,
+            historyStore: historyStore);
+        AnomalySnapshot snapshot = Snapshot(
+            CreateAnomaly(id: "first", longitude: 30, frpMegawatts: 200),
+            CreateAnomaly(id: "second", longitude: 30.01, frpMegawatts: 100));
+        int deliveryCount = 0;
+
+        AutomaticNotificationProcessingResult unavailable = await engine.ProcessAutomaticNotificationsAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+        CompleteHistory(historyStore);
+        AutomaticNotificationProcessingResult primed = await engine.ProcessAutomaticNotificationsAsync(
+            snapshot,
+            (_, _) =>
+            {
+                deliveryCount++;
+                return Task.FromResult(NotificationDeliveryOutcome.Delivered);
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, unavailable.Summary.RejectionCount(NotificationRejectionReason.HistoryUnavailable));
+        Assert.Equal(1, primed.Summary.StartupSuppressedIncidentCount);
         Assert.Equal(0, deliveryCount);
     }
 
@@ -601,7 +698,8 @@ public sealed class NotificationCandidateEngineTests
         HttpMessageHandler handler,
         IMemoryCache cache,
         HttpMessageHandler? nearbyHandler = null,
-        NotificationOptions? options = null)
+        NotificationOptions? options = null,
+        FirmsHistoryStore? historyStore = null)
     {
         var httpClient = new HttpClient(handler)
         {
@@ -619,7 +717,50 @@ public sealed class NotificationCandidateEngineTests
             options ?? DefaultOptions(),
             gibsClient,
             nearbyClient,
-            new FixedTimeProvider(s_observedAt.AddHours(1)));
+            new FixedTimeProvider(s_observedAt.AddHours(1)),
+            historyStore);
+    }
+
+    private static FirmsHistoryStore CreateHistoryStore(
+        NotificationOptions options,
+        params Anomaly[] anomalies)
+    {
+        FirmsHistoryStore store = CreateIncompleteHistoryStore(options);
+        CompleteHistory(store, anomalies);
+        return store;
+    }
+
+    private static FirmsHistoryStore CreateIncompleteHistoryStore(NotificationOptions options)
+    {
+        FirmsOptions firmsOptions = new(
+            MapKey: new string('A', count: 32),
+            CountryCodes: ["RUS"],
+            PollInterval: TimeSpan.FromMinutes(minutes: 5),
+            ActiveWindow: TimeSpan.FromHours(hours: 24),
+            RequestTimeout: TimeSpan.FromSeconds(seconds: 45),
+            MaxConcurrency: 4);
+        return new(
+            firmsOptions,
+            options,
+            new FixedTimeProvider(s_observedAt.AddHours(hours: 1)));
+    }
+
+    private static void CompleteHistory(FirmsHistoryStore store, params Anomaly[] anomalies)
+    {
+        DateOnly today = store.Current.RetainedThroughDate;
+        SegmentRefreshResult[] results =
+        [
+            .. FirmsSources.All.Select(source => SegmentRefreshResult.Success(
+                new(CountryCode: "RUS", source),
+                s_observedAt,
+                s_observedAt,
+                source.Equals(value: "VIIRS_SNPP_NRT", StringComparison.Ordinal) ? [.. anomalies] : [],
+                IngestionModes.Country))
+        ];
+        store.Publish(
+            today.AddDays(-FirmsHistoryStore.CompletedDayCount),
+            FirmsHistoryStore.CompletedDayCount,
+            results);
     }
 
     private static NotificationOptions DefaultOptions() =>
@@ -628,6 +769,7 @@ public sealed class NotificationCandidateEngineTests
             ClusterRadiusKilometers: 5,
             ClusterTimeWindow: TimeSpan.FromMinutes(minutes: 90),
             EpisodeRetention: TimeSpan.FromHours(hours: 48),
+            HistoricalFrpFilterEnabled: false,
             new(
                 new(WidthKilometers: 30, HeightKilometers: 20),
                 new(WidthKilometers: 45, HeightKilometers: 30),

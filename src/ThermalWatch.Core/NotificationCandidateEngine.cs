@@ -7,7 +7,8 @@ public sealed class NotificationCandidateEngine(
     NotificationOptions options,
     GibsClient gibsClient,
     NearbyFeatureClient nearbyFeatureClient,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    FirmsHistoryStore? historyStore = null)
 {
     private const int MaximumCandidateNearbyFeatures = 5;
     private const int MaximumConcurrentEligibleClusterEvaluations = 2;
@@ -40,6 +41,16 @@ public sealed class NotificationCandidateEngine(
             options.ClusterRadiusKilometers,
             options.ClusterTimeWindow);
         summary.ActiveClusterCount = clusters.Length;
+
+        if (options.HistoricalFrpFilterEnabled
+            && (historyStore is null || !historyStore.Current.IsReady))
+        {
+            summary.EvaluatedClusterCount = clusters.Length;
+            for (int index = 0; index < clusters.Length; index++)
+                summary.Reject(NotificationRejectionReason.HistoryUnavailable);
+
+            return new(ContinueProcessing: true, summary.Build());
+        }
 
         bool isFirstReadySnapshot = _firstReadySnapshot;
         _firstReadySnapshot = false;
@@ -286,7 +297,7 @@ public sealed class NotificationCandidateEngine(
             snapshot.Anomalies,
             options.ClusterRadiusKilometers,
             options.ClusterTimeWindow);
-        var eligible = new EligibleNotificationCluster?[clusters.Length];
+        var eligible = new NotificationClusterSummary?[clusters.Length];
         await Parallel.ForEachAsync(
             Enumerable.Range(start: 0, clusters.Length),
             new ParallelOptions
@@ -298,10 +309,10 @@ public sealed class NotificationCandidateEngine(
                 clusters[index],
                 token).ConfigureAwait(false)).ConfigureAwait(false);
 
-        ImmutableArray<EligibleNotificationCluster> ordered =
+        ImmutableArray<NotificationClusterSummary> ordered =
         [
             .. OrderByNotificationPriority(
-                candidates: eligible.OfType<EligibleNotificationCluster>(),
+                candidates: eligible.OfType<NotificationClusterSummary>(),
                 totalFrpSelector: static candidate => candidate.TotalFrpMegawatts,
                 peakFrpSelector: static candidate => candidate.FrpMegawatts,
                 detectionCountSelector: static candidate => candidate.DetectionCount,
@@ -316,7 +327,7 @@ public sealed class NotificationCandidateEngine(
             ordered);
     }
 
-    private async ValueTask<EligibleNotificationCluster?> EvaluateEligibleClusterAsync(
+    private async ValueTask<NotificationClusterSummary?> EvaluateEligibleClusterAsync(
         NotificationCluster cluster,
         CancellationToken cancellationToken)
     {
@@ -337,20 +348,7 @@ public sealed class NotificationCandidateEngine(
                 return null;
         }
 
-        Anomaly representative = cluster.Representative;
-        return new(
-            cluster.Id,
-            representative.Id,
-            representative.CountryCode,
-            representative.Source,
-            representative.Satellite,
-            representative.Latitude,
-            representative.Longitude,
-            representative.AcquiredAtUtc,
-            representative.FrpMegawatts,
-            cluster.TotalFrpMegawatts,
-            cluster.Members.Length,
-            previewSelection.ClusterDiameterKilometers);
+        return NotificationClusterSummary.FromCluster(cluster);
     }
 
     public async Task<NotificationDiagnostic?> GetNotificationDiagnosticAsync(
@@ -364,44 +362,9 @@ public sealed class NotificationCandidateEngine(
             return null;
 
         NotificationCluster cluster = found.Cluster;
-
-        var criteria = NotificationPolicy.ExplainMetadata(cluster, options.Visibility).ToBuilder();
-        NotificationLandCoverResult? landCover = null;
-        if (!options.LandCover.Enabled)
-        {
-            criteria.Add(NotificationCriterionResult.Disabled(
-                code: "land-cover",
-                label: "Land-cover filter"));
-        }
-        else
-        {
-            landCover = await NotificationLandCoverPolicy.EvaluateAsync(
-                cluster,
-                options.LandCover,
-                gibsClient,
-                cancellationToken).ConfigureAwait(false);
-            criteria.Add(ExplainLandCover(landCover.Value));
-        }
-
-        NotificationPreviewSelection previewSelection = SelectPreview(cluster);
-        GibsPreviewSource? previewBaseSource = null;
-        if (!IsPreviewRequired)
-        {
-            criteria.Add(NotificationCriterionResult.Disabled(
-                code: "exact-preview",
-                label: "Exact-date preview"));
-        }
-        else
-        {
-            GibsPreview preview = await gibsClient.GetPreviewAsync(
-                cluster.Representative,
-                previewSelection.Dimensions,
-                cancellationToken).ConfigureAwait(false);
-            previewBaseSource = preview.BaseSource;
-            criteria.Add(ExplainPreview(preview));
-        }
-
-        ImmutableArray<NotificationCriterionResult> criterionResults = criteria.ToImmutable();
+        DiagnosticPolicyEvaluation policy = await EvaluateDiagnosticPolicyAsync(
+            cluster,
+            cancellationToken).ConfigureAwait(false);
         ImmutableArray<NearbyFeature> nearbyFeatures = await nearbyFeatureClient.FindNearbyAsync(
             found.SelectedAnomaly, maximumResults: MaximumDiagnosticNearbyFeatures,
             cancellationToken).ConfigureAwait(false);
@@ -411,12 +374,61 @@ public sealed class NotificationCandidateEngine(
             cluster.Representative.Id,
             [.. cluster.Members.Select(member => member.Id)],
             cluster.Members.Length,
-            previewSelection.ClusterDiameterKilometers,
+            policy.ClusterDiameterKilometers,
             cluster.TotalFrpMegawatts,
-            IsEligible: !criterionResults.Any(criterion => criterion.IsBlocking),
-            criterionResults,
-            previewBaseSource,
+            IsEligible: !policy.Criteria.Any(criterion => criterion.IsBlocking),
+            policy.Criteria,
+            policy.PreviewBaseSource,
             nearbyFeatures);
+    }
+
+    private async Task<DiagnosticPolicyEvaluation> EvaluateDiagnosticPolicyAsync(
+        NotificationCluster cluster,
+        CancellationToken cancellationToken)
+    {
+        var criteria = NotificationPolicy.ExplainMetadata(cluster, options.Visibility).ToBuilder();
+        criteria.Add(NotificationHistoricalFrpPolicy.Explain(cluster, historyStore?.Current, options));
+        if (!options.LandCover.Enabled)
+        {
+            criteria.Add(NotificationCriterionResult.Disabled(code: "land-cover", label: "Land-cover filter"));
+        }
+        else
+        {
+            NotificationLandCoverResult landCover = await NotificationLandCoverPolicy.EvaluateAsync(
+                cluster,
+                options.LandCover,
+                gibsClient,
+                cancellationToken).ConfigureAwait(false);
+            criteria.Add(ExplainLandCover(landCover));
+        }
+
+        NotificationPreviewSelection previewSelection = SelectPreview(cluster);
+        GibsPreviewSource? previewBaseSource = await ExplainDiagnosticPreviewAsync(
+            cluster,
+            previewSelection,
+            criteria,
+            cancellationToken).ConfigureAwait(false);
+        return new(criteria.ToImmutable(), previewBaseSource, previewSelection.ClusterDiameterKilometers);
+    }
+
+    private async Task<GibsPreviewSource?> ExplainDiagnosticPreviewAsync(
+        NotificationCluster cluster,
+        NotificationPreviewSelection previewSelection,
+        ImmutableArray<NotificationCriterionResult>.Builder criteria,
+        CancellationToken cancellationToken)
+    {
+        if (!IsPreviewRequired)
+        {
+            criteria.Add(NotificationCriterionResult.Disabled(code: "exact-preview", label: "Exact-date preview"));
+            return null;
+        }
+
+        GibsPreview preview = await gibsClient.GetPreviewAsync(
+            cluster.Representative,
+            previewSelection.Dimensions,
+            cancellationToken).ConfigureAwait(false);
+        criteria.Add(ExplainPreview(preview));
+        return preview.BaseSource;
     }
 
     private (Anomaly SelectedAnomaly, NotificationCluster Cluster)? FindDiagnosticTarget(
@@ -467,6 +479,21 @@ public sealed class NotificationCandidateEngine(
             options.Visibility);
         if (!visibility.IsEligible)
             return new(IsEligible: false, visibility.RejectionReason, LandCoverResult: null);
+
+        NotificationCriterionResult historicalFrp = NotificationHistoricalFrpPolicy.Explain(
+            cluster,
+            historyStore?.Current,
+            options);
+        if (historicalFrp.IsBlocking)
+        {
+            NotificationRejectionReason reason = string.Equals(
+                historicalFrp.Outcome,
+                NotificationCriterionOutcomes.Unavailable,
+                StringComparison.Ordinal)
+                ? NotificationRejectionReason.HistoryUnavailable
+                : NotificationRejectionReason.HistoricalFrpNotHigher;
+            return new(IsEligible: false, reason, LandCoverResult: null);
+        }
 
         if (!options.LandCover.Enabled)
             return NotificationClusterEvaluation.Eligible;
@@ -578,6 +605,11 @@ public sealed class NotificationCandidateEngine(
             RejectionReason: null,
             LandCoverResult: null);
     }
+
+    private readonly record struct DiagnosticPolicyEvaluation(
+        ImmutableArray<NotificationCriterionResult> Criteria,
+        GibsPreviewSource? PreviewBaseSource,
+        double ClusterDiameterKilometers);
 
     private sealed record NotificationCandidateReadiness(
         GibsPreview Preview,

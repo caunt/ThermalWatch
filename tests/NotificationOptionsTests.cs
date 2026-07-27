@@ -11,6 +11,7 @@ public sealed class NotificationOptionsTests
         "NOTIFICATION_CLUSTER_RADIUS_KM",
         "NOTIFICATION_CLUSTER_TIME_WINDOW",
         "NOTIFICATION_EPISODE_RETENTION",
+        "NOTIFICATION_HISTORICAL_FRP_FILTER_ENABLED",
         "NOTIFICATION_PREVIEW_WIDTH_KM",
         "NOTIFICATION_PREVIEW_HEIGHT_KM",
         "NOTIFICATION_LARGE_PREVIEW_WIDTH_KM",
@@ -36,6 +37,25 @@ public sealed class NotificationOptionsTests
         "NOTIFICATION_REQUIRE_DAYTIME",
         "NOTIFICATION_REQUIRE_PREVIEW"
     ];
+
+    [Fact]
+    public void FromEnvironmentEnablesHistoricalFrpFilterByDefault()
+    {
+        NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(_ => null);
+
+        Assert.True(options.HistoricalFrpFilterEnabled);
+    }
+
+    [Fact]
+    public void FromEnvironmentCanDisableHistoricalFrpFilter()
+    {
+        NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(name =>
+            name.Equals(value: "NOTIFICATION_HISTORICAL_FRP_FILTER_ENABLED", StringComparison.Ordinal)
+                ? "false"
+                : null);
+
+        Assert.False(options.HistoricalFrpFilterEnabled);
+    }
 
     [Fact]
     public void FromEnvironmentUsesPortraitPreviewCoverageDefaults()

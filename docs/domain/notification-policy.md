@@ -1,8 +1,8 @@
 # Notification policy
 
 > **Purpose:** Define the non-obvious domain rules that distinguish raw thermal observations from Telegram notification candidates.
-> **Scope:** Anomaly meaning and identity, clustering, automatic selection, visibility and land-cover filters, diagnostics, imagery, and manual sends.
-> **Sources of truth:** [Anomaly model](../../src/ThermalWatch.Core/Anomaly.cs), [notification cluster](../../src/ThermalWatch.Core/NotificationCluster.cs), [clustering](../../src/ThermalWatch.Core/NotificationClustering.cs), [candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs), [metadata policy](../../src/ThermalWatch.Core/NotificationPolicy.cs), [GIBS client](../../src/ThermalWatch.Core/GibsClient.cs), [land-cover policy](../../src/ThermalWatch.Core/NotificationLandCoverPolicy.cs), and [nearby-feature client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs).
+> **Scope:** Anomaly meaning and identity, clustering, automatic selection, visibility, historical-FRP and land-cover filters, diagnostics, imagery, and manual sends.
+> **Sources of truth:** [Anomaly model](../../src/ThermalWatch.Core/Anomaly.cs), [notification cluster](../../src/ThermalWatch.Core/NotificationCluster.cs), [clustering](../../src/ThermalWatch.Core/NotificationClustering.cs), [candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs), [metadata policy](../../src/ThermalWatch.Core/NotificationPolicy.cs), [historical-FRP policy](../../src/ThermalWatch.Core/NotificationHistoricalFrpPolicy.cs), [history store](../../src/ThermalWatch.Core/FirmsHistoryStore.cs), [GIBS client](../../src/ThermalWatch.Core/GibsClient.cs), [land-cover policy](../../src/ThermalWatch.Core/NotificationLandCoverPolicy.cs), and [nearby-feature client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs).
 > **Update when:** Observation identity, clustering, representative choice, eligibility, diagnostic explanation, filtering order, imagery or nearby-context policy, or manual-send semantics change.
 
 ## Observation meaning and API boundary
@@ -13,7 +13,9 @@ The HTTP API is the raw-observation boundary:
 
 - It returns every valid FIRMS observation in the active snapshot, across MODIS and all three VIIRS feeds.
 - It may apply only caller-requested query filters from [AnomalyQuery.cs](../../src/ThermalWatch.Api/AnomalyQuery.cs).
-- Notification visibility, land-cover, preview, mapped location context, deduplication, and clustering state never remove or annotate API anomalies.
+- Notification visibility, historical-FRP, land-cover, preview, mapped location context, deduplication, and clustering state never remove or annotate API anomalies.
+
+`GET /api/history` is a separate raw-history boundary. It groups retained observations and unfiltered clusters by UTC date for baseline inspection; it does not change the active anomaly contract or classify an observation as an event.
 
 An anomaly ID is a deterministic truncated SHA-256 hash of country, source, satellite, UTC acquisition second, latitude, and longitude. Thermal contrast is primary brightness minus secondary/background brightness only when both values exist. [AnomalyId.cs](../../src/ThermalWatch.Core/AnomalyId.cs) and [Anomaly.cs](../../src/ThermalWatch.Core/Anomaly.cs) define these contracts.
 
@@ -38,12 +40,13 @@ After an automatic message sends successfully, its members establish a delivered
 On each ready snapshot:
 
 1. Expire startup-incident and delivered-episode histories, then build connected clusters from every observation in the current active snapshot.
-2. On the first ready snapshot with `NOTIFICATION_SEND_EXISTING_ON_STARTUP` disabled, apply the complete metadata, land-cover, and required-preview policy to every cluster. Record each eligible cluster as a startup incident without sending it. Leave every ineligible cluster unrecorded so later snapshots can reevaluate it.
-3. On later snapshots, suppress and extend clusters continuing a recorded startup incident without rerunning filters or imagery work.
-4. If a cluster continues an already delivered episode, suppress it and extend that episode without rerunning filters or imagery work.
-5. For every remaining cluster, apply metadata visibility rules, then evaluate NASA land cover for every cluster member when enabled.
-6. Attempt the current exact-date preview once. A missing required preview rejects the cluster for this snapshot; when previews are optional, continue with a text candidate immediately.
-7. Look up mapped location context around the representative and send. Only successful automatic delivery establishes a delivered episode; rejection, mapped-context failure, and send failure do not.
+2. When the historical-FRP filter is enabled, require the complete preceding-30-day baseline before consuming first-ready startup state or evaluating delivery. An incomplete baseline rejects the current evaluation as unavailable and remains retryable after a later snapshot publication.
+3. On the first baseline-ready snapshot with `NOTIFICATION_SEND_EXISTING_ON_STARTUP` disabled, apply the complete metadata, historical-FRP, land-cover, and required-preview policy to every cluster. Record each eligible cluster as a startup incident without sending it. Leave every ineligible cluster unrecorded so later snapshots can reevaluate it.
+4. On later snapshots, suppress and extend clusters continuing a recorded startup incident without rerunning filters or imagery work.
+5. If a cluster continues an already delivered episode, suppress it and extend that episode without rerunning filters or imagery work.
+6. For every remaining cluster, apply metadata visibility rules, then the historical-FRP criterion, then NASA land cover for every cluster member when enabled.
+7. Attempt the current exact-date preview once. A missing required preview rejects the cluster for this snapshot; when previews are optional, continue with a text candidate immediately.
+8. Look up mapped location context around the representative and send. Only successful automatic delivery establishes a delivered episode; rejection, mapped-context failure, and send failure do not.
 
 Every later snapshot repeats eligibility evaluation from its complete current data for incidents that have not been startup-suppressed or delivered. A cluster rejected at startup or later because imagery is unavailable can therefore qualify after a later publication without retaining an unsent candidate. A transient send failure likewise records no delivered episode and remains retryable. Startup incidents and delivered episodes use the same configured radius, time window, episode retention, transitive extension, and 100,000-anomaly per-history cap.
 
@@ -63,6 +66,16 @@ A daytime pass is not required by default. Set `NOTIFICATION_REQUIRE_DAYTIME=tru
 Of the two FRP criteria, only total cluster FRP is enabled by default. Representative FRP defaults to zero, which disables that criterion; set `NOTIFICATION_MIN_FRP_MW` to a positive threshold to opt in.
 
 A required value that is absent rejects the candidate. For total cluster FRP, absence means every member lacks a usable FRP value; partially available clusters use the sum of their known values. Exact defaults and ranges live in [operations](../operations.md); tests should express policy edge cases rather than prose duplicating implementation branches.
+
+## Historical location FRP policy
+
+The historical-FRP criterion is enabled by default and is shared by automatic delivery, manual preparation, Viewer eligible-cluster listing, and Viewer diagnostics. It asks whether a current location's total measured FRP is greater than its own preceding 30 complete UTC days; it does not infer cause, persistence, or event type.
+
+For each completed history day, Core removes every anomaly whose deterministic ID is already a member of the current active cluster, then rebuilds that day's raw clusters. This avoids comparing a current-window observation with itself when the active window crosses a UTC-date boundary and allows the remaining historical members to split into their correct connected components. A rebuilt historical cluster is spatially comparable when any of its members lies within the configured cluster radius of any current member. The configured time window still governs clustering within a day, but no cross-day time proximity is required for this location match.
+
+The current cluster must have an available total FRP and that total must be strictly greater than the maximum total FRP among all spatially matching rebuilt historical clusters. Equality fails. A historical cluster with no available member FRP is ignored; if no matching cluster has comparable FRP, the criterion passes. A current cluster with no available total FRP fails.
+
+The enabled criterion fails closed with an unavailable outcome until all configured country/source slices are complete and fresh for all 30 prior dates. Today's live bucket is excluded from the baseline even though it is retained by `/api/history`. Disabling `NOTIFICATION_HISTORICAL_FRP_FILTER_ENABLED` reports the criterion as disabled and removes the readiness requirement. See [ADR 0008](../decisions/0008-use-in-memory-daily-firms-baseline.md) for the durable tradeoffs.
 
 ## Land-cover policy
 
@@ -88,13 +101,13 @@ Retrieval is on demand, serialized, bounded, and cached. Provider, transport, ti
 
 ## Viewer eligibility and diagnostics
 
-The Viewer eligible-cluster query evaluates every connected component in one captured active snapshot. It applies the same metadata and land-cover rules as candidate preparation and, when configured, requires the same exact-date preview. Unavailable land cover fails open and an unavailable required preview fails closed. It returns only passing clusters, ordered by the manual-send priority, and performs no mapped-context lookup.
+The Viewer eligible-cluster query evaluates every connected component in one captured active snapshot. It applies the same metadata, historical-FRP, and land-cover rules as candidate preparation and, when configured, requires the same exact-date preview. Incomplete history and unavailable required previews fail closed; unavailable land cover fails open. It returns only passing clusters, ordered by the manual-send priority, and performs no mapped-context lookup.
 
 This list is criteria-only, not a promise that automatic delivery will send a cluster. It neither applies nor mutates startup-incident or delivered-episode suppression. Repeated Viewer evaluation can therefore continue to list a startup-suppressed or already delivered episode, and it cannot consume or extend automatic lifecycle state.
 
-Selecting an anomaly in the viewer asks the Core candidate engine to cluster every observation in the current active snapshot and find the connected component containing that anomaly. The diagnostic uses the same radius, time window, representative selection, metadata rules, land-cover policy, preview sizing, and exact-date preview client as automatic and manual candidate preparation. It also attaches nearby mapped context for the selected observation; that context remains outside eligibility criteria.
+Selecting an anomaly in the viewer asks the Core candidate engine to cluster every observation in the current active snapshot and find the connected component containing that anomaly. The diagnostic uses the same radius, time window, representative selection, metadata rules, historical baseline, land-cover policy, preview sizing, and exact-date preview client as automatic and manual candidate preparation. It also attaches nearby mapped context for the selected observation; that context remains outside eligibility criteria.
 
-The diagnostic is deliberately exhaustive: it reports daytime, detection-count, source-specific confidence, representative FRP, total cluster FRP, thermal-contrast, land-cover, and exact-preview outcomes even when an earlier criterion already blocks the candidate. Disabled criteria are identified explicitly. Unavailable land cover remains non-blocking because the policy fails open; an unavailable required preview blocks the current result and explains that later snapshots reevaluate the active cluster.
+The diagnostic is deliberately exhaustive: it reports daytime, detection-count, source-specific confidence, representative FRP, total cluster FRP, thermal-contrast, historical location FRP, land-cover, and exact-preview outcomes even when an earlier criterion already blocks the candidate. Disabled criteria are identified explicitly. Incomplete history and an unavailable required preview block the current result; unavailable land cover remains non-blocking because that policy fails open.
 
 This is a fresh, read-only evaluation. It neither reads nor changes startup incidents or delivered episodes. Refreshing diagnostics can therefore observe newly available GIBS data without changing later automatic or manual behavior.
 
@@ -114,6 +127,7 @@ Every successfully composed notification preview is losslessly re-encoded as a P
 
 - It evaluates the entire current snapshot and does not refresh FIRMS.
 - It bypasses startup-incident and delivered-episode checks without modifying automatic state or future deduplication.
+- It applies the same historical-FRP criterion and fails closed when the enabled baseline is incomplete; it neither waits for nor initiates history acquisition.
 - It obtains each preview once; a required missing preview skips the candidate.
 - It ranks eligible clusters by available/highest total FRP, then representative FRP, member count, diameter, acquisition time, and ID before selecting the requested count.
 - It looks up mapped location context only for those selected representatives, after ranking, so unselected eligible clusters create no Overpass traffic.

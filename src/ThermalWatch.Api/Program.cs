@@ -49,6 +49,7 @@ try
     builder.Services.AddSingleton(countryBoundaries);
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddSingleton<AnomalySnapshotStore>();
+    builder.Services.AddSingleton<FirmsHistoryStore>();
     builder.Services.AddMemoryCache(options => options.SizeLimit = 64 * 1024 * 1024);
     builder.Services.ConfigureHttpJsonOptions(options =>
     {
@@ -148,6 +149,7 @@ try
     });
 
     app.MapThermalWatchViewer();
+    app.MapFirmsHistory();
 
     app.MapGet(pattern: "/api/anomalies", (HttpRequest request, AnomalySnapshotStore store, FirmsOptions firmsOptions) =>
     {

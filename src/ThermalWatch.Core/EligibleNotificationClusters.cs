@@ -6,4 +6,4 @@ public sealed record EligibleNotificationClusters(
     DateTimeOffset SnapshotGeneratedAtUtc,
     int EvaluatedClusterCount,
     int EligibleClusterCount,
-    ImmutableArray<EligibleNotificationCluster> Clusters);
+    ImmutableArray<NotificationClusterSummary> Clusters);

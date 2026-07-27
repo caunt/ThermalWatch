@@ -5,7 +5,7 @@
 > **Sources of truth:** [Notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [Telegram options](../../src/ThermalWatch.Telegram/TelegramOptions.cs), [message formatter](../../src/ThermalWatch.Telegram/TelegramMessageFormatter.cs), and [Core candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs).
 > **Update when:** Telegram startup, formatting, sending, concurrency, acknowledgement, or transport error handling changes.
 
-Read the [notification policy](../domain/notification-policy.md) for clustering, eligibility, land cover, previews, mapped location context, deduplication, diagnostics, and manual ranking. Those responsibilities belong to Core; this document focuses on the Telegram adapter.
+Read the [notification policy](../domain/notification-policy.md) for clustering, eligibility, historical FRP, land cover, previews, mapped location context, deduplication, diagnostics, and manual ranking. Those responsibilities belong to Core; this document focuses on the Telegram adapter.
 
 ## Boundary and enablement
 
@@ -19,7 +19,7 @@ The validated bot client, configured channel ID, linked discussion ID, update of
 
 ## Automatic delivery
 
-The service is the single reader of the snapshot store's bounded update channel. For each update it calls the Core candidate engine and supplies a delivery callback. Core owns ready-snapshot handling, complete active-snapshot clustering, eligibility-based startup-incident suppression, metadata and land-cover policy, preview evaluation, nearby-feature enrichment, delivered-episode history, and delivery acknowledgement.
+The service is the single reader of the snapshot store's bounded update channel. For each update it calls the Core candidate engine and supplies a delivery callback. Core owns ready-snapshot handling, complete active-snapshot clustering, the enabled preceding-30-day historical-FRP check, eligibility-based startup-incident suppression, metadata and land-cover policy, preview evaluation, nearby-feature enrichment, delivered-episode history, and delivery acknowledgement. While the enabled history baseline is incomplete, Core fails closed and does not consume the first baseline-ready snapshot's startup-suppression state; Telegram receives no prepared candidate.
 
 For each prepared candidate passed to the callback, Telegram:
 
@@ -41,7 +41,7 @@ When Core supplies one or more nearby features, “Possible nearby sources” ap
 
 ## Manual send path
 
-`SendTopClustersAsync` requires a validated client and uses a nonblocking semaphore so only one manual operation runs at a time. It asks Core to prepare and rank the requested candidates from `snapshotStore.Current`; it does not wait for or request a FIRMS refresh. Core enriches only the selected representatives after ranking.
+`SendTopClustersAsync` requires a validated client and uses a nonblocking semaphore so only one manual operation runs at a time. It asks Core to prepare and rank the requested candidates from `snapshotStore.Current`; it does not wait for or request a current or historical FIRMS refresh. Core applies the same historical-FRP criterion and enriches only the selected representatives after ranking. An enabled incomplete baseline therefore produces no eligible manual candidates for that evaluation.
 
 Telegram sends an introductory status message to the channel and then sends the selected prepared candidates individually as the same channel-post/discussion-comment pair used by automatic delivery. A status-message failure ends the operation with a distinct result. Main-post failures are collected by cluster ID without stopping later sends; a comment failure after a successful main post is logged and the candidate counts as sent. Core's manual preparation does not inspect or mutate automatic startup incidents or delivered episodes.
 
@@ -49,6 +49,6 @@ The endpoint status mapping and input validation remain in [Program.cs](../../sr
 
 ## Tests and diagnostics
 
-Core tests cover clustering, policy, candidate lifecycle, land cover, preview handling, nearby-feature enrichment, manual ranking, and read-only Viewer diagnostics. Telegram tests cover options, exact channel/comment formatting and bounds, nearby-context wording, in-text map links, automatic-forward correlation, update polling, linked-discussion request sequencing, partial failures, and adapter-visible response contracts. Tests use fake HTTP handlers and never call Telegram, NASA, or Overpass live.
+Core tests cover clustering, historical-FRP policy and readiness, candidate lifecycle, land cover, preview handling, nearby-feature enrichment, manual ranking, and read-only Viewer diagnostics. Telegram tests cover options, exact channel/comment formatting and bounds, nearby-context wording, in-text map links, automatic-forward correlation, update polling, linked-discussion request sequencing, partial failures, and adapter-visible response contracts. Tests use fake HTTP handlers and never call Telegram, NASA, or Overpass live.
 
 Operational signals are console logs and manual endpoint results. The receiver consumes only Bot API message updates needed to find automatic forwards; it does not process commands or user content. There is no Telegram health endpoint, webhook listener, durable outbox, persisted state, or independent delivery retry timer.

@@ -8,6 +8,34 @@ namespace ThermalWatch.Tests;
 public sealed class FirmsPollingServiceTests
 {
     [Fact]
+    public async Task ExecuteAsyncRefreshesCurrentSnapshotBeforeHistoryBackfill()
+    {
+        var order = new List<string>();
+        using var refreshCycle = new RecordingRefreshCycle((_, _) =>
+        {
+            order.Add("current");
+            return Task.FromResult(new FirmsRefreshCycleResult(
+                SuccessfulSegmentCount: 1,
+                FailedSegmentCount: 0));
+        });
+        var historyBackfill = new RecordingHistoryBackfill(() => order.Add("history"));
+        var timeProvider = new FakeTimeProvider();
+        var service = new FirmsPollingService(
+            refreshCycle,
+            historyBackfill,
+            Options(pollInterval: TimeSpan.FromMinutes(minutes: 5)),
+            new FirmsPollingSchedule(static () => 0),
+            timeProvider,
+            NullLogger<FirmsPollingService>.Instance);
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+        await historyBackfill.Completed.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await service.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(["current", "history"], order, StringComparer.Ordinal);
+    }
+
+    [Fact]
     public async Task ExecuteAsyncRunsImmediatelyAndWaitsFromCycleCompletion()
     {
         var timeProvider = new FakeTimeProvider();
@@ -103,6 +131,22 @@ public sealed class FirmsPollingServiceTests
         }
 
         public void Dispose() => _called.Dispose();
+    }
+
+    private sealed class RecordingHistoryBackfill(Action record) : IFirmsHistoryBackfill
+    {
+        public TaskCompletionSource Completed { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<FirmsHistoryBackfillResult> RefreshAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            record();
+            Completed.SetResult();
+            return Task.FromResult(new FirmsHistoryBackfillResult(
+                SuccessfulRequestCount: 1,
+                FailedRequestCount: 0));
+        }
     }
 
     private static class InterlockedExtensions

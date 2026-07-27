@@ -37,4 +37,31 @@ internal static partial class FirmsPollingLog
         int failedSegmentCount,
         TimeSpan delay,
         bool isTotalFailureBackoffActive);
+
+    [LoggerMessage(EventId = 5, Level = LogLevel.Information,
+        Message = "Refreshed FIRMS history range {StartDate} through {EndDate} for {CountryCode} {Source} with {AnomalyCount} anomalies")]
+    internal static partial void HistoryRangeRefreshed(
+        ILogger logger,
+        string countryCode,
+        string source,
+        DateOnly startDate,
+        DateOnly endDate,
+        int anomalyCount);
+
+    [LoggerMessage(EventId = 6, Level = LogLevel.Warning,
+        Message = "FIRMS history range refresh failed for {CountryCode} {Source} from {StartDate} through {EndDate}: {SafeError}")]
+    internal static partial void HistoryRangeRefreshFailed(
+        ILogger logger,
+        string countryCode,
+        string source,
+        DateOnly startDate,
+        DateOnly endDate,
+        string safeError);
+
+    [LoggerMessage(EventId = 7, Level = LogLevel.Information,
+        Message = "Completed FIRMS history backfill; successful requests {SuccessfulRequestCount}; failed requests {FailedRequestCount}")]
+    internal static partial void HistoryBackfillCompleted(
+        ILogger logger,
+        int successfulRequestCount,
+        int failedRequestCount);
 }

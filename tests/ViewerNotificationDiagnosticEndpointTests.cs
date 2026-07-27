@@ -40,7 +40,7 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
         Assert.Equal("first", body.RootElement.GetProperty(propertyName: "selectedAnomalyId").GetString());
         Assert.Equal(2, body.RootElement.GetProperty(propertyName: "detectionCount").GetInt32());
         Assert.Equal(300, body.RootElement.GetProperty(propertyName: "totalFrpMegawatts").GetDouble());
-        Assert.Equal(8, body.RootElement.GetProperty(propertyName: "criteria").GetArrayLength());
+        Assert.Equal(9, body.RootElement.GetProperty(propertyName: "criteria").GetArrayLength());
         Assert.True(body.RootElement.GetProperty(propertyName: "isEligible").GetBoolean());
         JsonElement[] nearbyFeatures =
         [
@@ -100,6 +100,13 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
         Assert.Equal(200, cluster.GetProperty(propertyName: "frpMegawatts").GetDouble());
         Assert.Equal(300, cluster.GetProperty(propertyName: "totalFrpMegawatts").GetDouble());
         Assert.Equal(2, cluster.GetProperty(propertyName: "detectionCount").GetInt32());
+        Assert.Equal(
+            ["first", "second"],
+            cluster.GetProperty(propertyName: "memberIds")
+                .EnumerateArray()
+                .Select(item => item.GetString())
+                .Order(StringComparer.Ordinal),
+            StringComparer.Ordinal);
     }
 
     [Fact]
@@ -185,6 +192,7 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
             ClusterRadiusKilometers: 5,
             ClusterTimeWindow: TimeSpan.FromMinutes(minutes: 90),
             EpisodeRetention: TimeSpan.FromHours(hours: 48),
+            HistoricalFrpFilterEnabled: false,
             new(
                 new(WidthKilometers: 30, HeightKilometers: 20),
                 new(WidthKilometers: 45, HeightKilometers: 30),
