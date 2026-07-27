@@ -40,7 +40,10 @@ public sealed class NotificationCandidateEngineTests
         Assert.Equal(3, diagnostic.DetectionCount);
         Assert.Equal(450, diagnostic.TotalFrpMegawatts);
         Assert.Equal("bridge", diagnostic.RepresentativeId);
-        Assert.Equal(["bridge", "first", "last"], diagnostic.MemberIds.Order(StringComparer.Ordinal));
+        Assert.Equal(
+            ["bridge", "first", "last"],
+            diagnostic.MemberIds.Order(StringComparer.Ordinal),
+            StringComparer.Ordinal);
         Assert.Equal(8, diagnostic.Criteria.Length);
         Assert.True(diagnostic.IsEligible);
         Assert.Equal(0, handler.RequestCount);
@@ -188,7 +191,8 @@ public sealed class NotificationCandidateEngineTests
         Assert.Equal([1, 3, 4, 5, 6], manualCandidate.NearbyFeatures.Select(feature => feature.OsmId));
         Assert.Equal(
             ["Shared source", "Nearby 3", "Nearby 4", "Nearby 5", "Nearby 6"],
-            automaticCandidate.NearbyFeatures.Select(feature => feature.Name));
+            automaticCandidate.NearbyFeatures.Select(feature => feature.Name),
+            StringComparer.Ordinal);
         Assert.Equal(25, diagnostic.NearbyFeatures.Length);
         Assert.Equal(
             Enumerable.Range(start: 1, count: 25),
@@ -226,7 +230,10 @@ public sealed class NotificationCandidateEngineTests
         Assert.Equal(snapshot.GeneratedAtUtc, result.SnapshotGeneratedAtUtc);
         Assert.Equal(4, result.EvaluatedClusterCount);
         Assert.Equal(3, result.EligibleClusterCount);
-        Assert.Equal(["middle", "highest", "low"], result.Clusters.Select(cluster => cluster.RepresentativeId));
+        Assert.Equal(
+            ["middle", "highest", "low"],
+            result.Clusters.Select(cluster => cluster.RepresentativeId),
+            StringComparer.Ordinal);
         EligibleNotificationCluster first = result.Clusters[0];
         Assert.Equal("RUS", first.CountryCode);
         Assert.Equal("VIIRS_SNPP_NRT", first.Source);

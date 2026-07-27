@@ -134,7 +134,7 @@ public sealed partial class FirmsClient(
             .Where(anomaly => boundary.Prepared.Covers(
                 boundary.Geometry.Factory.CreatePoint(
                     new Coordinate(anomaly.Longitude, anomaly.Latitude))))
-            .DistinctBy(anomaly => anomaly.Id)
+            .DistinctBy(anomaly => anomaly.Id, StringComparer.Ordinal)
             .ToImmutableArray();
         return new(anomalies, IngestionModes.AreaFallback);
     }
@@ -695,7 +695,7 @@ public sealed partial class FirmsClient(
         if (skippedRowCount > 0)
             LogMalformedRowsSkipped(logger, skippedRowCount, countryCode, source);
 
-        return [.. anomalies.DistinctBy(anomaly => anomaly.Id)];
+        return [.. anomalies.DistinctBy(anomaly => anomaly.Id, StringComparer.Ordinal)];
     }
 
     private static Anomaly ParseRow(CsvReader csv, string countryCode, string source)

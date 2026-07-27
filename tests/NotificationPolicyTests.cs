@@ -35,7 +35,8 @@ public sealed class NotificationPolicyTests
         Assert.All(criteria, criterion => Assert.True(criterion.IsBlocking));
         Assert.Equal(
             ["daytime", "cluster-detections", "confidence", "frp", "cluster-total-frp", "thermal-contrast"],
-            criteria.Select(criterion => criterion.Code));
+            criteria.Select(criterion => criterion.Code),
+            StringComparer.Ordinal);
     }
 
     [Fact]

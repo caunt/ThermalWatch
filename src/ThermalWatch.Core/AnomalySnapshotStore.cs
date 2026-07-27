@@ -88,7 +88,7 @@ public sealed class AnomalySnapshotStore
         var anomalies = _orderedKeys
             .SelectMany(key => _segments[key].Anomalies)
             .Where(anomaly => anomaly.AcquiredAtUtc >= cutoff && anomaly.AcquiredAtUtc <= now)
-            .DistinctBy(anomaly => anomaly.Id)
+            .DistinctBy(anomaly => anomaly.Id, StringComparer.Ordinal)
             .OrderByDescending(anomaly => anomaly.AcquiredAtUtc)
             .ThenBy(anomaly => anomaly.Id, StringComparer.Ordinal)
             .ToImmutableArray();

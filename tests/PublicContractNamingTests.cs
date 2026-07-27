@@ -46,7 +46,8 @@ public sealed class PublicContractNamingTests
                 "isReady",
                 "segments"
             ],
-            json.RootElement.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+            json.RootElement.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal),
+            StringComparer.Ordinal);
         JsonElement segment = Assert.Single(
             json.RootElement.GetProperty(propertyName: "segments").EnumerateArray());
         Assert.Equal(
@@ -59,7 +60,8 @@ public sealed class PublicContractNamingTests
                 "lastSuccessAtUtc",
                 "source"
             ],
-            segment.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+            segment.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal),
+            StringComparer.Ordinal);
     }
 
     [Fact]
@@ -86,6 +88,7 @@ public sealed class PublicContractNamingTests
                 "selectedClusterCount",
                 "sentClusterCount"
             ],
-            json.RootElement.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+            json.RootElement.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal),
+            StringComparer.Ordinal);
     }
 }

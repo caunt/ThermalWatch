@@ -57,7 +57,8 @@ public sealed class ViewerNotificationDiagnosticEndpointTests
             body.RootElement.GetProperty(propertyName: "memberIds")
                 .EnumerateArray()
                 .Select(item => item.GetString())
-                .Order(StringComparer.Ordinal));
+                .Order(StringComparer.Ordinal),
+            StringComparer.Ordinal);
     }
 
     [Fact]
