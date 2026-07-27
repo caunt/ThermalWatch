@@ -17,7 +17,12 @@ public sealed record NotificationClusterSummary(
     double ClusterDiameterKilometers,
     ImmutableArray<string> MemberIds)
 {
-    public static NotificationClusterSummary FromCluster(NotificationCluster cluster)
+    public static NotificationClusterSummary FromCluster(NotificationCluster cluster) =>
+        FromCluster(cluster, Geography.ClusterDiameterKilometers(cluster.Members));
+
+    internal static NotificationClusterSummary FromCluster(
+        NotificationCluster cluster,
+        double clusterDiameterKilometers)
     {
         Anomaly representative = cluster.Representative;
         return new(
@@ -32,7 +37,7 @@ public sealed record NotificationClusterSummary(
             representative.FrpMegawatts,
             cluster.TotalFrpMegawatts,
             cluster.Members.Length,
-            Geography.ClusterDiameterKilometers(cluster.Members),
+            clusterDiameterKilometers,
             [.. cluster.Members.Select(member => member.Id)]);
     }
 }

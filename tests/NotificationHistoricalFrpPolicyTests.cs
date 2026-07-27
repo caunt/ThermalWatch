@@ -164,6 +164,66 @@ public sealed class NotificationHistoricalFrpPolicyTests
     }
 
     [Fact]
+    public void ExplainMatchesRetainedMembersAcrossAntimeridian()
+    {
+        NotificationCluster current = Cluster(Anomaly(
+            id: "current",
+            acquiredAtUtc: s_now,
+            longitude: -179.99,
+            frp: 200));
+        FirmsHistory history = History(
+            isReady: true,
+            anomalies: [Anomaly(
+                id: "historical",
+                acquiredAtUtc: s_now.AddDays(days: -1),
+                longitude: 179.99,
+                frp: 100)]);
+
+        NotificationCriterionResult result = NotificationHistoricalFrpPolicy.Explain(
+            current,
+            history,
+            Options());
+
+        Assert.Equal(NotificationCriterionOutcomes.Passed, result.Outcome);
+        Assert.Contains(expectedSubstring: "100 MW historical 95th percentile", result.ActualValue, StringComparison.Ordinal);
+    }
+
+    [Fact(Timeout = 10_000)]
+    public void ExplainScalesAcrossManyCurrentClustersAndCompleteHistory()
+    {
+        const int anomaliesPerDay = 1_000;
+        Anomaly[] historicalAnomalies =
+        [
+            .. Enumerable.Range(
+                    start: 0,
+                    count: FirmsHistoryStore.CompletedDayCount * anomaliesPerDay)
+                .Select(index => Anomaly(
+                    id: $"historical-{index}",
+                    acquiredAtUtc: s_now.AddDays(days: -1 - (index / anomaliesPerDay)),
+                    longitude: -179.8 + ((index % anomaliesPerDay) * 0.3596),
+                    frp: 100))
+        ];
+        FirmsHistory history = History(isReady: true, historicalAnomalies);
+        NotificationOptions options = Options();
+
+        foreach (int index in Enumerable.Range(start: 0, count: 2_000))
+        {
+            NotificationCluster current = Cluster(Anomaly(
+                id: $"current-{index}",
+                acquiredAtUtc: s_now,
+                longitude: -179.8 + (index * 0.1798),
+                frp: 200));
+
+            NotificationCriterionResult result = NotificationHistoricalFrpPolicy.Explain(
+                current,
+                history,
+                options);
+
+            Assert.False(result.IsBlocking);
+        }
+    }
+
+    [Fact]
     public void ExplainPassesWithoutComparableHistoricalFrp()
     {
         NotificationOptions options = Options();

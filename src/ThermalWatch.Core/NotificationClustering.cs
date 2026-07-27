@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Runtime.InteropServices;
 
 namespace ThermalWatch.Core;
 
@@ -20,7 +19,7 @@ public static class NotificationClustering
                 .ThenBy(anomaly => anomaly.Id, StringComparer.Ordinal)
         ];
         int[] parents = [.. Enumerable.Range(start: 0, orderedAnomalies.Length)];
-        double cellSize = ChordLength(radiusKilometers);
+        double cellSize = Geography.ChordLength(radiusKilometers);
         if (!(cellSize > 0) || !double.IsFinite(cellSize))
         {
             JoinTimeBoundedPairs(
@@ -76,12 +75,12 @@ public static class NotificationClustering
         TimeSpan timeWindow,
         double cellSize)
     {
-        var activeByCell = new Dictionary<SpatialCell, Queue<int>>();
-        var activeInTimeOrder = new Queue<(int Index, SpatialCell Cell)>();
+        var activeByCell = new Dictionary<GeographicCell, Queue<int>>();
+        var activeInTimeOrder = new Queue<(int Index, GeographicCell Cell)>();
         for (int current = 0; current < orderedAnomalies.Length; current++)
         {
             Anomaly currentAnomaly = orderedAnomalies[current];
-            while (activeInTimeOrder.TryPeek(out (int Index, SpatialCell Cell) oldest)
+            while (activeInTimeOrder.TryPeek(out (int Index, GeographicCell Cell) oldest)
                 && currentAnomaly.AcquiredAtUtc - orderedAnomalies[oldest.Index].AcquiredAtUtc > timeWindow)
             {
                 activeInTimeOrder.Dequeue();
@@ -91,7 +90,10 @@ public static class NotificationClustering
                     activeByCell.Remove(oldest.Cell);
             }
 
-            SpatialCell cell = GetSpatialCell(currentAnomaly, cellSize);
+            GeographicCell cell = Geography.GetCell(
+                currentAnomaly.Latitude,
+                currentAnomaly.Longitude,
+                cellSize);
             for (long x = cell.X - 1; x <= cell.X + 1; x++)
             {
                 for (long y = cell.Y - 1; y <= cell.Y + 1; y++)
@@ -119,20 +121,6 @@ public static class NotificationClustering
             currentCell.Enqueue(current);
             activeInTimeOrder.Enqueue((current, cell));
         }
-    }
-
-    private static double ChordLength(double radiusKilometers) =>
-        2 * Math.Sin(radiusKilometers / (2 * Geography.EarthRadiusKilometers));
-
-    private static SpatialCell GetSpatialCell(Anomaly anomaly, double cellSize)
-    {
-        double latitudeRadians = anomaly.Latitude * Math.PI / 180;
-        double longitudeRadians = anomaly.Longitude * Math.PI / 180;
-        double latitudeCosine = Math.Cos(latitudeRadians);
-        return new(
-            X: (long)Math.Floor(latitudeCosine * Math.Cos(longitudeRadians) / cellSize),
-            Y: (long)Math.Floor(latitudeCosine * Math.Sin(longitudeRadians) / cellSize),
-            Z: (long)Math.Floor(Math.Sin(latitudeRadians) / cellSize));
     }
 
     public static bool AreRelated(
@@ -178,7 +166,4 @@ public static class NotificationClustering
         if (firstRoot != secondRoot)
             parents[secondRoot] = firstRoot;
     }
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct SpatialCell(long X, long Y, long Z);
 }

@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 
 namespace ThermalWatch.Core;
 
@@ -13,6 +14,8 @@ public sealed class NotificationCandidateEngine(
     private const int MaximumCandidateNearbyFeatures = 5;
     private const int MaximumConcurrentEligibleClusterEvaluations = 2;
     private const int MaximumDiagnosticNearbyFeatures = 25;
+    private readonly ConditionalWeakTable<AnomalySnapshot, ClusteredSnapshot> _clustersBySnapshot = [];
+    private readonly ConditionalWeakTable<NotificationCluster, SelectedPreview> _previewsByCluster = [];
     private readonly NotificationEpisodeHistory _startupIncidentHistory = new(
         options.ClusterRadiusKilometers,
         options.ClusterTimeWindow,
@@ -36,10 +39,7 @@ public sealed class NotificationCandidateEngine(
         _startupIncidentHistory.Expire(now);
         _deliveryHistory.Expire(now);
 
-        ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
-            snapshot.Anomalies,
-            options.ClusterRadiusKilometers,
-            options.ClusterTimeWindow);
+        ImmutableArray<NotificationCluster> clusters = GetClusters(snapshot);
         summary.ActiveClusterCount = clusters.Length;
 
         if (options.HistoricalFrpFilterEnabled
@@ -211,10 +211,7 @@ public sealed class NotificationCandidateEngine(
         int requestedClusterCount,
         CancellationToken cancellationToken)
     {
-        ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
-            snapshot.Anomalies,
-            options.ClusterRadiusKilometers,
-            options.ClusterTimeWindow);
+        ImmutableArray<NotificationCluster> clusters = GetClusters(snapshot);
         var eligibleCandidates = new List<PreparedNotificationCandidate>();
         foreach (NotificationCluster cluster in clusters)
         {
@@ -293,10 +290,7 @@ public sealed class NotificationCandidateEngine(
         AnomalySnapshot snapshot,
         CancellationToken cancellationToken)
     {
-        ImmutableArray<NotificationCluster> clusters = NotificationClustering.Create(
-            snapshot.Anomalies,
-            options.ClusterRadiusKilometers,
-            options.ClusterTimeWindow);
+        ImmutableArray<NotificationCluster> clusters = GetClusters(snapshot);
         var eligible = new NotificationClusterSummary?[clusters.Length];
         await Parallel.ForEachAsync(
             Enumerable.Range(start: 0, clusters.Length),
@@ -348,7 +342,9 @@ public sealed class NotificationCandidateEngine(
                 return null;
         }
 
-        return NotificationClusterSummary.FromCluster(cluster);
+        return NotificationClusterSummary.FromCluster(
+            cluster,
+            previewSelection.ClusterDiameterKilometers);
     }
 
     public async Task<NotificationDiagnostic?> GetNotificationDiagnosticAsync(
@@ -440,14 +436,17 @@ public sealed class NotificationCandidateEngine(
         if (selectedAnomaly is null)
             return null;
 
-        NotificationCluster? cluster = NotificationClustering.Create(
-                snapshot.Anomalies,
-                options.ClusterRadiusKilometers,
-                options.ClusterTimeWindow)
+        NotificationCluster? cluster = GetClusters(snapshot)
             .FirstOrDefault(candidate => candidate.Members.Any(member =>
                 member.Id.Equals(anomalyId, StringComparison.Ordinal)));
         return cluster is null ? null : (selectedAnomaly, cluster);
     }
+
+    private ImmutableArray<NotificationCluster> GetClusters(AnomalySnapshot snapshot) =>
+        _clustersBySnapshot.GetValue(snapshot, value => new(
+            value,
+            options.ClusterRadiusKilometers,
+            options.ClusterTimeWindow)).Clusters;
 
     private bool IsPreviewRequired =>
         options.Visibility.Enabled && options.Visibility.RequirePreview;
@@ -509,26 +508,8 @@ public sealed class NotificationCandidateEngine(
             landCover);
     }
 
-    private NotificationPreviewSelection SelectPreview(NotificationCluster cluster)
-    {
-        Anomaly representative = cluster.Representative;
-        double clusterDiameterKilometers = Geography.ClusterDiameterKilometers(cluster.Members);
-        NotificationPreviewOptions previewOptions = options.Preview;
-        bool isLargePreview =
-            cluster.Members.Length >= previewOptions.LargeClusterMinimumDetections
-            || representative.FrpMegawatts is { } frp
-                && frp >= previewOptions.LargeClusterMinimumFrpMegawatts
-            || clusterDiameterKilometers >= previewOptions.LargeClusterMinimumDiameterKilometers;
-        NotificationPreviewSize previewSize = isLargePreview
-            ? previewOptions.LargePreviewSize
-            : previewOptions.PreviewSize;
-        var dimensions = new GibsPreviewDimensions(
-            previewSize.WidthKilometers,
-            previewSize.HeightKilometers,
-            previewOptions.PixelWidth,
-            previewOptions.PixelHeight);
-        return new(dimensions, clusterDiameterKilometers, isLargePreview);
-    }
+    private NotificationPreviewSelection SelectPreview(NotificationCluster cluster) =>
+        _previewsByCluster.GetValue(cluster, value => new(value, options.Preview)).Selection;
 
     private NotificationCriterionResult ExplainLandCover(NotificationLandCoverResult landCover)
     {
@@ -610,6 +591,42 @@ public sealed class NotificationCandidateEngine(
         ImmutableArray<NotificationCriterionResult> Criteria,
         GibsPreviewSource? PreviewBaseSource,
         double ClusterDiameterKilometers);
+
+    private sealed class ClusteredSnapshot(
+        AnomalySnapshot snapshot,
+        double radiusKilometers,
+        TimeSpan timeWindow)
+    {
+        public ImmutableArray<NotificationCluster> Clusters { get; } = NotificationClustering.Create(
+            snapshot.Anomalies,
+            radiusKilometers,
+            timeWindow);
+    }
+
+    private sealed class SelectedPreview
+    {
+        public SelectedPreview(NotificationCluster cluster, NotificationPreviewOptions previewOptions)
+        {
+            Anomaly representative = cluster.Representative;
+            double clusterDiameterKilometers = Geography.ClusterDiameterKilometers(cluster.Members);
+            bool isLargePreview =
+                cluster.Members.Length >= previewOptions.LargeClusterMinimumDetections
+                || representative.FrpMegawatts is { } frp
+                    && frp >= previewOptions.LargeClusterMinimumFrpMegawatts
+                || clusterDiameterKilometers >= previewOptions.LargeClusterMinimumDiameterKilometers;
+            NotificationPreviewSize previewSize = isLargePreview
+                ? previewOptions.LargePreviewSize
+                : previewOptions.PreviewSize;
+            var dimensions = new GibsPreviewDimensions(
+                previewSize.WidthKilometers,
+                previewSize.HeightKilometers,
+                previewOptions.PixelWidth,
+                previewOptions.PixelHeight);
+            Selection = new(dimensions, clusterDiameterKilometers, isLargePreview);
+        }
+
+        public NotificationPreviewSelection Selection { get; }
+    }
 
     private sealed record NotificationCandidateReadiness(
         GibsPreview Preview,

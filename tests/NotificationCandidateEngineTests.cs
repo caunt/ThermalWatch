@@ -264,6 +264,59 @@ public sealed class NotificationCandidateEngineTests
         Assert.Equal(0, deliveryCount);
     }
 
+    [Fact(Timeout = 10_000)]
+    public async Task EligibleClusterQueryScalesAcrossLargeCompleteHistory()
+    {
+        const int historicalAnomaliesPerDay = 1_000;
+        const int currentClusterCount = 2_000;
+        NotificationOptions options = DefaultOptions() with
+        {
+            HistoricalFrpFilterEnabled = true
+        };
+        Anomaly[] historicalAnomalies =
+        [
+            .. Enumerable.Range(
+                    start: 0,
+                    count: FirmsHistoryStore.CompletedDayCount * historicalAnomaliesPerDay)
+                .Select(index => CreateAnomaly(
+                    id: $"historical-{index}",
+                    longitude: -100 + ((index % historicalAnomaliesPerDay) * 0.2),
+                    frpMegawatts: 100,
+                    acquiredAtUtc: s_observedAt.AddDays(days: -1 - (index / historicalAnomaliesPerDay))))
+        ];
+        FirmsHistoryStore historyStore = CreateHistoryStore(options, historicalAnomalies);
+        var handler = new NotFoundHandler();
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 64 * 1024 * 1024 });
+        NotificationCandidateEngine engine = CreateEngine(
+            handler,
+            cache,
+            options: options,
+            historyStore: historyStore);
+        Anomaly[] currentAnomalies =
+        [
+            .. Enumerable.Range(start: 0, count: currentClusterCount)
+                .SelectMany(index => new[]
+                {
+                    CreateAnomaly(
+                        id: $"current-{index}-first",
+                        longitude: -100 + (index * 0.1),
+                        frpMegawatts: 100),
+                    CreateAnomaly(
+                        id: $"current-{index}-second",
+                        longitude: -99.99 + (index * 0.1),
+                        frpMegawatts: 100)
+                })
+        ];
+
+        EligibleNotificationClusters result = await engine.GetEligibleNotificationClustersAsync(
+            Snapshot(currentAnomalies),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(currentClusterCount, result.EvaluatedClusterCount);
+        Assert.Equal(currentClusterCount, result.EligibleClusterCount);
+        Assert.Equal(0, handler.RequestCount);
+    }
+
     [Fact]
     public async Task HistoricalFrpCriterionBlocksAutomaticManualEligibleAndDiagnosticPaths()
     {
@@ -847,7 +900,11 @@ public sealed class NotificationCandidateEngineTests
             AnomalyCount: anomalies.Length,
             Anomalies: [.. anomalies]);
 
-    private static Anomaly CreateAnomaly(string id, double longitude, double frpMegawatts) =>
+    private static Anomaly CreateAnomaly(
+        string id,
+        double longitude,
+        double frpMegawatts,
+        DateTimeOffset? acquiredAtUtc = null) =>
         new(
             id,
             CountryCode: "RUS",
@@ -856,7 +913,7 @@ public sealed class NotificationCandidateEngineTests
             Instrument: "VIIRS",
             Latitude: 50,
             longitude,
-            s_observedAt,
+            acquiredAtUtc ?? s_observedAt,
             DayNight: "D",
             BrightnessKelvin: 350,
             SecondaryBrightnessKelvin: 300,

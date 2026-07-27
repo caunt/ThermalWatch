@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace ThermalWatch.Core;
@@ -11,6 +12,7 @@ public static class NotificationHistoricalFrpPolicy
     private const string CriterionLabel = "Historical location FRP";
     private const string HistoricalRequirement =
         "Strictly greater than the 95th percentile of matching cluster total FRP in the preceding 30 complete UTC days";
+    private static readonly ConditionalWeakTable<FirmsHistory, HistoryIndexCache> s_historyIndexes = [];
 
     public static NotificationCriterionResult Explain(
         NotificationCluster cluster,
@@ -41,17 +43,16 @@ public static class NotificationHistoricalFrpPolicy
         var currentMemberIds = cluster.Members
             .Select(member => member.Id)
             .ToImmutableHashSet(StringComparer.Ordinal);
+        HistoricalSpatialIndex index = s_historyIndexes
+            .GetValue(history, static value => new(value))
+            .Get(options.ClusterRadiusKilometers);
+        HashSet<DateOnly> fallbackDates = index.GetFallbackDates(currentMemberIds);
         ImmutableArray<HistoricalMatch>.Builder matching = ImmutableArray.CreateBuilder<HistoricalMatch>();
+        matching.AddRange(index.FindMatches(cluster, fallbackDates));
         foreach (FirmsHistoryDay day in history.Days.Where(day => day.Date < history.RetainedThroughDate))
         {
-            if (day.Anomalies.Any(anomaly => currentMemberIds.Contains(anomaly.Id))
-                || day.ClusterCount != day.Clusters.Length)
-            {
+            if (fallbackDates.Contains(day.Date))
                 AddReclusteredMatches(cluster, day, currentMemberIds, options, matching);
-                continue;
-            }
-
-            AddRetainedMatches(cluster, day, options.ClusterRadiusKilometers, matching);
         }
 
         return matching.ToImmutable();
@@ -78,28 +79,6 @@ public static class NotificationHistoricalFrpPolicy
             {
                 matching.Add(new(day.Date, totalFrp));
             }
-        }
-    }
-
-    private static void AddRetainedMatches(
-        NotificationCluster current,
-        FirmsHistoryDay day,
-        double radiusKilometers,
-        ImmutableArray<HistoricalMatch>.Builder matching)
-    {
-        var anomaliesById = day.Anomalies.ToDictionary(
-            anomaly => anomaly.Id,
-            StringComparer.Ordinal);
-        foreach (NotificationClusterSummary historicalCluster in day.Clusters)
-        {
-            if (historicalCluster.TotalFrpMegawatts is not { } totalFrp)
-                continue;
-
-            IEnumerable<Anomaly> historicalMembers = historicalCluster.MemberIds
-                .Select(memberId => anomaliesById.GetValueOrDefault(memberId))
-                .OfType<Anomaly>();
-            if (SpatiallyMatches(current, historicalMembers, radiusKilometers))
-                matching.Add(new(day.Date, totalFrp));
         }
     }
 
@@ -186,4 +165,144 @@ public static class NotificationHistoricalFrpPolicy
     private readonly record struct HistoricalMatch(
         DateOnly Date,
         double TotalFrpMegawatts);
+
+    private sealed class HistoryIndexCache(FirmsHistory history)
+    {
+        private readonly Lock _lock = new();
+        private readonly Dictionary<double, HistoricalSpatialIndex> _indexes = [];
+
+        public HistoricalSpatialIndex Get(double radiusKilometers)
+        {
+            lock (_lock)
+            {
+                if (!_indexes.TryGetValue(radiusKilometers, out HistoricalSpatialIndex? index))
+                {
+                    index = new(history, radiusKilometers);
+                    _indexes.Add(radiusKilometers, index);
+                }
+
+                return index;
+            }
+        }
+    }
+
+    private sealed class HistoricalSpatialIndex
+    {
+        private readonly double _cellSize;
+        private readonly double _radiusKilometers;
+        private readonly Dictionary<GeographicCell, List<IndexedHistoricalMember>> _membersByCell = [];
+        private readonly Dictionary<HistoricalClusterKey, double> _totalFrpByCluster = [];
+        private readonly Dictionary<string, DateOnly> _datesByAnomalyId = new(StringComparer.Ordinal);
+        private readonly HashSet<DateOnly> _invalidDates = [];
+
+        public HistoricalSpatialIndex(FirmsHistory history, double radiusKilometers)
+        {
+            _radiusKilometers = radiusKilometers;
+            _cellSize = Geography.ChordLength(radiusKilometers);
+            foreach (FirmsHistoryDay day in history.Days.Where(day => day.Date < history.RetainedThroughDate))
+                AddDay(day);
+        }
+
+        public HashSet<DateOnly> GetFallbackDates(IEnumerable<string> currentMemberIds)
+        {
+            HashSet<DateOnly> dates = [.. _invalidDates];
+            foreach (string memberId in currentMemberIds)
+            {
+                if (_datesByAnomalyId.TryGetValue(memberId, out DateOnly date))
+                    dates.Add(date);
+            }
+
+            return dates;
+        }
+
+        public ImmutableArray<HistoricalMatch> FindMatches(
+            NotificationCluster current,
+            HashSet<DateOnly> excludedDates)
+        {
+            var matchingClusters = new HashSet<HistoricalClusterKey>();
+            foreach (Anomaly currentAnomaly in current.Members)
+            {
+                GeographicCell cell = Geography.GetCell(
+                    currentAnomaly.Latitude,
+                    currentAnomaly.Longitude,
+                    _cellSize);
+                for (long x = cell.X - 1; x <= cell.X + 1; x++)
+                {
+                    for (long y = cell.Y - 1; y <= cell.Y + 1; y++)
+                    {
+                        for (long z = cell.Z - 1; z <= cell.Z + 1; z++)
+                        {
+                            if (!_membersByCell.TryGetValue(new(x, y, z), out List<IndexedHistoricalMember>? candidates))
+                                continue;
+
+                            foreach (IndexedHistoricalMember candidate in candidates)
+                            {
+                                if (!excludedDates.Contains(candidate.Cluster.Date)
+                                    && Geography.HaversineKilometers(currentAnomaly, candidate.Anomaly) <= _radiusKilometers)
+                                {
+                                    matchingClusters.Add(candidate.Cluster);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return
+            [
+                .. matchingClusters.Select(cluster => new HistoricalMatch(
+                    cluster.Date,
+                    _totalFrpByCluster[cluster]))
+            ];
+        }
+
+        private void AddDay(FirmsHistoryDay day)
+        {
+            foreach (Anomaly anomaly in day.Anomalies)
+                _datesByAnomalyId.TryAdd(anomaly.Id, day.Date);
+
+            if (day.ClusterCount != day.Clusters.Length)
+            {
+                _invalidDates.Add(day.Date);
+                return;
+            }
+
+            var anomaliesById = day.Anomalies.ToDictionary(
+                anomaly => anomaly.Id,
+                StringComparer.Ordinal);
+            foreach (NotificationClusterSummary cluster in day.Clusters)
+            {
+                if (cluster.TotalFrpMegawatts is not { } totalFrp)
+                    continue;
+
+                var key = new HistoricalClusterKey(day.Date, cluster.ClusterId);
+                _totalFrpByCluster.TryAdd(key, totalFrp);
+                foreach (string memberId in cluster.MemberIds)
+                {
+                    if (!anomaliesById.TryGetValue(memberId, out Anomaly? anomaly))
+                        continue;
+
+                    GeographicCell cell = Geography.GetCell(
+                        anomaly.Latitude,
+                        anomaly.Longitude,
+                        _cellSize);
+                    if (!_membersByCell.TryGetValue(cell, out List<IndexedHistoricalMember>? members))
+                    {
+                        members = [];
+                        _membersByCell.Add(cell, members);
+                    }
+
+                    members.Add(new(key, anomaly));
+                }
+            }
+        }
+    }
+
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct HistoricalClusterKey(DateOnly Date, string ClusterId);
+
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct IndexedHistoricalMember(
+        HistoricalClusterKey Cluster,
+        Anomaly Anomaly);
 }

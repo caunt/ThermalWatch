@@ -42,6 +42,20 @@ public static class Geography
         return diameter;
     }
 
+    internal static double ChordLength(double radiusKilometers) =>
+        2 * Math.Sin(radiusKilometers / (2 * EarthRadiusKilometers));
+
+    internal static GeographicCell GetCell(double latitude, double longitude, double cellSize)
+    {
+        double latitudeRadians = DegreesToRadians(latitude);
+        double longitudeRadians = DegreesToRadians(longitude);
+        double latitudeCosine = Math.Cos(latitudeRadians);
+        return new(
+            X: (long)Math.Floor(latitudeCosine * Math.Cos(longitudeRadians) / cellSize),
+            Y: (long)Math.Floor(latitudeCosine * Math.Sin(longitudeRadians) / cellSize),
+            Z: (long)Math.Floor(Math.Sin(latitudeRadians) / cellSize));
+    }
+
     public static GeographicBounds? CreatePreviewBounds(
         double latitude,
         double longitude,
