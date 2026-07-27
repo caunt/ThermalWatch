@@ -8,10 +8,12 @@ namespace ThermalWatch.Core;
 public static class NotificationHistoricalFrpPolicy
 {
     public const string CriterionCode = "historical-cluster-frp";
+    private const double HistoricalPercentileMultiplier = 1.5;
+    private const double HistoricalPercentileOffsetMegawatts = 75;
     private const double HistoricalPercentileFraction = 0.95;
     private const string CriterionLabel = "Historical location FRP";
     private const string HistoricalRequirement =
-        "Strictly greater than the 95th percentile of matching cluster total FRP in the preceding 30 complete UTC days";
+        "Strictly greater than both 1.5 times the historical 95th percentile and the historical 95th percentile plus 75 MW";
     private static readonly ConditionalWeakTable<FirmsHistory, HistoryIndexCache> s_historyIndexes = [];
 
     public static NotificationCriterionResult Explain(
@@ -87,19 +89,23 @@ public static class NotificationHistoricalFrpPolicy
         ImmutableArray<HistoricalMatch> matching)
     {
         double historicalPercentileFrp = CalculateHistoricalPercentile(matching);
+        double multipliedThresholdFrp = historicalPercentileFrp * HistoricalPercentileMultiplier;
+        double offsetThresholdFrp = historicalPercentileFrp + HistoricalPercentileOffsetMegawatts;
         int matchingDayCount = matching.Select(item => item.Date).Distinct().Count();
-        bool passed = currentFrp > historicalPercentileFrp;
+        bool passed = currentFrp > multipliedThresholdFrp && currentFrp > offsetThresholdFrp;
         string historicalValue = NotificationPolicy.FormatNumber(historicalPercentileFrp);
+        string multipliedThresholdValue = NotificationPolicy.FormatNumber(multipliedThresholdFrp);
+        string offsetThresholdValue = NotificationPolicy.FormatNumber(offsetThresholdFrp);
         string matchSummary = $"{matching.Length.ToString(CultureInfo.InvariantCulture)} matching cluster(s) across {matchingDayCount.ToString(CultureInfo.InvariantCulture)} day(s)";
         return new(
             Code: CriterionCode,
             Label: CriterionLabel,
             Outcome: passed ? NotificationCriterionOutcomes.Passed : NotificationCriterionOutcomes.Failed,
-            ActualValue: $"{NotificationPolicy.FormatNumber(currentFrp)} MW current; {historicalValue} MW historical 95th percentile",
-            Requirement: $"Current total FRP must be greater than the historical 95th percentile of {historicalValue} MW",
+            ActualValue: $"{NotificationPolicy.FormatNumber(currentFrp)} MW current; {historicalValue} MW historical 95th percentile; thresholds {multipliedThresholdValue} MW (p95 x 1.5) and {offsetThresholdValue} MW (p95 + 75 MW)",
+            Requirement: $"Current total FRP must be greater than both {multipliedThresholdValue} MW (historical p95 x 1.5) and {offsetThresholdValue} MW (historical p95 + 75 MW)",
             Explanation: passed
-                ? $"The current total FRP is strictly greater than the 95th percentile from {matchSummary}."
-                : $"The current total FRP is not strictly greater than the 95th percentile from {matchSummary}.",
+                ? $"The current total FRP is strictly greater than both thresholds derived from {matchSummary}."
+                : $"The current total FRP is not strictly greater than both thresholds derived from {matchSummary}.",
             IsBlocking: !passed);
     }
 

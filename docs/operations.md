@@ -40,7 +40,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `NOTIFICATION_CLUSTER_RADIUS_KM` | `5` | Finite number from `0.01` through `100`. |
 | `NOTIFICATION_CLUSTER_TIME_WINDOW` | `01:30:00` | Duration from 1 minute through 1 day. |
 | `NOTIFICATION_EPISODE_RETENTION` | `48:00:00`, or `FIRMS_ACTIVE_WINDOW` when longer | Startup-incident and delivered-episode retention from 1 minute through 30 days and at least `FIRMS_ACTIVE_WINDOW`. |
-| `NOTIFICATION_HISTORICAL_FRP_FILTER_ENABLED` | `true` | Boolean. When enabled, require current total cluster FRP to be strictly greater than the inclusive, linearly interpolated 95th percentile of spatially matching comparable cluster totals in the complete preceding-30-day baseline; incomplete history fails closed. |
+| `NOTIFICATION_HISTORICAL_FRP_FILTER_ENABLED` | `true` | Boolean. When enabled, require current total cluster FRP to be strictly greater than both `1.5` times the inclusive, linearly interpolated historical 95th percentile and that percentile plus `75 MW`; incomplete history fails closed. |
 | `NOTIFICATION_PREVIEW_WIDTH_KM` | `48` | Positive finite number. |
 | `NOTIFICATION_PREVIEW_HEIGHT_KM` | `60` | Positive finite number. |
 | `NOTIFICATION_LARGE_PREVIEW_WIDTH_KM` | `72` | Positive finite number. |

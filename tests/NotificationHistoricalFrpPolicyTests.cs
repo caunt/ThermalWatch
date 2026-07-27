@@ -15,10 +15,13 @@ public sealed class NotificationHistoricalFrpPolicyTests
         TimeSpan.Zero);
 
     [Theory]
-    [InlineData(101, 100, NotificationCriterionOutcomes.Passed)]
-    [InlineData(100, 100, NotificationCriterionOutcomes.Failed)]
-    [InlineData(99, 100, NotificationCriterionOutcomes.Failed)]
-    public void ExplainRequiresCurrentTotalToBeStrictlyGreaterThan95thPercentile(
+    [InlineData(176, 100, NotificationCriterionOutcomes.Passed)]
+    [InlineData(175, 100, NotificationCriterionOutcomes.Failed)]
+    [InlineData(226, 150, NotificationCriterionOutcomes.Passed)]
+    [InlineData(225, 150, NotificationCriterionOutcomes.Failed)]
+    [InlineData(301, 200, NotificationCriterionOutcomes.Passed)]
+    [InlineData(300, 200, NotificationCriterionOutcomes.Failed)]
+    public void ExplainRequiresCurrentTotalToBeStrictlyGreaterThanBothDerivedThresholds(
         double currentFrp,
         double historicalFrp,
         string expectedOutcome)
@@ -44,9 +47,9 @@ public sealed class NotificationHistoricalFrpPolicyTests
     }
 
     [Theory]
-    [InlineData(93, NotificationCriterionOutcomes.Passed)]
-    [InlineData(92, NotificationCriterionOutcomes.Failed)]
-    [InlineData(91, NotificationCriterionOutcomes.Failed)]
+    [InlineData(168, NotificationCriterionOutcomes.Passed)]
+    [InlineData(167, NotificationCriterionOutcomes.Failed)]
+    [InlineData(166, NotificationCriterionOutcomes.Failed)]
     public void ExplainUsesInclusiveLinearlyInterpolated95thPercentile(
         double currentFrp,
         string expectedOutcome)
@@ -72,6 +75,10 @@ public sealed class NotificationHistoricalFrpPolicyTests
             expectedSubstring: "92 MW historical 95th percentile",
             result.ActualValue,
             StringComparison.Ordinal);
+        Assert.Contains(
+            expectedSubstring: "thresholds 138 MW (p95 x 1.5) and 167 MW (p95 + 75 MW)",
+            result.ActualValue,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -82,7 +89,7 @@ public sealed class NotificationHistoricalFrpPolicyTests
             id: "current",
             acquiredAtUtc: s_now,
             longitude: 30,
-            frp: 300));
+            frp: 376));
         FirmsHistory history = History(
             isReady: true,
             anomalies:
@@ -105,7 +112,7 @@ public sealed class NotificationHistoricalFrpPolicyTests
             id: "shared",
             acquiredAtUtc: s_now.AddDays(days: -1),
             longitude: 30,
-            frp: 100);
+            frp: 126);
         NotificationCluster current = Cluster(currentAnomaly);
         FirmsHistory history = History(
             isReady: true,

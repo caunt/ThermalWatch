@@ -58,4 +58,4 @@ Diagnostics report the current total, the historical 95th-percentile value, the 
 ## Supersedes / Superseded by
 
 - Supersedes: [0008](0008-use-in-memory-daily-firms-baseline.md).
-- Superseded by: None.
+- Superseded by: [0010](0010-require-substantial-historical-frp-excess.md).
