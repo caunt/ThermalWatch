@@ -55,7 +55,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 
 | Variable | Default | Contract |
 | --- | --- | --- |
-| `NOTIFICATION_LAND_COVER_FILTER_ENABLED` | `true` | Boolean. |
+| `NOTIFICATION_LAND_COVER_FILTER_ENABLED` | `false` | Boolean. Enable to apply the NASA land-cover policy to notification candidates and Viewer eligibility. |
 | `NOTIFICATION_VEGETATION_PERCENT_THRESHOLD` | `50` | Finite percentage from 0 through 100. |
 | `NOTIFICATION_BUILT_UP_PROXIMITY_KM` | `2` | Finite number from 0 through 100. |
 | `NOTIFICATION_VEGETATION_MAX_FRP_MW` | `300` | Non-negative finite number used only when the high-FRP exception is enabled. |

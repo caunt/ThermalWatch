@@ -78,7 +78,7 @@ public sealed record ApplicationConfiguration(
                 ParseNonNegativeDouble(get, name: "NOTIFICATION_LARGE_CLUSTER_MIN_FRP_MW", defaultValue: 500),
                 ParseNonNegativeDouble(get, name: "NOTIFICATION_LARGE_CLUSTER_MIN_DIAMETER_KM", defaultValue: 8)),
             new(
-                ParseBool(get, name: "NOTIFICATION_LAND_COVER_FILTER_ENABLED", defaultValue: true),
+                ParseBool(get, name: "NOTIFICATION_LAND_COVER_FILTER_ENABLED", defaultValue: false),
                 ParseDouble(get, name: "NOTIFICATION_VEGETATION_PERCENT_THRESHOLD", defaultValue: 50, minimum: 0, maximum: 100),
                 ParseDouble(get, name: "NOTIFICATION_BUILT_UP_PROXIMITY_KM", defaultValue: 2, minimum: 0, maximum: 100),
                 ParseNonNegativeDouble(get, name: "NOTIFICATION_VEGETATION_MAX_FRP_MW", defaultValue: 300),

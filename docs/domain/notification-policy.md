@@ -79,7 +79,7 @@ The enabled criterion fails closed with an unavailable outcome until all configu
 
 ## Land-cover policy
 
-The [land-cover policy](../../src/ThermalWatch.Core/NotificationLandCoverPolicy.cs) uses NASA's annual combined MODIS IGBP product. The GIBS client selects the newest year common to every required tile, samples the detection pixels plus pixels intersecting the configured proximity, and decodes the official indexed colors into classes.
+The land-cover filter is disabled by default and can be enabled with `NOTIFICATION_LAND_COVER_FILTER_ENABLED`. When enabled, the [land-cover policy](../../src/ThermalWatch.Core/NotificationLandCoverPolicy.cs) uses NASA's annual combined MODIS IGBP product. The GIBS client selects the newest year common to every required tile, samples the detection pixels plus pixels intersecting the configured proximity, and decodes the official indexed colors into classes.
 
 - IGBP classes 1–12 and 14 count as vegetation.
 - Class 13 means urban/built-up and retains an otherwise vegetation-dominated cluster when present within proximity.
