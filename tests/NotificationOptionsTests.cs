@@ -80,27 +80,27 @@ public sealed class NotificationOptionsTests
     }
 
     [Fact]
-    public void FromEnvironmentDisablesLandCoverFilterAndUsesStrictVegetationDefaults()
+    public void FromEnvironmentEnablesLandCoverFilterAndUsesStrictVegetationDefaults()
     {
         NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(_ => null);
 
-        Assert.False(options.LandCover.Enabled);
+        Assert.True(options.LandCover.Enabled);
         Assert.Equal(50, options.LandCover.VegetationPercentThreshold);
-        Assert.Equal(2, options.LandCover.BuiltUpProximityKilometers);
+        Assert.Equal(15, options.LandCover.BuiltUpProximityKilometers);
         Assert.Equal(300, options.LandCover.VegetationMaximumFrpMegawatts);
         Assert.False(options.LandCover.KeepHighFrpVegetation);
         Assert.False(options.LandCover.KeepMultiSatelliteVegetation);
     }
 
     [Fact]
-    public void FromEnvironmentCanEnableLandCoverFilter()
+    public void FromEnvironmentCanDisableLandCoverFilter()
     {
         NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(name =>
             name.Equals(value: "NOTIFICATION_LAND_COVER_FILTER_ENABLED", StringComparison.Ordinal)
-                ? "true"
+                ? "false"
                 : null);
 
-        Assert.True(options.LandCover.Enabled);
+        Assert.False(options.LandCover.Enabled);
     }
 
     [Fact]
