@@ -68,7 +68,7 @@ Do not place real values in documentation, tracked files, images, plans, or logs
 | `NOTIFICATION_MIN_CLUSTER_DETECTIONS` | `2` | Integer greater than or equal to 1. |
 | `NOTIFICATION_MIN_MODIS_CONFIDENCE_PERCENT` | `60` | Finite percentage from 0 through 100; zero disables the MODIS requirement. |
 | `NOTIFICATION_MIN_VIIRS_CONFIDENCE` | `n` | `l`, `n`, or `h`, case-insensitive. |
-| `NOTIFICATION_REQUIRE_DAYTIME` | `false` | Boolean enabling the requirement that the representative anomaly come from a daytime pass. |
+| `NOTIFICATION_REQUIRE_DAYTIME` | `true` | Boolean controlling whether the representative anomaly must come from a daytime pass. |
 | `NOTIFICATION_REQUIRE_PREVIEW` | `true` | Boolean controlling whether unavailable exact imagery rejects the cluster for the current snapshot; when false, the cluster sends as text immediately. |
 
 Shared policy and lifecycle settings use the provider-neutral `NOTIFICATION_*` prefix because Core applies them to Viewer eligibility/diagnostics as well as Telegram candidates. Only `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHANNEL_ID` remain Telegram-specific. Names are exact and have no legacy aliases; an old `TELEGRAM_*` policy setting is ignored. Every policy option is parsed even when Telegram credentials are absent, so an invalid recognized value can stop startup while Telegram delivery would otherwise be disabled.

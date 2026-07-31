@@ -126,22 +126,22 @@ public sealed class NotificationOptionsTests
     }
 
     [Fact]
-    public void FromEnvironmentDisablesDaytimeRequirementByDefault()
+    public void FromEnvironmentEnablesDaytimeRequirementByDefault()
     {
         NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(_ => null);
 
-        Assert.False(options.Visibility.RequireDaytime);
+        Assert.True(options.Visibility.RequireDaytime);
     }
 
     [Fact]
-    public void FromEnvironmentCanRequireDaytime()
+    public void FromEnvironmentCanAllowNighttime()
     {
         NotificationOptions options = ApplicationConfiguration.ParseNotificationOptions(name =>
             name.Equals(value: "NOTIFICATION_REQUIRE_DAYTIME", StringComparison.Ordinal)
-                ? "true"
+                ? "false"
                 : null);
 
-        Assert.True(options.Visibility.RequireDaytime);
+        Assert.False(options.Visibility.RequireDaytime);
     }
 
     [Theory]
