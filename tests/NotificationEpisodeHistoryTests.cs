@@ -73,11 +73,9 @@ public sealed class NotificationEpisodeHistoryTests
 
         Assert.True(bridgeSuppressed);
         Assert.True(continuationSuppressed);
-        Assert.False(NotificationClustering.AreRelated(
-            first.Representative,
-            continuation.Representative,
-            RadiusKilometers,
-            s_timeWindow));
+        Assert.True(
+            continuation.Representative.AcquiredAtUtc - first.Representative.AcquiredAtUtc
+            > s_timeWindow);
     }
 
     [Fact]

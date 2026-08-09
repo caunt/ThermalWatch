@@ -55,15 +55,6 @@ public sealed class TelegramMessageFormatterTests
             🗺 <a href="https://www.google.com/maps?q=50.123456,30.654321&amp;id=representative">Google Maps</a> · <a href="https://yandex.com/maps/?ll=30.654321%2C50.123456&amp;pt=30.654321%2C50.123456&amp;z=12&amp;l=sat">Yandex Maps</a>
             """;
         Assert.Equal(expected, messages.MainMessage);
-        Assert.Equal(
-            expected,
-            TelegramMessageFormatter.Format(
-                cluster,
-                hasPreview: true,
-                new(WidthKilometers: 30, HeightKilometers: 20, PixelWidth: 900, PixelHeight: 600),
-                clusterDiameterKilometers: 1.25,
-                landCoverSummary: "Built-up · 80%",
-                nearbyFeatures));
         Assert.DoesNotContain("Satellite:", messages.MainMessage, StringComparison.Ordinal);
         Assert.DoesNotContain("Detections:", messages.MainMessage, StringComparison.Ordinal);
     }
@@ -298,7 +289,7 @@ public sealed class TelegramMessageFormatterTests
     }
 
     [Fact]
-    public void FormatKeepsFiveNearbyFeaturesWithinPhotoCaptionLimitWhenNamesAreLong()
+    public void FormatMessagesKeepsFiveNearbyFeaturesWithinPhotoCaptionLimitWhenNamesAreLong()
     {
         Anomaly representative = CreateAnomaly(
             id: "representative",
@@ -318,13 +309,14 @@ public sealed class TelegramMessageFormatterTests
             Feature(id: 5, name: longName, distanceKilometers: 0.5)
         ];
 
-        string caption = TelegramMessageFormatter.Format(
-            cluster,
-            new GibsPreview([1], new(FirmsSource: "VIIRS_SNPP_NRT", Satellite: "Suomi-NPP", "VIIRS")),
-            new(WidthKilometers: 30, HeightKilometers: 20, PixelWidth: 900, PixelHeight: 600),
-            clusterDiameterKilometers: 1,
-            landCoverSummary: "Built-up · 80%",
-            nearbyFeatures);
+        string caption = TelegramMessageFormatter.FormatMessages(
+                cluster,
+                new GibsPreview([1], new(FirmsSource: "VIIRS_SNPP_NRT", Satellite: "Suomi-NPP", "VIIRS")),
+                new(WidthKilometers: 30, HeightKilometers: 20, PixelWidth: 900, PixelHeight: 600),
+                clusterDiameterKilometers: 1,
+                landCoverSummary: "Built-up · 80%",
+                nearbyFeatures)
+            .MainMessage;
 
         Assert.InRange(caption.Length, low: 1, high: 1024);
         Assert.Equal(5, caption.Split('\n').Count(line => line.StartsWith(value: "<code>", StringComparison.Ordinal)));

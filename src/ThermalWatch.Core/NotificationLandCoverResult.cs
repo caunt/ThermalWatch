@@ -8,8 +8,6 @@ public readonly record struct NotificationLandCoverResult(
     string Reason,
     string FormattingSummary)
 {
-    public bool IsSuppressed => Decision == NotificationLandCoverDecision.Suppressed;
-
     public static NotificationLandCoverResult Retained(
         int year,
         double vegetationPercent,

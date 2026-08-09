@@ -24,7 +24,6 @@ public sealed class NotificationLandCoverPolicyTests
             AvailableLandCover([1, 2, 3, 10]));
 
         Assert.Equal(NotificationLandCoverDecision.Suppressed, result.Decision);
-        Assert.True(result.IsSuppressed);
         Assert.Equal(100, result.VegetationPercent);
         Assert.False(result.HasBuiltUpWithinProximity);
         Assert.Equal(2024, result.LandCoverYear);
@@ -138,7 +137,6 @@ public sealed class NotificationLandCoverPolicyTests
             new(isAvailable, year, [.. sampledClasses], false));
 
         Assert.Equal(NotificationLandCoverDecision.Unavailable, result.Decision);
-        Assert.False(result.IsSuppressed);
         Assert.Null(result.VegetationPercent);
         Assert.Null(result.HasBuiltUpWithinProximity);
     }

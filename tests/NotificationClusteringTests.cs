@@ -184,11 +184,7 @@ public sealed class NotificationClusteringTests
             timeWindow: TimeSpan.FromMinutes(minutes: 90)));
 
         Assert.Equal(3, cluster.Members.Length);
-        Assert.False(NotificationClustering.AreRelated(
-            first,
-            last,
-            radiusKilometers: 5,
-            timeWindow: TimeSpan.FromMinutes(minutes: 90)));
+        Assert.True(Geography.HaversineKilometers(first, last) > 5);
     }
 
     [Fact]
@@ -216,11 +212,7 @@ public sealed class NotificationClusteringTests
             timeWindow: TimeSpan.FromMinutes(minutes: 90)));
 
         Assert.Equal(3, cluster.Members.Length);
-        Assert.False(NotificationClustering.AreRelated(
-            first,
-            last,
-            radiusKilometers: 5,
-            timeWindow: TimeSpan.FromMinutes(minutes: 90)));
+        Assert.True(last.AcquiredAtUtc - first.AcquiredAtUtc > TimeSpan.FromMinutes(minutes: 90));
     }
 
     [Fact]

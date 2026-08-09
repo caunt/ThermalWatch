@@ -5,39 +5,9 @@ using ThermalWatch.Core;
 
 namespace ThermalWatch.Telegram;
 
-public static class TelegramMessageFormatter
+internal static class TelegramMessageFormatter
 {
     private const int MaximumPhotoCaptionLength = 1024;
-
-    public static string Format(
-        NotificationCluster cluster,
-        bool hasPreview,
-        GibsPreviewDimensions previewDimensions,
-        double? clusterDiameterKilometers,
-        string? landCoverSummary,
-        IReadOnlyList<NearbyFeature> nearbyFeatures) =>
-        Format(
-            cluster,
-            hasPreview ? new([1]) : GibsPreview.Unavailable,
-            previewDimensions,
-            clusterDiameterKilometers,
-            landCoverSummary,
-            nearbyFeatures);
-
-    public static string Format(
-        NotificationCluster cluster,
-        GibsPreview preview,
-        GibsPreviewDimensions previewDimensions,
-        double? clusterDiameterKilometers,
-        string? landCoverSummary,
-        IReadOnlyList<NearbyFeature> nearbyFeatures) =>
-        FormatMessages(
-            cluster,
-            preview,
-            previewDimensions,
-            clusterDiameterKilometers,
-            landCoverSummary,
-            nearbyFeatures).MainMessage;
 
     internal static TelegramNotificationMessages FormatMessages(
         NotificationCluster cluster,

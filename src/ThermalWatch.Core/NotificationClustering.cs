@@ -123,14 +123,6 @@ public static class NotificationClustering
         }
     }
 
-    public static bool AreRelated(
-        Anomaly first,
-        Anomaly second,
-        double radiusKilometers,
-        TimeSpan timeWindow) =>
-        (first.AcquiredAtUtc - second.AcquiredAtUtc).Duration() <= timeWindow
-        && Geography.HaversineKilometers(first, second) <= radiusKilometers;
-
     private static NotificationCluster BuildCluster(IEnumerable<Anomaly> anomalies)
     {
         var members = anomalies
