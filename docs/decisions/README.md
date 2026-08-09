@@ -38,5 +38,6 @@ An ADR becomes accepted only when the implementation and cited validation suppor
 | [0008](0008-use-in-memory-daily-firms-baseline.md) | Superseded | Use an in-memory 30-day daily FIRMS baseline for historical-FRP notification filtering. |
 | [0009](0009-use-95th-percentile-historical-frp-threshold.md) | Superseded | Compare current total FRP with the historical 95th percentile instead of the maximum. |
 | [0010](0010-require-substantial-historical-frp-excess.md) | Accepted | Require current total FRP to exceed both multiplier and offset thresholds derived from historical p95. |
+| [0011](0011-use-ukraine-worldview-for-area-fallback.md) | Accepted | Use Natural Earth's Ukraine worldview for area-fallback country attribution. |
 
 `0000-template.md` is a template and is not an architectural decision.

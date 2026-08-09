@@ -17,7 +17,7 @@ Every current result is a complete segment success or failure. Current results u
 
 ## Country-first acquisition
 
-The preferred request is FIRMS country CSV for the configured country and source. FIRMS day ranges are UTC-calendar-based, so current country and area requests derive their range as the configured active window rounded up to whole days, plus the current calendar day. The default 24-hour window therefore fetches two calendar days, while a 72-hour window fetches four. Snapshot construction still applies the exact configured rolling window locally.
+The preferred request is FIRMS country CSV for the configured country and source. Every valid row keeps that requested country code, so NASA's country membership is authoritative in `country` ingestion mode. FIRMS day ranges are UTC-calendar-based, so current country and area requests derive their range as the configured active window rounded up to whole days, plus the current calendar day. The default 24-hour window therefore fetches two calendar days, while a 72-hour window fetches four. Snapshot construction still applies the exact configured rolling window locally.
 
 The same client supports explicit dated ranges of one through five inclusive UTC dates. Startup history uses six consecutive five-day requests for each configured country/source, covering the 30 completed dates before today. Dated requests retain the same country-first capability checks, verified area fallback, parsing, clipping, timeout, and complete-segment semantics as current requests.
 
@@ -34,11 +34,11 @@ The matching and key-status rules in [FirmsClient.cs](../../src/ThermalWatch.Cor
 
 ## Area fallback and boundaries
 
-[CountryBoundaryCatalog.cs](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs) loads only requested countries from the embedded compressed Natural Earth Admin 0 data. It joins multiple parts, repairs invalid geometry where possible, prepares it for point tests, derives the complete WGS84 geometry envelope, and fails startup when a requested country has no usable polygon or multipolygon.
+[CountryBoundaryCatalog.cs](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs) loads only requested countries from the embedded compressed Natural Earth 5.1.2 Admin 0 Countries, Ukraine point-of-view, 1:10m data. This is a named global political worldview rather than a claim of universally neutral law. It assigns Crimea to Ukraine and applies the same viewpoint to other represented disputes. The catalog joins multiple parts, repairs invalid geometry where possible, prepares it for point tests, derives the complete WGS84 geometry envelope, and fails startup when a requested country has no usable polygon or multipolygon.
 
 FIRMS area acquisition supports bounds up to the entire world, so fallback sends exactly one complete envelope request for each country/source segment. An antimeridian-spanning country can therefore use a world-width numeric envelope. The enclosing rectangle may return observations outside the country, but the client applies its existing response-size limit and checks every parsed observation against the prepared country geometry.
 
-The complete response is clipped locally with polygon coverage checks and deduplicated by anomaly ID. A failed or invalid envelope response fails the segment atomically; no partial rectangle result is published. Country and area responses are never merged for one segment refresh. Natural Earth geometry is generalized cartographic data; see its [embedded license](../../src/ThermalWatch.Core/Data/NaturalEarth.LICENSE.txt).
+The complete response is clipped locally with polygon coverage checks and deduplicated by anomaly ID. A retained row receives the configured segment's country code, so `areaFallback` country filters, labels, anomaly IDs, and derived cluster IDs follow the embedded worldview. A failed or invalid envelope response fails the segment atomically; no partial rectangle result is published. Country and area responses are never merged for one segment refresh. If a later country probe succeeds, NASA membership becomes authoritative again and may differ. Natural Earth geometry is generalized cartographic data; see its [embedded license](../../src/ThermalWatch.Core/Data/NaturalEarth.LICENSE.txt) and [ADR 0011](../decisions/0011-use-ukraine-worldview-for-area-fallback.md).
 
 ## Response validation and parsing
 

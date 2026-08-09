@@ -13,7 +13,7 @@ namespace ThermalWatch.Core;
 public sealed class CountryBoundaryCatalog
 {
     private const string ResourceName =
-        "ThermalWatch.Core.Data.ne_50m_admin_0_countries.geojson.gz";
+        "ThermalWatch.Core.Data.ne_10m_admin_0_countries_ukr.geojson.gz";
     private static readonly string[] s_countryCodePropertyNames = ["ISO_A3", "ADM0_A3"];
     private readonly FrozenDictionary<string, CountryBoundary> _boundaries;
 

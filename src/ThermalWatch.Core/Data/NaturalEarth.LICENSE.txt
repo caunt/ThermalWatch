@@ -1,6 +1,9 @@
 Natural Earth vector data version 5.1.2
-Admin 0 - Countries, 1:50m cultural vectors
-https://www.naturalearthdata.com/downloads/50m-cultural-vectors/50m-admin-0-countries-2/
+Admin 0 - Countries, Ukraine point-of-view, 1:10m cultural vectors
+https://github.com/nvkelso/natural-earth-vector/tree/v5.1.2/10m_cultural
+
+Pinned commit: f1890d9f152c896d250a77557a5751a93d494776
+Uncompressed GeoJSON SHA-256: 28a1a17d7327cad576083d5122b867843f957468b1bb11168ded23fd5aea342e
 
 All versions of Natural Earth raster and vector map data are in the public domain.
 They may be used in any manner, including modification and electronic dissemination.

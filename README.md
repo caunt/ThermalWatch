@@ -8,6 +8,7 @@ ThermalWatch is a small .NET 10 service that polls NASA FIRMS near-real-time the
 ## Capabilities
 
 - Polls the MODIS, Suomi-NPP VIIRS, NOAA-20 VIIRS, and NOAA-21 VIIRS FIRMS feeds for each configured country.
+- Uses NASA's country membership when that endpoint is available. During a verified country-feature outage, locally clipped area fallback uses Natural Earth's pinned Ukraine point-of-view boundaries, so disputed-territory country codes can differ by ingestion mode.
 - Isolates failures by country and source, retains the last complete segment as stale data, and reports segment diagnostics with every snapshot.
 - Builds an immutable in-memory history for the preceding 30 complete UTC days plus today, exposing each day's raw observations, raw clusters, and segment completeness through `/api/history`.
 - Serves all valid active observations and backend-composed NASA map imagery through an unauthenticated, CORS-enabled API and a framework-free browser viewer.

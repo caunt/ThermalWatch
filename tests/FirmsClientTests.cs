@@ -27,6 +27,17 @@ public sealed class FirmsClientTests
         60,100,330,1,1,2026-07-23,0731,T,MODIS,80,6.1NRT,300,100,D
         """;
 
+    private const string CrimeaCsv = """
+        latitude,longitude,brightness,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_t31,frp,daynight
+        44.952,34.1,330,1,1,2026-07-23,0731,T,MODIS,80,6.1NRT,300,100,D
+        """;
+
+    private const string UkraineWorldviewFallbackCsv = """
+        latitude,longitude,brightness,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_t31,frp,daynight
+        44.952,34.1,330,1,1,2026-07-23,0731,T,MODIS,80,6.1NRT,300,100,D
+        55.755,37.617,330,1,1,2026-07-23,0731,T,MODIS,80,6.1NRT,300,100,D
+        """;
+
     [Fact]
     public async Task GetSegmentAsyncUsesOneCountryRequestWhenCountryApiIsAvailable()
     {
@@ -108,6 +119,23 @@ public sealed class FirmsClientTests
     }
 
     [Fact]
+    public async Task GetSegmentAsyncKeepsProviderCountryInCountryMode()
+    {
+        var handler = new RecordingHandler(static (_, _) => Task.FromResult(CsvResponse(CrimeaCsv)));
+        using FirmsClient client = CreateClient(handler, countryCode: "RUS");
+
+        FirmsSegmentResult result = await client.GetSegmentAsync(
+            countryCode: "RUS",
+            source: "MODIS_NRT",
+            TestContext.Current.CancellationToken);
+
+        Anomaly anomaly = Assert.Single(result.Anomalies);
+        Assert.Equal(IngestionModes.Country, result.IngestionMode);
+        Assert.Equal("RUS", anomaly.CountryCode);
+        Assert.Equal(44.952, anomaly.Latitude);
+    }
+
+    [Fact]
     public async Task GetSegmentAsyncPreservesExplicitDateInAreaFallback()
     {
         var handler = new RecordingHandler((request, _) =>
@@ -183,6 +211,37 @@ public sealed class FirmsClientTests
         Assert.Equal(1, handler.AreaRequestCount);
         Assert.Equal(3, handler.RequestCount);
         Assert.Equal(1, handler.MaximumConcurrency);
+    }
+
+    [Theory]
+    [InlineData("UKR", 44.952)]
+    [InlineData("RUS", 55.755)]
+    public async Task GetSegmentAsyncUsesUkraineWorldviewForAreaFallback(
+        string countryCode,
+        double expectedLatitude)
+    {
+        var handler = new RecordingHandler((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (IsCountryRequest(path))
+                return Task.FromResult(CountryUnavailableResponse());
+            if (IsMapKeyStatusRequest(path))
+                return Task.FromResult(MapKeyStatusResponse());
+
+            return Task.FromResult(CsvResponse(UkraineWorldviewFallbackCsv));
+        });
+        using FirmsClient client = CreateClient(handler, countryCode);
+
+        FirmsSegmentResult result = await client.GetSegmentAsync(
+            countryCode,
+            source: "MODIS_NRT",
+            TestContext.Current.CancellationToken);
+
+        Anomaly anomaly = Assert.Single(result.Anomalies);
+        Assert.Equal(IngestionModes.AreaFallback, result.IngestionMode);
+        Assert.Equal(countryCode, anomaly.CountryCode);
+        Assert.Equal(expectedLatitude, anomaly.Latitude);
+        Assert.Equal(1, handler.AreaRequestCount);
     }
 
     [Fact]
