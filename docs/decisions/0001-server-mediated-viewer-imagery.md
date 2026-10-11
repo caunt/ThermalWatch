@@ -44,14 +44,14 @@ Pinned Leaflet assets from unpkg and optional Google Maps JavaScript remain deli
 
 ## Validation or evidence
 
-- [Core and endpoint tests](../../tests/GibsMapTileClientTests.cs) verify product order, validation, composition, coverage, caching, failure isolation, and cancellation.
-- [Viewer endpoint tests](../../tests/ViewerImageryEndpointTests.cs) verify the PNG, coverage, cache, and coordinate-validation contract.
+- [Core and endpoint tests](../../tests/Core/Imagery/GibsMapTileClientTests.cs) verify product order, validation, composition, coverage, caching, failure isolation, and cancellation.
+- [Viewer endpoint tests](../../tests/Viewer/ViewerImageryEndpointTests.cs) verify the PNG, coverage, cache, and coordinate-validation contract.
 - [Browser support tests](../../tests/viewer-map-support.test.js) verify same-origin URLs, tile lifecycle, warning behavior, Google compatibility, and absence of direct FIRMS/GIBS request hosts.
 - [Composition root](../../src/ThermalWatch.Api/Program.cs) and [solution](../../ThermalWatch.slnx) demonstrate the one-host project graph.
 
 ## Related source files and documents
 
-- [Core map-tile client](../../src/ThermalWatch.Core/GibsMapTileClient.cs)
+- [Core map-tile client](../../src/ThermalWatch.Core/Imagery/GibsMapTileClient.cs)
 - [Viewer project and endpoints](../../src/ThermalWatch.Viewer/ViewerEndpoints.cs)
 - [Architecture](../architecture.md)
 - [Web viewer](../components/web-viewer.md)

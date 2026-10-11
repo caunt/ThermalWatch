@@ -8,7 +8,7 @@ The NASA country-first acquisition and hourly recovery probe remain unchanged. A
 
 ## Context and repository orientation
 
-[CountryBoundaryCatalog.cs](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs) loads the compressed embedded GeoJSON named by `ResourceName`. [FirmsClient.cs](../../src/ThermalWatch.Core/FirmsClient.cs) derives one area envelope from the requested country's geometry and retains only CSV observations covered by that geometry. [FirmsClientTests.cs](../../tests/FirmsClientTests.cs) exercises country capability and area clipping; new focused boundary tests will lock the chosen worldview directly.
+[CountryBoundaryCatalog.cs](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs) loads the compressed embedded GeoJSON named by `ResourceName`. [FirmsClient.cs](../../src/ThermalWatch.Core/Ingestion/FirmsClient.cs) derives one area envelope from the requested country's geometry and retains only CSV observations covered by that geometry. [FirmsClientTests.cs](../../tests/Core/Ingestion/FirmsClientTests.cs) exercises country capability and area clipping; new focused boundary tests will lock the chosen worldview directly.
 
 Durable behavior is described in the root [README](../../README.md), [architecture](../../docs/architecture.md), [FIRMS ingestion](../../docs/components/firms-ingestion.md), [operations](../../docs/operations.md), and ADR 0011. The repository's [development guidance](../../docs/development.md) defines the complete validation sequence.
 

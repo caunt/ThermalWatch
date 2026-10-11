@@ -37,13 +37,13 @@ Distance remains part of every result and both surfaces continue to display it. 
 
 ## Validation or evidence
 
-- [Overpass client tests](../../tests/NearbyFeatureClientTests.cs) verify tag-count-first ordering, distance ties, filtering, and caller limits.
-- [Telegram formatter tests](../../tests/TelegramMessageFormatterTests.cs) verify that prepared nearby results retain their supplied order and distance display.
-- [Viewer endpoint tests](../../tests/ViewerNotificationDiagnosticEndpointTests.cs) verify that Core's nearby-feature sequence crosses the diagnostic HTTP boundary.
+- [Overpass client tests](../../tests/Core/Places/NearbyFeatureClientTests.cs) verify tag-count-first ordering, distance ties, filtering, and caller limits.
+- [Telegram formatter tests](../../tests/Telegram/TelegramMessageFormatterTests.cs) verify that prepared nearby results retain their supplied order and distance display.
+- [Viewer endpoint tests](../../tests/Viewer/ViewerNotificationDiagnosticEndpointTests.cs) verify that Core's nearby-feature sequence crosses the diagnostic HTTP boundary.
 
 ## Related source files and documents
 
-- [Core nearby client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs)
+- [Core nearby client](../../src/ThermalWatch.Core/Places/NearbyFeatureClient.cs)
 - [Notification policy](../domain/notification-policy.md)
 - [Telegram notifier](../components/telegram-notifier.md)
 - [Web viewer](../components/web-viewer.md)

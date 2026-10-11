@@ -3,7 +3,4 @@ using NetTopologySuite.Geometries.Prepared;
 
 namespace ThermalWatch.Core;
 
-internal sealed record CountryBoundary(
-    Geometry Geometry,
-    IPreparedGeometry Prepared,
-    GeographicBounds AreaBounds);
+internal sealed record CountryBoundary(Geometry Geometry, IPreparedGeometry Prepared, GeographicBounds AreaBounds);

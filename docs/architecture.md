@@ -2,7 +2,7 @@
 
 > **Purpose:** Explain ThermalWatch's system boundaries, end-to-end data flow, invariants, and failure isolation.
 > **Scope:** Server projects, browser viewer, in-memory state, HTTP boundaries, and external integrations.
-> **Sources of truth:** [Composition root](../src/ThermalWatch.Api/Program.cs), [solution](../ThermalWatch.slnx), [snapshot store](../src/ThermalWatch.Core/AnomalySnapshotStore.cs), [history store](../src/ThermalWatch.Core/FirmsHistoryStore.cs), [candidate engine](../src/ThermalWatch.Core/NotificationCandidateEngine.cs), and [viewer endpoints](../src/ThermalWatch.Viewer/ViewerEndpoints.cs).
+> **Sources of truth:** [Composition root](../src/ThermalWatch.Api/Program.cs), [solution](../ThermalWatch.slnx), [snapshot store](../src/ThermalWatch.Core/Ingestion/AnomalySnapshotStore.cs), [history store](../src/ThermalWatch.Core/Ingestion/FirmsHistoryStore.cs), [candidate engine](../src/ThermalWatch.Core/Notifications/NotificationCandidateEngine.cs), and [viewer endpoints](../src/ThermalWatch.Viewer/ViewerEndpoints.cs).
 > **Update when:** A component boundary, dependency direction, endpoint, state model, integration, or cross-component invariant changes.
 
 ## Boundaries and dependencies
@@ -42,7 +42,7 @@ Google Maps ------------------------------------------------------------------> 
 
 ## HTTP surface
 
-The route definitions and status mappings in [Program.cs](../src/ThermalWatch.Api/Program.cs) and [FirmsHistoryEndpoints.cs](../src/ThermalWatch.Api/FirmsHistoryEndpoints.cs) are authoritative. Public current and historical properties come from [AnomalySnapshot.cs](../src/ThermalWatch.Core/AnomalySnapshot.cs), [FirmsHistory.cs](../src/ThermalWatch.Core/FirmsHistory.cs), [FirmsHistoryDay.cs](../src/ThermalWatch.Core/FirmsHistoryDay.cs), and [Anomaly.cs](../src/ThermalWatch.Core/Anomaly.cs); query parsing comes from [AnomalyQuery.cs](../src/ThermalWatch.Api/AnomalyQuery.cs) and [FirmsHistoryQuery.cs](../src/ThermalWatch.Api/FirmsHistoryQuery.cs). There is no generated OpenAPI artifact.
+The route definitions and status mappings in [Program.cs](../src/ThermalWatch.Api/Program.cs) and [FirmsHistoryEndpoints.cs](../src/ThermalWatch.Api/FirmsHistoryEndpoints.cs) are authoritative. Public current and historical properties come from [AnomalySnapshot.cs](../src/ThermalWatch.Core/Ingestion/AnomalySnapshot.cs), [FirmsHistory.cs](../src/ThermalWatch.Core/Ingestion/FirmsHistory.cs), [FirmsHistoryDay.cs](../src/ThermalWatch.Core/Ingestion/FirmsHistoryDay.cs), and [Anomaly.cs](../src/ThermalWatch.Core/Anomaly.cs); query parsing comes from [AnomalyQuery.cs](../src/ThermalWatch.Api/AnomalyQuery.cs) and [FirmsHistoryQuery.cs](../src/ThermalWatch.Api/FirmsHistoryQuery.cs). There is no generated OpenAPI artifact.
 
 - `GET /` serves the interactive viewer.
 - `GET /api/viewer/config` exposes optional browser map configuration, including the browser-visible Google key when configured.

@@ -48,19 +48,19 @@ For comparison, Core removes all current cluster member IDs from each historical
 
 ## Validation or evidence
 
-- [FIRMS client tests](../../tests/FirmsClientTests.cs) cover dated country and area request paths and the five-day limit.
-- [History backfill tests](../../tests/FirmsHistoryBackfillTests.cs) cover current-first orchestration, six-window acquisition, all four sources, retry selection, and failure isolation.
-- [History store tests](../../tests/FirmsHistoryStoreTests.cs) cover replacement, staleness, daily raw clustering, readiness, and UTC rotation.
-- [History endpoint tests](../../tests/FirmsHistoryEndpointTests.cs) cover the retained daily contract, member IDs, partial responses, and query validation.
-- [Historical-FRP policy tests](../../tests/NotificationHistoricalFrpPolicyTests.cs) cover strict comparison, member-radius matching, self-ID removal and reclustering, missing FRP, readiness, and disablement.
-- [Candidate-engine tests](../../tests/NotificationCandidateEngineTests.cs) cover automatic, manual, Viewer-list, diagnostic, and startup-suppression integration.
+- [FIRMS client tests](../../tests/Core/Ingestion/FirmsClientTests.cs) cover dated country and area request paths and the five-day limit.
+- [History backfill tests](../../tests/Api/FirmsHistoryBackfillTests.cs) cover current-first orchestration, six-window acquisition, all four sources, retry selection, and failure isolation.
+- [History store tests](../../tests/Core/Ingestion/FirmsHistoryStoreTests.cs) cover replacement, staleness, daily raw clustering, readiness, and UTC rotation.
+- [History endpoint tests](../../tests/Api/FirmsHistoryEndpointTests.cs) cover the retained daily contract, member IDs, partial responses, and query validation.
+- [Historical-FRP policy tests](../../tests/Core/Notifications/NotificationHistoricalFrpPolicyTests.cs) cover strict comparison, member-radius matching, self-ID removal and reclustering, missing FRP, readiness, and disablement.
+- [Candidate-engine tests](../../tests/Core/Notifications/NotificationCandidateEngineTests.cs) cover automatic, manual, Viewer-list, diagnostic, and startup-suppression integration.
 
 ## Related source files and documents
 
-- [History store](../../src/ThermalWatch.Core/FirmsHistoryStore.cs)
-- [History backfill](../../src/ThermalWatch.Api/FirmsHistoryBackfill.cs)
+- [History store](../../src/ThermalWatch.Core/Ingestion/FirmsHistoryStore.cs)
+- [History backfill](../../src/ThermalWatch.Api/Polling/FirmsHistoryBackfill.cs)
 - [History endpoint](../../src/ThermalWatch.Api/FirmsHistoryEndpoints.cs)
-- [Historical-FRP policy](../../src/ThermalWatch.Core/NotificationHistoricalFrpPolicy.cs)
+- [Historical-FRP policy](../../src/ThermalWatch.Core/Notifications/NotificationHistoricalFrpPolicy.cs)
 - [FIRMS ingestion](../components/firms-ingestion.md)
 - [Notification policy](../domain/notification-policy.md)
 - [Operations](../operations.md)

@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The public anomaly snapshot and shared notification configuration use names inherited from earlier implementation boundaries. [AnomalySnapshot](../../src/ThermalWatch.Core/AnomalySnapshot.cs) exposes generic item, count, and source-status concepts even though each value has a specific anomaly or country/source-segment meaning. [ApplicationConfiguration](../../src/ThermalWatch.Api/ApplicationConfiguration.cs) reads shared Core notification policy through `TELEGRAM_*` settings even though Viewer eligibility and diagnostics use the same policy without Telegram delivery.
+The public anomaly snapshot and shared notification configuration use names inherited from earlier implementation boundaries. [AnomalySnapshot](../../src/ThermalWatch.Core/Ingestion/AnomalySnapshot.cs) exposes generic item, count, and source-status concepts even though each value has a specific anomaly or country/source-segment meaning. [ApplicationConfiguration](../../src/ThermalWatch.Api/ApplicationConfiguration.cs) reads shared Core notification policy through `TELEGRAM_*` settings even though Viewer eligibility and diagnostics use the same policy without Telegram delivery.
 
 Internal notification evaluation also uses accepted terminology for both policy eligibility and successful delivery. This makes logs and result contracts ambiguous and increases the chance that a consumer or maintainer assigns the wrong meaning to a value.
 
@@ -41,13 +41,13 @@ Code, tests, logs, Viewer state, and current documentation share one vocabulary.
 ## Validation or evidence
 
 - [Public contract naming tests](../../tests/PublicContractNamingTests.cs)
-- [Notification option tests](../../tests/NotificationOptionsTests.cs)
-- [Application configuration tests](../../tests/ApplicationConfigurationTests.cs)
+- [Notification option tests](../../tests/Core/Notifications/NotificationOptionsTests.cs)
+- [Application configuration tests](../../tests/Api/ApplicationConfigurationTests.cs)
 - [Viewer controller](../../src/ThermalWatch.Viewer/wwwroot/app.js)
 
 ## Related source files and documents
 
-- [Anomaly snapshot](../../src/ThermalWatch.Core/AnomalySnapshot.cs)
+- [Anomaly snapshot](../../src/ThermalWatch.Core/Ingestion/AnomalySnapshot.cs)
 - [Application configuration](../../src/ThermalWatch.Api/ApplicationConfiguration.cs)
 - [Operations](../operations.md)
 - [Architecture](../architecture.md)

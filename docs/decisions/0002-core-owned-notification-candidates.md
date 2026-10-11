@@ -44,15 +44,15 @@ Viewer exposes a read-only selected-anomaly diagnostic backed directly by Core. 
 
 ## Validation or evidence
 
-- [Core policy tests](../../tests/NotificationPolicyTests.cs) verify exhaustive criterion reporting.
-- [Core candidate-engine tests](../../tests/NotificationCandidateEngineTests.cs) verify active clustering and diagnostic non-mutation.
+- [Core policy tests](../../tests/Core/Notifications/NotificationPolicyTests.cs) verify exhaustive criterion reporting.
+- [Core candidate-engine tests](../../tests/Core/Notifications/NotificationCandidateEngineTests.cs) verify active clustering and diagnostic non-mutation.
 - The former `tests/NotificationAutomaticStateTests.cs` covered delivered-episode and pending behavior at acceptance; [ADR 0004](0004-snapshot-based-notification-evaluation.md) records its replacement.
-- [Viewer endpoint tests](../../tests/ViewerNotificationDiagnosticEndpointTests.cs) verify the HTTP cluster/criteria contract.
+- [Viewer endpoint tests](../../tests/Viewer/ViewerNotificationDiagnosticEndpointTests.cs) verify the HTTP cluster/criteria contract.
 - [Browser support tests](../../tests/viewer-map-support.test.js) verify provider-neutral cluster member mapping and marker styles.
 
 ## Related source files and documents
 
-- [Core candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs)
+- [Core candidate engine](../../src/ThermalWatch.Core/Notifications/NotificationCandidateEngine.cs)
 - [Telegram adapter](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs)
 - [Viewer endpoints](../../src/ThermalWatch.Viewer/ViewerEndpoints.cs)
 - [Architecture](../architecture.md)

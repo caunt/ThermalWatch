@@ -40,15 +40,15 @@ Provider requests are globally serialized and bounded. HTTP, transport, timeout,
 
 ## Validation or evidence
 
-- [Overpass client tests](../../tests/NearbyFeatureClientTests.cs) cover querying, validation, ordering, limits, caching, concurrency, cancellation, and warning-only failures.
-- [Candidate engine tests](../../tests/NotificationCandidateEngineTests.cs) verify selected-observation and representative lookup points plus post-ranking manual enrichment.
-- [Viewer endpoint tests](../../tests/ViewerNotificationDiagnosticEndpointTests.cs) verify the public diagnostic result.
-- [Telegram formatter tests](../../tests/TelegramMessageFormatterTests.cs) verify bounded conditional presentation and causal wording.
+- [Overpass client tests](../../tests/Core/Places/NearbyFeatureClientTests.cs) cover querying, validation, ordering, limits, caching, concurrency, cancellation, and warning-only failures.
+- [Candidate engine tests](../../tests/Core/Notifications/NotificationCandidateEngineTests.cs) verify selected-observation and representative lookup points plus post-ranking manual enrichment.
+- [Viewer endpoint tests](../../tests/Viewer/ViewerNotificationDiagnosticEndpointTests.cs) verify the public diagnostic result.
+- [Telegram formatter tests](../../tests/Telegram/TelegramMessageFormatterTests.cs) verify bounded conditional presentation and causal wording.
 
 ## Related source files and documents
 
-- [Core nearby client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs)
-- [Core candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs)
+- [Core nearby client](../../src/ThermalWatch.Core/Places/NearbyFeatureClient.cs)
+- [Core candidate engine](../../src/ThermalWatch.Core/Notifications/NotificationCandidateEngine.cs)
 - [Architecture](../architecture.md)
 - [Notification policy](../domain/notification-policy.md)
 - [Telegram notifier](../components/telegram-notifier.md)

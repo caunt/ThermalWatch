@@ -43,15 +43,15 @@ When `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` is false, Core retains the first read
 
 ## Validation or evidence
 
-- [Candidate-engine tests](../../tests/NotificationCandidateEngineTests.cs) cover preview recovery, immediate optional text delivery, transient-send reevaluation, startup-baseline behavior, and diagnostic wording.
-- [Episode-history tests](../../tests/NotificationEpisodeHistoryTests.cs) cover once-per-episode suppression, transitive continuation, boundaries, and expiry.
-- [Clustering tests](../../tests/NotificationClusteringTests.cs) cover complete active-snapshot connected components and representative selection.
-- [Configuration tests](../../tests/ApplicationConfigurationTests.cs) cover delivered retention and ignored retired preview configuration.
+- [Candidate-engine tests](../../tests/Core/Notifications/NotificationCandidateEngineTests.cs) cover preview recovery, immediate optional text delivery, transient-send reevaluation, startup-baseline behavior, and diagnostic wording.
+- [Episode-history tests](../../tests/Core/Notifications/NotificationEpisodeHistoryTests.cs) cover once-per-episode suppression, transitive continuation, boundaries, and expiry.
+- [Clustering tests](../../tests/Core/Notifications/NotificationClusteringTests.cs) cover complete active-snapshot connected components and representative selection.
+- [Configuration tests](../../tests/Api/ApplicationConfigurationTests.cs) cover delivered retention and ignored retired preview configuration.
 
 ## Related source files and documents
 
-- [Core candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs)
-- [Episode history](../../src/ThermalWatch.Core/NotificationEpisodeHistory.cs)
+- [Core candidate engine](../../src/ThermalWatch.Core/Notifications/NotificationCandidateEngine.cs)
+- [Episode history](../../src/ThermalWatch.Core/Notifications/NotificationEpisodeHistory.cs)
 - [Notification policy](../domain/notification-policy.md)
 - [Telegram notifier](../components/telegram-notifier.md)
 - [Operations](../operations.md)

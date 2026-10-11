@@ -2,8 +2,10 @@ using ThermalWatch.Core;
 
 namespace ThermalWatch.Tests;
 
+/// <summary>Verifies country display names and unknown-code handling.</summary>
 public sealed class CountryCatalogTests
 {
+    /// <summary>Resolves supported country codes to display names.</summary>
     [Theory]
     [InlineData("ATA", "Antarctica")]
     [InlineData("RUS", "Russia")]
@@ -14,10 +16,11 @@ public sealed class CountryCatalogTests
         Assert.Equal(expectedDisplayName, CountryCatalog.GetDisplayName(countryCode));
     }
 
+    /// <summary>Preserves an unknown code instead of inventing a display name.</summary>
     [Fact]
     public void GetDisplayNamePreservesUnknownCountryCode()
     {
         Assert.False(CountryCatalog.IsValid(countryCode: "XXX"));
-        Assert.Equal(expected: "XXX", actual: CountryCatalog.GetDisplayName(countryCode: "XXX"));
+        Assert.Equal(expected: "XXX", CountryCatalog.GetDisplayName(countryCode: "XXX"));
     }
 }

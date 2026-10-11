@@ -44,12 +44,12 @@ Keep NASA country-first acquisition, capability probing, and restoration behavio
 
 ## Validation or evidence
 
-[Country boundary tests](../../tests/CountryBoundaryCatalogTests.cs) pin representative worldview coordinates. [FIRMS client tests](../../tests/FirmsClientTests.cs) prove end-to-end fallback clipping and unchanged country-mode behavior. The embedded notice records source provenance and the repository verification suite validates the resulting build and public documentation.
+[Country boundary tests](../../tests/CountryBoundaryCatalogTests.cs) pin representative worldview coordinates. [FIRMS client tests](../../tests/Core/Ingestion/FirmsClientTests.cs) prove end-to-end fallback clipping and unchanged country-mode behavior. The embedded notice records source provenance and the repository verification suite validates the resulting build and public documentation.
 
 ## Related source files and documents
 
 - [Country boundary catalog](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs)
-- [FIRMS client](../../src/ThermalWatch.Core/FirmsClient.cs)
+- [FIRMS client](../../src/ThermalWatch.Core/Ingestion/FirmsClient.cs)
 - [FIRMS ingestion](../components/firms-ingestion.md)
 - [Architecture](../architecture.md)
 

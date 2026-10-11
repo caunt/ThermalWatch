@@ -1,122 +1,79 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using Microsoft.AspNetCore.Http;
+
 using Microsoft.Extensions.Primitives;
+
 using ThermalWatch.Core;
 
 namespace ThermalWatch.Api;
 
-public sealed record AnomalyQuery(
+internal sealed record AnomalyQuery(
     FrozenSet<string>? CountryCodes,
     FrozenSet<string>? Sources,
     FrozenSet<string>? Satellites,
     DateTimeOffset? Since,
-    string? DayNight)
+    string? DayNight
+)
 {
-    private static readonly FrozenSet<string> s_allowedParameters = new[]
+    private static readonly FrozenSet<string> AllowedParameters = new[]
     {
         "country", "source", "satellite", "since", "dayNight"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    public static bool TryParse(
-        IQueryCollection query,
-        DateTimeOffset activeWindowCutoff,
-        out AnomalyQuery? parsed,
-        out string? error)
+    public static bool TryParse(IQueryCollection query, DateTimeOffset activeWindowCutoff, [NotNullWhen(true)] out AnomalyQuery? parsed, out string? error)
     {
         parsed = null;
         error = null;
 
-        string? unknown = query.Keys.FirstOrDefault(key => !s_allowedParameters.Contains(key));
+        string? unknown = query.Keys.FirstOrDefault(static key => !AllowedParameters.Contains(key));
+
         if (unknown is not null)
         {
             error = $"Unknown query parameter '{unknown}'.";
+
             return false;
         }
 
-        if (!TryParseList(query, name: "country", value => value.ToUpperInvariant(), out FrozenSet<string>? countryCodes, out error)
-            || countryCodes is not null && countryCodes.Any(countryCode => !CountryCatalog.IsValid(countryCode)))
+        if (!TryParseList(query, name: "country", static value => value.ToUpperInvariant(), out FrozenSet<string>? countryCodes, out error))
+            return false;
+
+        if (countryCodes is not null && countryCodes.Any(static countryCode => !CountryCatalog.IsValid(countryCode)))
         {
             error ??= "country must contain comma-separated ISO alpha-3 country codes.";
+
             return false;
         }
 
-        if (!TryParseList(query, name: "source", value => value.ToUpperInvariant(), out FrozenSet<string>? sources, out error)
-            || sources is not null && sources.Any(source => !FirmsSources.All.Contains(source, StringComparer.Ordinal)))
+        if (!TryParseList(query, name: "source", static value => value.ToUpperInvariant(), out FrozenSet<string>? sources, out error))
+            return false;
+
+        if (sources is not null && sources.Any(static source => !FirmsSources.All.Contains(source, StringComparer.Ordinal)))
         {
             error ??= "source must contain supported FIRMS source IDs.";
+
             return false;
         }
 
-        if (!TryParseList(query, name: "satellite", value => value, out FrozenSet<string>? satellites, out error))
+        if (!TryParseList(query, name: "satellite", static value => value, out FrozenSet<string>? satellites, out error))
             return false;
 
-        if (!TryParseSince(query, activeWindowCutoff, out DateTimeOffset? since, out error)
-            || !TryParseDayNight(query, out string? dayNight, out error))
-        {
+        if (!TryParseSince(query, activeWindowCutoff, out DateTimeOffset? since, out error))
             return false;
-        }
+
+        if (!TryParseDayNight(query, out string? dayNight, out error))
+            return false;
 
         parsed = new(countryCodes, sources, satellites, since, dayNight);
+
         return true;
     }
 
-    private static bool TryParseSince(
-        IQueryCollection query,
-        DateTimeOffset activeWindowCutoff,
-        out DateTimeOffset? since,
-        out string? error)
+    public ImmutableArray<Anomaly> Apply(ImmutableArray<Anomaly> anomalies)
     {
-        since = null;
-        error = null;
-        if (!query.TryGetValue(key: "since", out StringValues sinceValues))
-            return true;
-
-        string value = sinceValues.ToString().Trim();
-        if (!DateTimeOffset.TryParse(
-                value,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.RoundtripKind,
-                out DateTimeOffset parsedSince)
-            || parsedSince.Offset != TimeSpan.Zero)
-        {
-            error = "since must be an ISO-8601 UTC timestamp.";
-            return false;
-        }
-
-        if (parsedSince < activeWindowCutoff)
-        {
-            error = "since cannot be earlier than FIRMS_ACTIVE_WINDOW.";
-            return false;
-        }
-
-        since = parsedSince;
-        return true;
-    }
-
-    private static bool TryParseDayNight(
-        IQueryCollection query,
-        out string? dayNight,
-        out string? error)
-    {
-        dayNight = null;
-        error = null;
-        if (!query.TryGetValue(key: "dayNight", out StringValues dayNightValues))
-            return true;
-
-        dayNight = dayNightValues.ToString().Trim().ToUpperInvariant();
-        if (dayNight is "D" or "N")
-            return true;
-
-        error = "dayNight must be D or N.";
-        return false;
-    }
-
-    public ImmutableArray<Anomaly> Apply(IEnumerable<Anomaly> anomalies) =>
-    [
-        .. anomalies
-            .Where(anomaly => CountryCodes is null || CountryCodes.Contains(anomaly.CountryCode))
+        return [
+        .. anomalies.Where(anomaly => CountryCodes is null || CountryCodes.Contains(anomaly.CountryCode))
             .Where(anomaly => Sources is null || Sources.Contains(anomaly.Source))
             .Where(anomaly => Satellites is null || Satellites.Contains(anomaly.Satellite))
             .Where(anomaly => Since is null || anomaly.AcquiredAtUtc >= Since)
@@ -124,13 +81,27 @@ public sealed record AnomalyQuery(
             .OrderByDescending(anomaly => anomaly.AcquiredAtUtc)
             .ThenBy(anomaly => anomaly.Id, StringComparer.Ordinal)
     ];
+    }
 
-    private static bool TryParseList(
-        IQueryCollection query,
-        string name,
-        Func<string, string> normalize,
-        out FrozenSet<string>? values,
-        out string? error)
+    private static bool TryParseDayNight(IQueryCollection query, out string? dayNight, out string? error)
+    {
+        dayNight = null;
+        error = null;
+
+        if (!query.TryGetValue(key: "dayNight", out StringValues dayNightValues))
+            return true;
+
+        dayNight = dayNightValues.ToString().Trim().ToUpperInvariant();
+
+        if (dayNight is "D" or "N")
+            return true;
+
+        error = "dayNight must be D or N.";
+
+        return false;
+    }
+
+    private static bool TryParseList(IQueryCollection query, string name, Func<string, string> normalize, out FrozenSet<string>? values, out string? error)
     {
         values = null;
         error = null;
@@ -138,16 +109,50 @@ public sealed record AnomalyQuery(
         if (!query.TryGetValue(name, out StringValues queryValues))
             return true;
 
-        string[] entries = queryValues.ToString().Split(',');
+        string[] entries = queryValues.ToString().Split(separator: ',');
+
         if (entries.Any(string.IsNullOrWhiteSpace))
         {
             error = $"{name} must not contain empty values.";
+
             return false;
         }
 
         values = entries
             .Select(entry => normalize(entry.Trim()))
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        return true;
+    }
+
+    private static bool TryParseSince(IQueryCollection query, DateTimeOffset activeWindowCutoff, out DateTimeOffset? since, out string? error)
+    {
+        since = null;
+        error = null;
+
+        if (!query.TryGetValue(key: "since", out StringValues sinceValues))
+            return true;
+
+        string value = sinceValues.ToString().Trim();
+
+        bool validTimestamp = DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset parsedSince);
+
+        if (!validTimestamp || parsedSince.Offset != TimeSpan.Zero)
+        {
+            error = "since must be an ISO-8601 UTC timestamp.";
+
+            return false;
+        }
+
+        if (parsedSince < activeWindowCutoff)
+        {
+            error = "since cannot be earlier than FIRMS_ACTIVE_WINDOW.";
+
+            return false;
+        }
+
+        since = parsedSince;
+
         return true;
     }
 }

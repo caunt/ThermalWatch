@@ -22,7 +22,7 @@ Requires the .NET 10 SDK. Running the service also requires a valid `FIRMS_MAP_K
 ```bash
 dotnet restore ThermalWatch.slnx
 dotnet build ThermalWatch.slnx -c Release --no-restore --nologo
-dotnet test ThermalWatch.slnx -c Release --no-build --nologo
+dotnet test --solution ThermalWatch.slnx -c Release --no-build
 dotnet format ThermalWatch.slnx --verify-no-changes --no-restore
 ```
 
@@ -33,7 +33,7 @@ FIRMS_COUNTRIES=UKR,RUS dotnet run --project src/ThermalWatch.Api/ThermalWatch.A
 Documentation-only validation:
 
 ```bash
-dotnet test tests/ThermalWatch.Tests.csproj -c Release --nologo --filter FullyQualifiedName~DocumentationValidationTests
+dotnet test --project tests/ThermalWatch.Tests.csproj -c Release --filter-class ThermalWatch.Tests.DocumentationValidationTests
 ```
 
 Viewer JavaScript validation:
@@ -48,7 +48,6 @@ See [development guidance](docs/development.md) for prerequisites, safe local se
 
 ## Coding standards
 
-- The repository-root `.editorconfig` is mandatory for every project.
 - Fix analyzer and style errors; do not suppress them.
 - Use named arguments for unclear string, numeric, Boolean, `null`, and `default` literal arguments.
 - Use `anomaly` for FIRMS model instances and collections, `segment` for country/source refresh status, `eligible` for a policy pass, and `delivered` only after successful transport. Reserve observation for domain explanation and detection count for cluster-member metrics.

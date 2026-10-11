@@ -1,31 +1,23 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
 using ThermalWatch.Core;
 
 namespace ThermalWatch.Api;
 
-public static class FirmsHistoryEndpoints
+internal static class FirmsHistoryEndpoints
 {
     public static IEndpointRouteBuilder MapFirmsHistory(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet(pattern: "/api/history", GetHistory);
+        RouteHandlerBuilder history = endpoints.MapGet(pattern: "/api/history", GetHistory);
+        history.Add(static endpoint => endpoint.DisplayName = "FIRMS retained daily history");
+
         return endpoints;
     }
 
     private static IResult GetHistory(HttpRequest request, FirmsHistoryStore store)
     {
         FirmsHistory history = store.Current;
-        if (!FirmsHistoryQuery.TryParse(
-                request.Query,
-                history,
-                out DateOnly fromDate,
-                out DateOnly toDate,
-                out string? error))
-        {
-            return Results.BadRequest(new { error });
-        }
 
-        return Results.Ok(history.Select(fromDate, toDate));
+        return !FirmsHistoryQuery.TryParse(request.Query, history, out DateOnly fromDate, out DateOnly toDate, out string? error)
+            ? Results.BadRequest(new { error })
+            : Results.Ok(history.Select(fromDate, toDate));
     }
 }

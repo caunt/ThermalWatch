@@ -2,7 +2,7 @@
 
 > **Purpose:** Define ThermalWatch runtime configuration, deployment, security, observability, failure, and recovery behavior.
 > **Scope:** Process startup, environment variables, external services, SDK publishing, CI artifacts, containers, and operational limitations.
-> **Sources of truth:** [Application configuration](../src/ThermalWatch.Api/ApplicationConfiguration.cs), [notification options](../src/ThermalWatch.Core/NotificationOptions.cs), [FIRMS history store](../src/ThermalWatch.Core/FirmsHistoryStore.cs), [Telegram options](../src/ThermalWatch.Telegram/TelegramOptions.cs), [episode history](../src/ThermalWatch.Core/NotificationEpisodeHistory.cs), [composition root](../src/ThermalWatch.Api/Program.cs), and [publish workflows](../.github/workflows/).
+> **Sources of truth:** [Application configuration](../src/ThermalWatch.Api/ApplicationConfiguration.cs), [notification options](../src/ThermalWatch.Core/Notifications/Options/NotificationOptions.cs), [FIRMS history store](../src/ThermalWatch.Core/Ingestion/FirmsHistoryStore.cs), [Telegram options](../src/ThermalWatch.Telegram/TelegramOptions.cs), [episode history](../src/ThermalWatch.Core/Notifications/NotificationEpisodeHistory.cs), [composition root](../src/ThermalWatch.Api/Program.cs), and [publish workflows](../.github/workflows/).
 > **Update when:** A variable, startup rule, external dependency, security boundary, log, deployment workflow, failure mode, or recovery procedure changes.
 
 ## Runtime model

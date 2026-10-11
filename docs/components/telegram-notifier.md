@@ -2,7 +2,7 @@
 
 > **Purpose:** Explain the Telegram transport boundary, validation, message construction, delivery, and disable behavior.
 > **Scope:** Credential validation, prepared-candidate consumption, formatting, automatic and manual sends, concurrency, and transport failures.
-> **Sources of truth:** [Notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [Telegram options](../../src/ThermalWatch.Telegram/TelegramOptions.cs), [message formatter](../../src/ThermalWatch.Telegram/TelegramMessageFormatter.cs), and [Core candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs).
+> **Sources of truth:** [Notification service](../../src/ThermalWatch.Telegram/TelegramNotificationService.cs), [Telegram options](../../src/ThermalWatch.Telegram/TelegramOptions.cs), [message formatter](../../src/ThermalWatch.Telegram/TelegramMessageFormatter.cs), and [Core candidate engine](../../src/ThermalWatch.Core/Notifications/NotificationCandidateEngine.cs).
 > **Update when:** Telegram startup, formatting, sending, concurrency, acknowledgement, or transport error handling changes.
 
 Read the [notification policy](../domain/notification-policy.md) for clustering, eligibility, historical FRP, land cover, previews, mapped location context, deduplication, diagnostics, and manual ranking. Those responsibilities belong to Core; this document focuses on the Telegram adapter.

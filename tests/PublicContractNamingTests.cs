@@ -1,39 +1,46 @@
 using System.Text.Json;
+
 using ThermalWatch.Core;
 using ThermalWatch.Telegram;
 
 namespace ThermalWatch.Tests;
 
+/// <summary>Verifies stable JSON names for published API contracts.</summary>
 public sealed class PublicContractNamingTests
 {
-    private static readonly JsonSerializerOptions s_jsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>Preserves anomaly and refresh-segment property names.</summary>
     [Fact]
     public void AnomalySnapshotUsesExplicitAnomalyAndSegmentJsonNames()
     {
         var snapshot = new AnomalySnapshot(
-            GeneratedAtUtc: DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch,
             ActiveWindowHours: 24,
             IsReady: true,
             IsPartiallyStale: true,
-            ConfiguredCountryCodes: ["UKR"],
-            Segments:
+            ["UKR"],
             [
                 new(
                     CountryCode: "UKR",
                     Source: "VIIRS_SNPP_NRT",
-                    LastAttemptAtUtc: DateTimeOffset.UnixEpoch,
-                    LastSuccessAtUtc: DateTimeOffset.UnixEpoch,
+                    DateTimeOffset.UnixEpoch,
+                    DateTimeOffset.UnixEpoch,
                     IsStale: true,
                     Error: null,
-                    IngestionMode: IngestionModes.Country)
+                    IngestionModes.Country
+                )
             ],
             AnomalyCount: 0,
-            Anomalies: []);
+            []
+        );
 
-        using JsonDocument json = JsonSerializer.SerializeToDocument(
-            snapshot,
-            s_jsonOptions);
+        using JsonDocument json = JsonSerializer.SerializeToDocument(snapshot, JsonOptions);
+
+        var propertyNames = new List<string>();
+
+        foreach (JsonProperty property in json.RootElement.EnumerateObject())
+            propertyNames.Add(property.Name);
 
         Assert.Equal(
             [
@@ -46,10 +53,17 @@ public sealed class PublicContractNamingTests
                 "isReady",
                 "segments"
             ],
-            json.RootElement.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal),
-            StringComparer.Ordinal);
-        JsonElement segment = Assert.Single(
-            json.RootElement.GetProperty(propertyName: "segments").EnumerateArray());
+            propertyNames.Order(StringComparer.Ordinal),
+            StringComparer.Ordinal
+        );
+
+        JsonElement[] segments = [.. json.RootElement.GetProperty(propertyName: "segments").EnumerateArray()];
+        JsonElement segment = Assert.Single(segments);
+        var segmentPropertyNames = new List<string>();
+
+        foreach (JsonProperty property in segment.EnumerateObject())
+            segmentPropertyNames.Add(property.Name);
+
         Assert.Equal(
             [
                 "countryCode",
@@ -60,10 +74,12 @@ public sealed class PublicContractNamingTests
                 "lastSuccessAtUtc",
                 "source"
             ],
-            segment.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal),
-            StringComparer.Ordinal);
+            segmentPropertyNames.Order(StringComparer.Ordinal),
+            StringComparer.Ordinal
+        );
     }
 
+    /// <summary>Preserves cluster-specific names in manual delivery results.</summary>
     [Fact]
     public void ManualTelegramSendResponseUsesClusterSpecificJsonNames()
     {
@@ -73,11 +89,15 @@ public sealed class PublicContractNamingTests
             SelectedClusterCount: 3,
             SentClusterCount: 2,
             FailedClusterCount: 1,
-            FailedClusterIds: ["cluster"]);
+            ["cluster"]
+        );
 
-        using JsonDocument json = JsonSerializer.SerializeToDocument(
-            response,
-            s_jsonOptions);
+        using JsonDocument json = JsonSerializer.SerializeToDocument(response, JsonOptions);
+
+        var propertyNames = new List<string>();
+
+        foreach (JsonProperty property in json.RootElement.EnumerateObject())
+            propertyNames.Add(property.Name);
 
         Assert.Equal(
             [
@@ -88,7 +108,8 @@ public sealed class PublicContractNamingTests
                 "selectedClusterCount",
                 "sentClusterCount"
             ],
-            json.RootElement.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal),
-            StringComparer.Ordinal);
+            propertyNames.Order(StringComparer.Ordinal),
+            StringComparer.Ordinal
+        );
     }
 }

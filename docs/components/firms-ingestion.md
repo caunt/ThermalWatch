@@ -2,7 +2,7 @@
 
 > **Purpose:** Explain how ThermalWatch obtains, validates, falls back, and publishes FIRMS observations.
 > **Scope:** Poll scheduling, current and historical country/source segments, country capability, area fallback, CSV parsing, boundaries, snapshot/history publication, and staleness.
-> **Sources of truth:** [Poller](../../src/ThermalWatch.Api/FirmsPollingService.cs), [history backfill](../../src/ThermalWatch.Api/FirmsHistoryBackfill.cs), [FIRMS client](../../src/ThermalWatch.Core/FirmsClient.cs), [boundary catalog](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs), [snapshot store](../../src/ThermalWatch.Core/AnomalySnapshotStore.cs), and [history store](../../src/ThermalWatch.Core/FirmsHistoryStore.cs).
+> **Sources of truth:** [Poller](../../src/ThermalWatch.Api/Polling/FirmsPollingService.cs), [history backfill](../../src/ThermalWatch.Api/Polling/FirmsHistoryBackfill.cs), [FIRMS client](../../src/ThermalWatch.Core/Ingestion/FirmsClient.cs), [boundary catalog](../../src/ThermalWatch.Core/CountryBoundaryCatalog.cs), [snapshot store](../../src/ThermalWatch.Core/Ingestion/AnomalySnapshotStore.cs), and [history store](../../src/ThermalWatch.Core/Ingestion/FirmsHistoryStore.cs).
 > **Update when:** Polling, backfill, concurrency, FIRMS routes, fallback detection, boundary envelopes, CSV parsing, segment publication, history retention, or history readiness changes.
 
 ## Segment model and polling
@@ -30,7 +30,7 @@ Country-API capability is process-wide:
 - Authentication, rate limit, network, ordinary server, request-validation, and dataset failures do not independently enable fallback.
 - While fallback is active, the client probes the country API after one hour. A successful probe restores country mode; an ordinary failed probe schedules the next probe and continues fallback.
 
-The matching and key-status rules in [FirmsClient.cs](../../src/ThermalWatch.Core/FirmsClient.cs) are authoritative. External error wording is not a durable contract.
+The matching and key-status rules in [FirmsClient.cs](../../src/ThermalWatch.Core/Ingestion/FirmsClient.cs) are authoritative. External error wording is not a durable contract.
 
 ## Area fallback and boundaries
 
@@ -71,9 +71,9 @@ The current snapshot is swapped atomically. A bounded one-item, drop-oldest chan
 
 The in-memory history retains 31 UTC dates: the preceding 30 completed dates plus today's live bucket. Each date has one slice for every configured country crossed with the four existing NRT sources. A successful current or dated response replaces every covered date/source/country slice, including with an empty anomaly array; a failure retains the last complete slice where one exists, updates its attempt status, and marks it stale. Successful range responses are split by each anomaly's UTC acquisition date before publication.
 
-After every current snapshot publication, [FirmsHistoryBackfill.cs](../../src/ThermalWatch.Api/FirmsHistoryBackfill.cs) considers six five-day windows for every country/source and requests only windows containing a missing or stale completed-date slice. It admits at most two backfill requests concurrently and commits the completed batch to the history store in one publication. A later polling cycle retries incomplete windows. Active refreshes continue updating all UTC dates covered by their latest request, including today, so history remains live after startup.
+After every current snapshot publication, [FirmsHistoryBackfill.cs](../../src/ThermalWatch.Api/Polling/FirmsHistoryBackfill.cs) considers six five-day windows for every country/source and requests only windows containing a missing or stale completed-date slice. It admits at most two backfill requests concurrently and commits the completed batch to the history store in one publication. A later polling cycle retries incomplete windows. Active refreshes continue updating all UTC dates covered by their latest request, including today, so history remains live after startup.
 
-Each history day combines and ID-deduplicates raw anomalies across configured countries and all existing NRT sources, including every satellite returned by those feeds. It creates raw connected clusters with the configured notification radius and time window but does not apply notification eligibility filters. History and current eligible-cluster summaries share [NotificationClusterSummary.cs](../../src/ThermalWatch.Core/NotificationClusterSummary.cs), including cluster/representative properties, aggregate FRP, detection count, diameter, and member IDs. The separately exposed anomaly array remains the source for complete member measurements.
+Each history day combines and ID-deduplicates raw anomalies across configured countries and all existing NRT sources, including every satellite returned by those feeds. It creates raw connected clusters with the configured notification radius and time window but does not apply notification eligibility filters. History and current eligible-cluster summaries share [NotificationClusterSummary.cs](../../src/ThermalWatch.Core/Notifications/NotificationClusterSummary.cs), including cluster/representative properties, aggregate FRP, detection count, diameter, and member IDs. The separately exposed anomaly array remains the source for complete member measurements.
 
 History `IsReady` requires a successful, non-stale slice for every configured country/source on all 30 completed dates. Today's bucket does not participate in baseline readiness. At UTC rollover the store discards the expired oldest date, adds the new today bucket, and reevaluates the completed baseline. History state is process-local and is rebuilt after restart.
 

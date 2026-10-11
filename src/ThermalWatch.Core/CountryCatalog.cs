@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 
 namespace ThermalWatch.Core;
 
+/// <summary>Validates country codes and provides their display names.</summary>
 public static class CountryCatalog
 {
     private const string IsoCountries = """
@@ -256,22 +257,32 @@ ZMB|Zambia
 ZWE|Zimbabwe
 """;
 
-    private static readonly FrozenDictionary<string, string> s_displayNames = CreateDisplayNames();
+    private static readonly FrozenDictionary<string, string> DisplayNames = CreateDisplayNames();
 
-    public static bool IsValid(string countryCode) => s_displayNames.ContainsKey(countryCode);
+    /// <summary>Returns the display name, retaining an unknown code as its fallback.</summary>
+    public static string GetDisplayName(string countryCode)
+    {
+        return DisplayNames.GetValueOrDefault(countryCode, countryCode);
+    }
 
-    public static string GetDisplayName(string countryCode) =>
-        s_displayNames.GetValueOrDefault(countryCode, countryCode);
+    /// <summary>Checks whether the exact code belongs to the supported country catalog.</summary>
+    public static bool IsValid(string countryCode)
+    {
+        return DisplayNames.ContainsKey(countryCode);
+    }
 
-    private static FrozenDictionary<string, string> CreateDisplayNames() =>
-        IsoCountries
-            .Split(separator: '\n', options: StringSplitOptions.RemoveEmptyEntries)
+    private static FrozenDictionary<string, string> CreateDisplayNames()
+    {
+        return IsoCountries
+            .Split(separator: '\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(ParseCountry)
-            .ToFrozenDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            .ToFrozenDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.Ordinal);
+    }
 
     private static KeyValuePair<string, string> ParseCountry(string country)
     {
-        int separatorIndex = country.IndexOf(value: '|');
+        int separatorIndex = country.IndexOf(value: '|', StringComparison.Ordinal);
+
         return KeyValuePair.Create(country[..separatorIndex], country[(separatorIndex + 1)..]);
     }
 }

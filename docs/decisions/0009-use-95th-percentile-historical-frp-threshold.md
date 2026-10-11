@@ -43,14 +43,14 @@ Diagnostics report the current total, the historical 95th-percentile value, the 
 
 ## Validation or evidence
 
-- [Historical-FRP policy tests](../../tests/NotificationHistoricalFrpPolicyTests.cs) verify linear interpolation, strict equality, one-sample behavior, spatial matching, self-ID removal, missing FRP, readiness, and disablement.
-- [Candidate-engine tests](../../tests/NotificationCandidateEngineTests.cs) verify the shared automatic, manual, eligible-list, and diagnostic integration paths.
+- [Historical-FRP policy tests](../../tests/Core/Notifications/NotificationHistoricalFrpPolicyTests.cs) verify linear interpolation, strict equality, one-sample behavior, spatial matching, self-ID removal, missing FRP, readiness, and disablement.
+- [Candidate-engine tests](../../tests/Core/Notifications/NotificationCandidateEngineTests.cs) verify the shared automatic, manual, eligible-list, and diagnostic integration paths.
 - [Notification policy](../domain/notification-policy.md) defines the resulting current domain behavior.
 
 ## Related source files and documents
 
-- [Historical-FRP policy](../../src/ThermalWatch.Core/NotificationHistoricalFrpPolicy.cs)
-- [Notification candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs)
+- [Historical-FRP policy](../../src/ThermalWatch.Core/Notifications/NotificationHistoricalFrpPolicy.cs)
+- [Notification candidate engine](../../src/ThermalWatch.Core/Notifications/NotificationCandidateEngine.cs)
 - [Notification policy](../domain/notification-policy.md)
 - [Operations](../operations.md)
 - [Web viewer](../components/web-viewer.md)

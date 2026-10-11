@@ -2,12 +2,12 @@
 
 > **Purpose:** Provide verified setup, build, test, formatting, debugging, and validation workflows.
 > **Scope:** Local development and pull-request validation for server, tests, documentation, and static viewer assets.
-> **Sources of truth:** [Editor configuration](../.editorconfig), [build properties](../Directory.Build.props), [central package versions](../Directory.Packages.props), [solution](../ThermalWatch.slnx), [test project](../tests/ThermalWatch.Tests.csproj), and [PR workflow](../.github/workflows/pr.yml).
+> **Sources of truth:** [build properties](../Directory.Build.props), [central package versions](../Directory.Packages.props), [solution](../ThermalWatch.slnx), [test project](../tests/ThermalWatch.Tests.csproj), and [PR workflow](../.github/workflows/pr.yml).
 > **Update when:** SDK requirements, commands, project layout, tests, formatting, analyzers, static assets, or CI validation changes.
 
 ## Prerequisites
 
-- .NET 10 SDK. The repository has no `global.json`; the target framework and C# version are set in [Directory.Build.props](../Directory.Build.props).
+- .NET 10 SDK. [global.json](../global.json) selects Microsoft.Testing.Platform without pinning an SDK version; the target framework and C# version are set in [Directory.Build.props](../Directory.Build.props).
 - A valid NASA FIRMS MAP_KEY and internet access to run the service against FIRMS.
 - Node.js 24 only when changing the plain JavaScript viewer and running its syntax checks and dependency-free unit tests.
 - Docker is optional and can supply the official .NET SDK when it is not installed locally.
@@ -21,11 +21,13 @@ Run the complete validation sequence from the repository root:
 ```bash
 dotnet restore ThermalWatch.slnx
 dotnet build ThermalWatch.slnx -c Release --no-restore --nologo
-dotnet test ThermalWatch.slnx -c Release --no-build --nologo
+dotnet test --solution ThermalWatch.slnx -c Release --no-build
 dotnet format ThermalWatch.slnx --verify-no-changes --no-restore
 ```
 
-Builds are deterministic, nullable-enabled, enforce code-style diagnostics, and treat warnings as errors. The mandatory root [`.editorconfig`](../.editorconfig) defines repository-wide formatting, naming, immutability, syntax, and unused-code policy. [Central build configuration](../Directory.Build.props) applies the private Meziantou analyzer dependency to every project, while [Central Package Management](../Directory.Packages.props) owns its version. Fix analyzer and style violations instead of suppressing them, including MA0003 violations that require meaningful names for unclear literal arguments.
+Builds are deterministic, nullable-enabled, enforce code-style diagnostics, and treat warnings as errors. [Central build configuration](../Directory.Build.props) applies the private NetAgents.Analyzers dependency to every project; [Central Package Management](../Directory.Packages.props) owns its version. NetAgents applies shared rules and automatically formats source and applies available fixes during builds. Review rewritten files before committing. Fix analyzer and style violations instead of suppressing them. Use meaningful names for unclear literal arguments as required by the [agent guide](../AGENTS.md).
+
+The xUnit test project uses Microsoft.Testing.Platform. The runner selection in `global.json` requires explicit `--solution` or `--project` arguments for `dotnet test`; focused checks use xUnit's `--filter-class` option.
 
 The pull-request workflow configures Node.js 24, validates the Viewer project's static assets, and then runs the independently restorable .NET test command:
 
@@ -33,7 +35,7 @@ The pull-request workflow configures Node.js 24, validates the Viewer project's 
 node --check src/ThermalWatch.Viewer/wwwroot/map-support.js
 node --check src/ThermalWatch.Viewer/wwwroot/app.js
 node --test tests/viewer-map-support.test.js
-dotnet test ThermalWatch.slnx -c Release --nologo
+dotnet test --solution ThermalWatch.slnx -c Release
 ```
 
 When the host has Docker but no SDK, a disposable Linux SDK container can run the same command:
@@ -43,7 +45,7 @@ docker run --rm \
   --volume "$PWD:/workspace" \
   --workdir /workspace \
   mcr.microsoft.com/dotnet/sdk:10.0 \
-  dotnet test ThermalWatch.slnx -c Release --nologo
+  dotnet test --solution ThermalWatch.slnx -c Release
 ```
 
 This writes ignored `bin/` and `obj/` output into the working tree and may create files owned by the container user.
@@ -53,7 +55,7 @@ This writes ignored `bin/` and `obj/` output into the working tree and may creat
 The focused drift check is:
 
 ```bash
-dotnet test tests/ThermalWatch.Tests.csproj -c Release --nologo --filter FullyQualifiedName~DocumentationValidationTests
+dotnet test --project tests/ThermalWatch.Tests.csproj -c Release --filter-class ThermalWatch.Tests.DocumentationValidationTests
 ```
 
 It validates local documentation links and routing, ADR structure and identifiers, documented command targets, the root agent-guide size, and obvious unfinished markers. The full solution test runs it automatically, including in pull requests.

@@ -2,7 +2,7 @@
 
 > **Purpose:** Define the non-obvious domain rules that distinguish raw thermal observations from Telegram notification candidates.
 > **Scope:** Anomaly meaning and identity, clustering, automatic selection, visibility, historical-FRP and land-cover filters, diagnostics, imagery, and manual sends.
-> **Sources of truth:** [Anomaly model](../../src/ThermalWatch.Core/Anomaly.cs), [notification cluster](../../src/ThermalWatch.Core/NotificationCluster.cs), [clustering](../../src/ThermalWatch.Core/NotificationClustering.cs), [candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs), [metadata policy](../../src/ThermalWatch.Core/NotificationPolicy.cs), [historical-FRP policy](../../src/ThermalWatch.Core/NotificationHistoricalFrpPolicy.cs), [history store](../../src/ThermalWatch.Core/FirmsHistoryStore.cs), [GIBS client](../../src/ThermalWatch.Core/GibsClient.cs), [land-cover policy](../../src/ThermalWatch.Core/NotificationLandCoverPolicy.cs), and [nearby-feature client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs).
+> **Sources of truth:** [Anomaly model](../../src/ThermalWatch.Core/Anomaly.cs), [notification cluster](../../src/ThermalWatch.Core/Notifications/NotificationCluster.cs), [clustering](../../src/ThermalWatch.Core/Notifications/NotificationClustering.cs), [candidate engine](../../src/ThermalWatch.Core/Notifications/NotificationCandidateEngine.cs), [metadata policy](../../src/ThermalWatch.Core/Notifications/NotificationPolicy.cs), [historical-FRP policy](../../src/ThermalWatch.Core/Notifications/NotificationHistoricalFrpPolicy.cs), [history store](../../src/ThermalWatch.Core/Ingestion/FirmsHistoryStore.cs), [GIBS client](../../src/ThermalWatch.Core/Imagery/GibsClient.cs), [land-cover policy](../../src/ThermalWatch.Core/Notifications/NotificationLandCoverPolicy.cs), and [nearby-feature client](../../src/ThermalWatch.Core/Places/NearbyFeatureClient.cs).
 > **Update when:** Observation identity, clustering, representative choice, eligibility, diagnostic explanation, filtering order, imagery or nearby-context policy, or manual-send semantics change.
 
 ## Observation meaning and API boundary
@@ -52,7 +52,7 @@ Every later snapshot repeats eligibility evaluation from its complete current da
 
 ## Visibility policy
 
-When enabled, [NotificationPolicy.cs](../../src/ThermalWatch.Core/NotificationPolicy.cs) evaluates in this order:
+When enabled, [NotificationPolicy.cs](../../src/ThermalWatch.Core/Notifications/NotificationPolicy.cs) evaluates in this order:
 
 1. Required daytime pass.
 2. Minimum cluster member count.
@@ -79,7 +79,7 @@ The enabled criterion fails closed with an unavailable outcome until all configu
 
 ## Land-cover policy
 
-The land-cover filter is enabled by default and can be disabled with `NOTIFICATION_LAND_COVER_FILTER_ENABLED`. When enabled, the [land-cover policy](../../src/ThermalWatch.Core/NotificationLandCoverPolicy.cs) uses NASA's annual combined MODIS IGBP product. The GIBS client selects the newest year common to every required tile, samples the detection pixels plus pixels intersecting the configured 15 km default proximity around every cluster member, and decodes the official indexed colors into classes.
+The land-cover filter is enabled by default and can be disabled with `NOTIFICATION_LAND_COVER_FILTER_ENABLED`. When enabled, the [land-cover policy](../../src/ThermalWatch.Core/Notifications/NotificationLandCoverPolicy.cs) uses NASA's annual combined MODIS IGBP product. The GIBS client selects the newest year common to every required tile, samples the detection pixels plus pixels intersecting the configured 15 km default proximity around every cluster member, and decodes the official indexed colors into classes.
 
 - IGBP classes 1–12 and 14 count as vegetation.
 - Class 13 means urban/built-up and retains an otherwise vegetation-dominated cluster when present within proximity.
@@ -91,7 +91,7 @@ These rules are heuristics, not event classification. Land cover, confidence, FR
 
 ## Mapped location context
 
-The [mapped-context client](../../src/ThermalWatch.Core/NearbyFeatureClient.cs) uses `overpass-api.de` to perform one combined coordinate lookup. It queries named OpenStreetMap nodes, ways, and relations within 2 km, excluding elements with a `highway` or `railway` tag or `type=public_transport`. Elements carrying a blacklisted tag are discarded before ordering and limiting: any `waterway` tag is excluded, and `route=bus` excludes bus routes while retaining other route types. Node coordinates and Overpass-provided way/relation centers are validated and measured from the lookup observation with Haversine distance. Results are ranked by descending property count in the OSM `tags` object; equal counts use nearest distance, then OSM type and ID for deterministic ties. The shared coordinate cache retains up to 25 ranked results; Viewer diagnostics can return that complete set, while prepared automatic and manual notification candidates take only the highest-ranked five.
+The [mapped-context client](../../src/ThermalWatch.Core/Places/NearbyFeatureClient.cs) uses `overpass-api.de` to perform one combined coordinate lookup. It queries named OpenStreetMap nodes, ways, and relations within 2 km, excluding elements with a `highway` or `railway` tag or `type=public_transport`. Elements carrying a blacklisted tag are discarded before ordering and limiting: any `waterway` tag is excluded, and `route=bus` excludes bus routes while retaining other route types. Node coordinates and Overpass-provided way/relation centers are validated and measured from the lookup observation with Haversine distance. Results are ranked by descending property count in the OSM `tags` object; equal counts use nearest distance, then OSM type and ID for deterministic ties. The shared coordinate cache retains up to 25 ranked results; Viewer diagnostics can return that complete set, while prepared automatic and manual notification candidates take only the highest-ranked five.
 
 The same request asks Overpass which mapped areas contain the coordinate and accepts only named `city`, `town`, or `village` areas. It prefers an English name when present and otherwise uses the mapped name. When overlapping accepted areas exist, the most local numeric administrative level wins, followed by the more specific settlement kind and stable identity. Prepared Telegram candidates attach this single settlement for the representative coordinate; Viewer diagnostic contracts do not expose it. A point outside an accepted mapped settlement remains unnamed rather than using the nearest place.
 
@@ -113,7 +113,7 @@ This is a fresh, read-only evaluation. It neither reads nor changes startup inci
 
 ## Preview policy
 
-[GibsClient.cs](../../src/ThermalWatch.Core/GibsClient.cs) maps the representative source, satellite, and day/night pass to a representative thermal-anomaly overlay and pass-matched contextual base layers. Daytime uses true color; nighttime uses the corresponding brightness-temperature products.
+[GibsClient.cs](../../src/ThermalWatch.Core/Imagery/GibsClient.cs) maps the representative source, satellite, and day/night pass to a representative thermal-anomaly overlay and pass-matched contextual base layers. Daytime uses true color; nighttime uses the corresponding brightness-temperature products.
 
 The overlay and selected base must advertise the exact acquisition date. The client probes the requested crop rather than treating global date availability as proof that spatial pixels are ready. It prefers the representative satellite's base, then tries other supported satellites in the same sensor family, followed by the other family. A fallback changes only the contextual base: the representative thermal overlay remains authoritative, and the Telegram caption names both sources. The composed overlay uses GIBS's 25-pixel thermal-anomaly marker style so its red anomaly dots remain legible when Telegram scales the image. It never chooses the nearest date or a different pass. Imagery represents a date, not the exact acquisition minute.
 

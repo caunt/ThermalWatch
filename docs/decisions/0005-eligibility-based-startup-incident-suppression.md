@@ -45,15 +45,15 @@ When `TELEGRAM_NOTIFY_EXISTING_ON_STARTUP` is true, the first ready snapshot fol
 
 ## Validation or evidence
 
-- [Candidate-engine tests](../../tests/NotificationCandidateEngineTests.cs) cover required-preview recovery for an initially ineligible startup incident, suppression and transitive extension of an eligible startup incident, startup-enabled delivery, and Viewer lifecycle independence.
-- [Episode-history tests](../../tests/NotificationEpisodeHistoryTests.cs) cover cross-satellite continuation, transitive extension, radius/time boundaries, expiry, and untracked incidents.
+- [Candidate-engine tests](../../tests/Core/Notifications/NotificationCandidateEngineTests.cs) cover required-preview recovery for an initially ineligible startup incident, suppression and transitive extension of an eligible startup incident, startup-enabled delivery, and Viewer lifecycle independence.
+- [Episode-history tests](../../tests/Core/Notifications/NotificationEpisodeHistoryTests.cs) cover cross-satellite continuation, transitive extension, radius/time boundaries, expiry, and untracked incidents.
 - [Notification policy](../domain/notification-policy.md) defines the resulting automatic lifecycle and criteria-only Viewer boundary.
 
 ## Related source files and documents
 
-- [Core candidate engine](../../src/ThermalWatch.Core/NotificationCandidateEngine.cs)
-- [Episode history](../../src/ThermalWatch.Core/NotificationEpisodeHistory.cs)
-- [Automatic processing summary](../../src/ThermalWatch.Core/AutomaticNotificationProcessingSummary.cs)
+- [Core candidate engine](../../src/ThermalWatch.Core/Notifications/NotificationCandidateEngine.cs)
+- [Episode history](../../src/ThermalWatch.Core/Notifications/NotificationEpisodeHistory.cs)
+- [Automatic processing summary](../../src/ThermalWatch.Core/Notifications/Results/AutomaticNotificationProcessingSummary.cs)
 - [Telegram notifier](../components/telegram-notifier.md)
 - [Operations](../operations.md)
 
