@@ -16,7 +16,7 @@
     <PackageVersion Include="NetTopologySuite" Version="2.6.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON" Version="4.0.0" />
     <PackageVersion Include="Nito.AsyncEx.Coordination" Version="5.1.2" />
-    <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageVersion Include="Serilog.AspNetCore" Version="11.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="StbImageSharp" Version="2.30.16" />
     <PackageVersion Include="StbImageWriteSharp" Version="1.16.7" />
